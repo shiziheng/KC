@@ -9,6 +9,42 @@
 
 ---
 
+## v1.8.0 · 2026-10-07 · 独立代充后台 R0–R2 代码落地（保持 Mock）
+
+**一句话概括**：为运营人员恢复独立的代充业务后台最小闭环，覆盖商品、模拟订单、USDT 随机识别和余额异常补记；不连接真实钱包或 ZovoCard。
+
+### 新增
+- `business/validation.js`、`business/repository.js`、`business/admin-routes.js` —— 业务入参校验、现存业务表访问、管理员业务 API；账号邮箱只保存脱敏值和 HMAC 指纹。
+- `business-infra/business-db.js` —— 连接独立 `kc_business`，验证已应用 `0001/0002` 迁移校验值；不创建表、不自动迁移。
+- `public/business-admin.html` 与 `/business-admin` —— 独立运营控制台：工作台、代充商品、订单、Mock USDT 充值核验/补记、业务钱包和流水。
+- 充值补记仅接受 `mock_usdt` 记录及 `MOCK-` 凭证；金额不匹配进入人工核验，精确匹配后在事务中更新 Mock 钱包、追加幂等流水并写审计。
+- Docker Compose 固定设置 `ZOVOCARD_MOCK=1` 与 `REQUIRE_ZOVOCARD_MOCK=1`。
+
+### 修改
+- `server.js` 挂载独立后台页面和业务 API，复用现有管理员鉴权；KC 技术后台菜单保持不变。
+- `tools/verify-business-backend.js` 改为只读验收，只调用 GET，需显式传入已有管理员令牌，不再自动造商品、订单或账务数据。
+- 产品全景、项目状态和本计划更新为真实交付状态：R0 已只读完成，R1/R2 代码完成但尚未部署。
+
+### 验证
+- 新增/修改 Node 文件语法检查通过；管理页面内联脚本语法检查通过。
+- `docker compose config --quiet` 通过；Docker Desktop API 当前拒绝连接，无法进行容器部署。
+- Vitest：2 个测试文件、13 项用例全部通过。
+- 使用现存业务库进行只读 HTTP 核验：健康、汇总、商品、订单、充值、钱包、流水端点均成功；没有调用任何写接口。
+- 已核实 `kc_business` 与 KC/Xboard 库隔离，`0001/0002` 校验值匹配；运行库迁移和数据写入均为 0。
+- `node tools/check-docs-sync.js`：15 项通过，0 警告、0 失败。
+
+### 影响与风险
+- 代码已就绪但未部署：当前 Docker 引擎访问被拒绝，未重建或重启任何服务。
+- Xboard 现有“代充运营”菜单仍指向旧插件页。需要运营可访问的 KC 后台地址和登录衔接方案后才能接通；本轮没有改动 Xboard 工作区。
+- USDT 随机尾数、充值核验与补记均是独立业务库 Mock 演练，不接链、不收款、不修改 KC/Xboard 余额。
+
+### 下一步
+- 配置 Xboard 菜单到新业务后台的浏览器可访问地址和登录方式；在 Docker 可用时部署并验收 Mock 运行状态。
+- 然后进入 R3，在现有前台框架内增量接入商品、模拟下单和状态查询。
+- 真实支付、真实履约和生产钱包继续保持关闭，未经单独批准不得开启。
+
+---
+
 ## v1.7.1 · 2026-10-07 · 仓库恢复与 git 安全护栏：git-safe 拦截危险命令 + 快照留底
 
 ### 背景（事故）

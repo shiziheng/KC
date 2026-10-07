@@ -15,15 +15,16 @@
 - **滞后检测原理**：产品全景顶部「对应版本」必须 ≥ 当前版本 —— 改了功能忘更新全景就会被抓到。
 
 ## ⚠️ 本机 Git 操作教训（务必遵守）
-- **绝对不要在有未提交新文件的工作区跑 `git reset --hard`** —— 会连新文件一起删掉。2026-10-07 发生过一次，**永久丢失** `business/`、`domain/`、`fulfillment/`、`business-infra/` 四个从未提交过的业务目录，及 `public/business-admin.html`、`public/business.html`（git 历史无记录，148 个 dangling blob 全是其他文件的旧版本，无法恢复）。
-- `git add -A` 后再用 `reset --hard` 还原"测试故障"是错的——暂存区已含新文件，会一并丢失。
-- **要验证拦截效果，改完文件用 try/finally 还原，不要用 git 还原。**
-- 做故障注入测试前，先在项目外或专用目录留一份副本。
-- **提交重要工作前先提交一次或建分支**——未提交的新目录是一次 reset 就无法挽回的。
-- 提交前先 `git status` 核实；**显式列出文件分组 add，不用 `git add -A`**（否则临时产物会混入）。
-- git 提交者身份**只配在仓库内**（`git config user.name/email` 不加 --global），本仓库沿用历史身份 `KC-CatK <iamkc1110@gmail.com>`。
-- 恢复误删的已跟踪文件：`git checkout -- <path>`（只恢复已跟踪的，安全）；**但从未跟踪的文件无法恢复**。
-- 用 `git cat-file --batch` + `--lost-found` 可捞回被 add 过但未提交的 dangling blob（批量读，单个循环易超时）。
+- **绝对不要在有未提交新文件的工作区跑 `git reset --hard` / `git stash` / `git clean -fd`**（尤其别为"验证钩子"而在真实工作区做测试）。2026-10-07 连发两起事故：①`reset --hard` 删掉未提交的 `domain/`、`fulfillment/`、`public/business.html`；②`git stash` pop 中断致 `.git/refs` 与 pack 损坏、git 全线失效。**真实永久丢失仅 3 项**：`domain/`、`fulfillment/`、`public/business.html`。（此前"business/domain/fulfillment/business-infra 四目录全丢"是损坏仓库状态下的误报——`business/`、`business-infra/`、`public/business-admin.html`、`接口api.md`、`docs/归档/` 实际都在。）
+- **测试破坏性 git 操作用临时副本目录**，绝不在真实工作区跑。要做故障注入验证，改完文件用 try/finally 还原（不要 git 还原）。
+- **快照留底用 `git hash-object -w` 而非 `git stash`**：本机 stash 引用易损坏（实测 pop 中断后 refs 丢、仓库废）；`tools/git-safe.js snapshot` 已是 hash-object 实现，完全不碰工作区。
+- **`git init` 重建损坏仓库后，旧 index 会引用已丢失的 blob（提交报 `invalid object ... for <file>`）**：先 `fs.unlinkSync('.git/index')` 再 `git add -A` 重建 index，提交才成功。
+- **本机 git 输出中文路径是 GBK（非 UTF-8）**：node 里用 `fs.existsSync` 或字符串比对 git 输出的中文路径会误判。校验内容用 `git hash-object` 对 ASCII 路径比对最可靠；中文文件名走 `git ls-tree -r HEAD` 时也要先解码。
+- 提交前 `git status` 核实；**显式分组 add 优先，`git add -A` 仅配合已验证的 .gitignore 使用**（否则调试残留会混入）。
+- **提交重要工作前先提交或建分支**——未提交的新目录一次 reset 就无法挽回。
+- git 提交者身份**只配在仓库内**（`git config user.name/email` 不加 --global），本仓库沿用 `KC-CatK <iamkc1110@gmail.com>`。
+- 恢复误删的已跟踪文件：`git checkout -- <path>`（安全）；**从未跟踪的文件无法恢复**，只能靠 `git-safe.js snapshot` 提前留底。
+- **仓库已恢复并提交**：`e65825a` (v1.7.1, 193 文件)。安全护栏 `tools/git-safe.js` + `.githooks/pre-commit`(文档闸门) + `.githooks/pre-push`(无备份资产扫描) 已就位。
 
 ## 本机环境约束（跨项目，最易浪费时间）
 - Bash 无 coreutils（ls/cat/head/tail/sleep/sh/rm...）→ 写 `.js` 用 node 跑；输出落文件再 Read。

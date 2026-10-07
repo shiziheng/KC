@@ -1,8 +1,8 @@
 {
-  "version": "1.7.1",
-  "version_tag": "v1.7.1",
+  "version": "1.8.0",
+  "version_tag": "v1.8.0",
   "date": "2026-10-07",
-  "title": "仓库恢复与 git 安全护栏：git-safe 拦截危险命令 + 快照留底",
+  "title": "独立代充后台 R0–R2 代码落地（保持 Mock）",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -38,7 +38,7 @@
       "KC 代充引擎",
       "Xboard 商城（过渡期，用户当前使用的页面）",
       "BEpusdt USDT 收款网关",
-      "独立业务后台（新建中）"
+      "独立业务后台（R0–R2 代码已实现，未部署）"
     ],
     "核心原则": "付款成功不等于开通成功 —— 支付与履约状态分离",
     "三档规划": {
@@ -63,30 +63,30 @@
   },
   "latest": {
     "added": [
-      "tools/check-docs-sync.js —— 文档同步自检，15 项检查（版本一致/全景滞后/结构完整/红线未删/规范步骤/编码/入口引用）",
-      ".githooks/pre-commit —— 提交前硬拦截，已启用 core.hooksPath",
-      "package.json 新增 docs:check / docs:check:json，pretest 接入自检",
-      "产品全景功能行加 <!-- feat:xxx --> 标记，便于按功能追溯滞后范围"
+      "独立业务后台 API 与 public/business-admin.html：商品、模拟订单、USDT 随机尾数、模拟核验/补记、钱包和流水查询",
+      "tools/verify-business-backend.js 改为只读检查，只发 GET 且需显式提供已有管理员令牌",
+      "Docker Compose 固定注入 REQUIRE_ZOVOCARD_MOCK=1 和 ZOVOCARD_MOCK=1"
     ],
     "changed": [
-      "开发规范新增第 6 节「文档同步闸门」，列出全部拦截条件与绕过方式",
-      "开发规范第 7 节新增警告：不要在有未提交新文件的工作区跑 git reset --hard",
-      "产品全景维护规则补充「更新对应版本号」与「提交前跑自检」"
+      "接入现有管理员鉴权、现存 kc_business 表和 0001/0002 迁移校验；不自动迁移、不触碰 KC/Xboard 旧库",
+      "商品和业务账号信息采用白名单字段、邮箱脱敏/指纹化；Mock 充值补记追加幂等钱包流水和审计",
+      "产品全景、开发计划与项目状态同步为代码已实现、未部署；记录 Xboard 菜单跳转未接通"
     ],
     "verified": [
-      "正常态 15 项全过退出码 0",
-      "故障注入：人为令全景滞后 + 改章节标题，准确报 2 项 FAIL 退出码 1，验证后文件完整还原",
-      "确认 node 在 Git 自带 sh 中可解析，钩子不会因找不到解释器失效"
+      "node --check 通过；内嵌管理页脚本语法检查通过",
+      "Vitest 2 个测试文件、13 项用例通过",
+      "对现存 kc_business 做只读接口核验：健康、汇总、商品、订单、充值、钱包、流水接口均返回成功；未调用写接口",
+      "Docker 引擎不可访问，因此没有重启服务或部署；业务库没有写入"
     ],
     "risks": [
-      "仅新增校验脚本与钩子，不改动业务代码，无需重建容器",
-      "首次启用钩子后若存在历史遗留文档不一致，提交会被拦下，按提示补全或 --no-verify 临时跳过"
+      "代码未部署；Xboard 菜单仍指向旧插件页，需要运营可访问的 KC 后台 URL 和登录衔接方案",
+      "充值识别与补记目前是本地 Mock 演练，不接链、不收真实 USDT、不修改 KC/Xboard 余额"
     ]
   },
   "next": [
-    "后续每次功能迭代，提交前跑 node tools/check-docs-sync.js；新增功能时在产品全景对应行加 <!-- feat:xxx --> 标记",
-    "真实生产端到端首单验证（先只读验通，再放小额单；生产 key = 真实资金）",
-    "补真实链上钱包地址（BEpusdt 非托管收款，当前硬阻塞）"
+    "确认可供运营浏览器访问的 KC 后台地址与登录方式，把 Xboard 代充运营菜单接到独立业务后台",
+    "在 Docker 引擎可用环境部署并做 Mock 运行验收",
+    "进入 R3：在现有前台框架中增量接入业务商品、模拟下单与状态查询"
   ],
   "immutable_constraints": {
     "zovocard_mock_locked": "ZOVOCARD_MOCK=1 + REQUIRE_ZOVOCARD_MOCK=1 持续开启",
