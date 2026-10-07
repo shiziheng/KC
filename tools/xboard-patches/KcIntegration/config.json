@@ -1,0 +1,43 @@
+{
+    "name": "KC 代充集成",
+    "code": "kc_integration",
+    "version": "1.0.0",
+    "description": "订单履约完成后，自动向 KC 平台申领对应的 ChatGPT 代充卡密，并在订单页展示。",
+    "author": "KC",
+    "type": "feature",
+    "require": {
+        "xboard": ">=1.0.0"
+    },
+    "config": {
+        "enabled": {
+            "type": "boolean",
+            "default": true,
+            "label": "启用发卡",
+            "description": "关闭后订单履约不再申领卡密，仅记录跳过"
+        },
+        "kc_base_url": {
+            "type": "string",
+            "default": "http://host.docker.internal:3100",
+            "label": "KC 服务地址",
+            "description": "KC 平台地址。容器内访问宿主机请使用 host.docker.internal；同网络容器可直接写容器名"
+        },
+        "integration_key": {
+            "type": "string",
+            "default": "",
+            "label": "集成密钥",
+            "description": "KC 后台「对外集成」面板生成的密钥，对应请求头 X-Integration-Key"
+        },
+        "http_timeout": {
+            "type": "number",
+            "default": 3,
+            "label": "HTTP 超时(秒)",
+            "description": "建议不超过 3 秒。订单履约任务有 5 秒硬超时，此处过大会中断履约"
+        },
+        "packages": {
+            "type": "text",
+            "default": "{}",
+            "label": "套餐映射",
+            "description": "Xboard 套餐ID 到 KC 档位名的映射，JSON 格式，例如 {\"1\":\"plus\",\"2\":\"pro_5x\",\"3\":\"pro_20x\"}。可用档位：plus / pro_5x / pro_20x"
+        }
+    }
+}

@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+/**
+ * .githooks/pre-commit —— 提交前强制校验文档与代码同步
+ *
+ * 启用（一次性）：
+ *   git config core.hooksPath .githooks
+ *
+ * 说明：文档滞后是"看不见"的腐化 —— 没有报错、没有异常，
+ * 只有接手的人默默按过期信息干活。因此做成硬拦截而不是写在规范里靠自觉。
+ */
+'use strict';
+
+const { execFileSync } = require('child_process');
+const path = require('path');
+
+const script = path.resolve(__dirname, '..', 'tools', 'check-docs-sync.js');
+
+let output = '';
+let code = 0;
+try {
+  output = execFileSync(process.execPath, [script], { encoding: 'utf8' });
+} catch (e) {
+  output = (e.stdout || '') + (e.stderr || '');
+  code = e.status === undefined ? 1 : e.status;
+}
+
+process.stdout.write(output);
+
+if (code !== 0) {
+  console.error('\n提交被拦截：文档与代码未同步。');
+  console.error('请按 docs/开发规范.md 第 2 节六步流程补全后重新提交。');
+  console.error('补全顺序：产品全景.md（含顶部「对应版本」）→ CHANGELOG.md → README.md / VERSION.json / 00_项目状态.md');
+  console.error('紧急情况可临时跳过：git commit --no-verify（请勿常态化使用）');
+  process.exit(code);
+}

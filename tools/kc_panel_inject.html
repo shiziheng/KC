@@ -1,0 +1,801 @@
+<!-- ===================================================================
+     KC 代充集成 · 全站浮动面板（FEAT-004 · D1 兑卡 + D3 充值）
+     -------------------------------------------------------------------
+     注入位置：custom_html（与 kc_activate_inject.html 拼接后写入）
+     组成：
+       1. 右下角浮动按钮组：「充值」「兑换卡密」（全站常驻）
+       2. 兑卡面板（无需登录）：CDK → ChatGPT Session → 自动开通 → 进度
+       3. 充值面板（需登录）：档位/自由金额 → 支付方式 → 下单支付 → 到账
+       4. 订单页增强：充值订单显示「已充值 $X 到余额」
+     接口：
+       兑卡   POST /kc/redeem/verify | /kc/redeem/start | GET /kc/redeem/status
+       充值   POST /user/kc/topup/prepare | GET /user/kc/topup/info（登录）
+       原生   GET /api/v1/user/order/getPaymentMethod
+              POST /api/v1/user/order/save | /checkout | GET /check（登录）
+     =================================================================== -->
+<script>
+(function () {
+    'use strict';
+
+    if (window.__kcPanelLoaded) { return; }
+    window.__kcPanelLoaded = true;
+
+    // ===== 配置 =====
+    var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
+    var PRESET_AMOUNTS = [7, 14, 42, 70];       // 预设档位（美元）
+    var MIN_USD = 2, MAX_USD = 500;             // 自由输入范围（美元）
+    var POLL_PAY_MS = 3000, POLL_PAY_MAX = 40;   // 支付结果轮询
+    var POLL_TASK_MS = 3000, POLL_TASK_MAX = 200;// 开通进度轮询
+
+    // ===== 通用工具 =====
+    function readToken() {
+        try {
+            var raw = localStorage.getItem(TOKEN_KEY);
+            if (!raw) { return ''; }
+            var obj = JSON.parse(raw);
+            if (obj && obj.value) { return String(obj.value); }
+            return typeof obj === 'string' ? obj : '';
+        } catch (e) { return ''; }
+    }
+
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
+    var IS_DARK = false;
+    function detectDark() {
+        try {
+            var bg = getComputedStyle(document.body).backgroundColor || '';
+            var m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg);
+            if (m) { IS_DARK = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) < 128; }
+        } catch (e) { }
+    }
+
+    function theme() {
+        return IS_DARK
+            ? { bg: '#1c1c1f', border: '#2f2f33', title: '#f2f2f3', text: '#c9c9cc', sub: '#8a8a92',
+                field: '#242428', hover: '#2a2a30', ok: '#18a058', warn: '#f0a020', err: '#d03050', mask: 'rgba(0,0,0,.55)' }
+            : { bg: '#ffffff', border: '#efeff5', title: '#1f1f23', text: '#4a4a52', sub: '#8a8a92',
+                field: '#f7f7fa', hover: '#f0f0f4', ok: '#18a058', warn: '#f0a020', err: '#d03050', mask: 'rgba(0,0,0,.35)' };
+    }
+
+    /**
+     * 统一 API 封装。
+     * 插件接口信封 {status:'success', data} ；原生接口信封 {data} / {message}；
+     * checkout 特例：直接 {type, data}（无信封），用 hasType 识别。
+     */
+    function api(method, url, body, opt) {
+        opt = opt || {};
+        var headers = { 'Accept': 'application/json' };
+        if (body !== undefined && !(body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+        }
+        var token = readToken();
+        if (token) { headers['Authorization'] = 'Bearer ' + token; }
+        if (opt.noAuth) { delete headers['Authorization']; }
+
+        return fetch(url, {
+            method: method,
+            headers: headers,
+            credentials: 'same-origin',
+            body: body === undefined ? undefined : JSON.stringify(body)
+        }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (j) {
+                if (opt.hasType && j && typeof j.type !== 'undefined') {
+                    return { ok: true, type: j.type, data: j.data };
+                }
+                if (r.ok && j && (j.status === 'success' || (typeof j.data !== 'undefined' && !j.message))) {
+                    return { ok: true, data: j.data === undefined ? j : j.data };
+                }
+                return { ok: false, error: (j && j.message) ? String(j.message) : ('请求失败(HTTP ' + r.status + ')') };
+            });
+        }).catch(function (e) {
+            return { ok: false, error: '网络异常，请稍后重试' };
+        });
+    }
+
+    function yuan(fen) { return (fen / 100).toFixed(fen % 100 === 0 ? 0 : 2); }
+
+    // ================================================================
+    // 面板骨架
+    // ================================================================
+    var panelHost = null;
+
+    function ensureHost() {
+        if (panelHost && document.body.contains(panelHost)) { return panelHost; }
+        detectDark();
+        var t = theme();
+        panelHost = document.createElement('div');
+        panelHost.id = 'kc-panel-host';
+        panelHost.style.cssText = 'position:fixed;inset:0;display:none;z-index:99999;';
+        panelHost.innerHTML =
+            '<div id="kc-panel-mask" style="position:absolute;inset:0;background:' + t.mask + ';"></div>' +
+            '<div id="kc-panel-box" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);max-height:86vh;overflow:auto;background:' + t.bg + ';border:1px solid ' + t.border + ';border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.18);font-family:inherit;box-sizing:border-box;">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 0 20px;">' +
+                '<span id="kc-panel-title" style="font-size:16px;font-weight:600;color:' + t.title + ';"></span>' +
+                '<button id="kc-panel-close" type="button" style="border:0;background:transparent;color:' + t.sub + ';font-size:20px;line-height:1;cursor:pointer;padding:4px;">×</button>' +
+              '</div>' +
+              '<div id="kc-panel-body" style="padding:16px 20px 20px 20px;"></div>' +
+            '</div>';
+        document.body.appendChild(panelHost);
+
+        panelHost.querySelector('#kc-panel-mask').addEventListener('click', closePanel);
+        panelHost.querySelector('#kc-panel-close').addEventListener('click', closePanel);
+        return panelHost;
+    }
+
+    function openPanel(title) {
+        ensureHost();
+        panelHost.style.display = 'block';
+        panelHost.querySelector('#kc-panel-title').textContent = title;
+        setBody('');
+    }
+
+    function closePanel() {
+        stopAllPolls();
+        if (panelHost) { panelHost.style.display = 'none'; }
+    }
+
+    function setBody(html) {
+        var b = panelHost.querySelector('#kc-panel-body');
+        b.innerHTML = html;
+        return b;
+    }
+
+    function setTitle(s) {
+        if (panelHost) { panelHost.querySelector('#kc-panel-title').textContent = s; }
+    }
+
+    function showErr(container, msg) {
+        var t = theme();
+        var el = container.querySelector('#kc-panel-err');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'kc-panel-err';
+            el.style.cssText = 'margin-top:10px;font-size:13px;color:' + t.err + ';line-height:1.6;';
+            container.appendChild(el);
+        }
+        el.textContent = msg || '';
+        el.style.display = msg ? 'block' : 'none';
+    }
+
+    // ================================================================
+    // 浮动按钮组
+    // ================================================================
+    function buildFloatButtons() {
+        if (document.getElementById('kc-float-btns')) { return; }
+        var wrap = document.createElement('div');
+        wrap.id = 'kc-float-btns';
+        wrap.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:99998;display:flex;flex-direction:column;gap:10px;';
+        // FEAT-010：代充向导打开时隐藏悬浮按钮组（z-index 99998 会遮挡向导底部操作栏）
+        if (!document.getElementById('kc-float-style')) {
+            var _st = document.createElement('style');
+            _st.id = 'kc-float-style';
+            _st.textContent = 'body.kc-guide-open #kc-float-btns{display:none !important;}' +
+                '@media (max-width: 520px){#kc-float-btns{right:10px;bottom:10px;gap:8px;}' +
+                '#kc-float-btns button{padding:8px 14px;font-size:13px;}}';
+            document.head.appendChild(_st);
+        }
+        var mk = function (id, label, bg) {
+            var b = document.createElement('button');
+            b.id = id;
+            b.type = 'button';
+            b.textContent = label;
+            b.style.cssText = 'padding:10px 18px;border:0;border-radius:22px;background:' + bg + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22);';
+            return b;
+        };
+        wrap.appendChild(mk('kc-float-topup', '充值', '#18a058'));
+        wrap.appendChild(mk('kc-float-redeem', '兑换卡密', '#2080f0'));
+        document.body.appendChild(wrap);
+
+        wrap.querySelector('#kc-float-redeem').addEventListener('click', openRedeem);
+        wrap.querySelector('#kc-float-topup').addEventListener('click', openTopup);
+    }
+
+    // ================================================================
+    // 充值面板（D3）
+    // ================================================================
+    var payPollTimer = null;
+
+    function stopAllPolls() {
+        if (payPollTimer) { clearInterval(payPollTimer); payPollTimer = null; }
+        if (taskPollTimer) { clearInterval(taskPollTimer); taskPollTimer = null; }
+    }
+
+    function openTopup() {
+        openPanel('余额充值');
+        var t = theme();
+        var token = readToken();
+
+        if (!token) {
+            var b = setBody(
+                '<div style="font-size:14px;color:' + t.text + ';line-height:2;">充值需要先登录账号。</div>'
+            );
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = '去登录';
+            btn.style.cssText = 'margin-top:12px;padding:10px 28px;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
+            btn.addEventListener('click', function () {
+                closePanel();
+                try { window.location.hash = '#/login'; } catch (e) { }
+            });
+            b.appendChild(btn);
+            return;
+        }
+
+        // 前置拦截：有有效订阅的用户不能充值余额（防套利规则），
+        // 与其走到「确认支付」才被后端报错，不如开面板第一步就引导去买套餐。
+        api('GET', '/api/v1/user/getSubscribe', undefined).then(function (res) {
+            var d = res && res.ok ? res.data : null;
+            var now = Math.floor(Date.now() / 1000);
+            if (d && d.plan_id && d.expired_at && +d.expired_at > now) {
+                renderTopupBlocked(d);
+            } else {
+                renderAmountStep();
+            }
+        }).catch(function () { renderAmountStep(); });
+    }
+
+    function renderTopupBlocked(sub) {
+        var t = theme();
+        setTitle('余额充值');
+        var planName = (sub && sub.plan && sub.plan.name) ? sub.plan.name : '当前套餐';
+        var expDate = sub && sub.expired_at ? new Date(+sub.expired_at * 1000).toLocaleDateString('zh-CN') : '';
+        var b = setBody(
+            '<div style="text-align:center;padding:6px 0 2px;">' +
+              '<div style="font-size:30px;line-height:1;">✅</div>' +
+              '<div style="margin-top:10px;font-size:14px;font-weight:600;color:' + t.text + ';">您已有有效订阅' +
+                (expDate ? '<span style="font-weight:400;color:' + t.sub + ';">（' + esc(planName) + ' · ' + expDate + ' 到期）</span>' : '') +
+              '</div>' +
+              '<div style="margin-top:12px;font-size:13px;color:' + t.sub + ';line-height:1.8;">无需充值余额——购买其他套餐时可直接下单，' +
+                '支付环节用 USDT 一步完成，余额充值暂不参与。</div>' +
+            '</div>'
+        );
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '去看看其他套餐';
+        btn.style.cssText = 'display:block;width:100%;margin-top:14px;padding:11px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
+        btn.addEventListener('click', function () {
+            closePanel();
+            try { window.location.hash = '#/plan'; } catch (e) { }
+        });
+        b.appendChild(btn);
+    }
+
+    // ================================================================
+    // FEAT-014 · 充值订单台账（前台）
+    // ================================================================
+    var KC_TOPUP_STATUS = {
+        pending: { label: '待支付', color: '#BA7517' },
+        overdue: { label: '已失效', color: '#888780' },
+        done: { label: '已到账', color: '#639922' },
+        failed: { label: '处理失败', color: '#A32D2D' }
+    };
+
+    function kcFmtTime(ts) {
+        if (!ts) { return '—'; }
+        var d = new Date(ts * 1000);
+        var p = function (n) { return n < 10 ? ('0' + n) : String(n); };
+        return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
+    function renderTopupOrders() {
+        var t = theme();
+        setTitle('充值记录');
+        var b = setBody('<div id="kc-tp-orders" style="font-size:13px;color:' + t.sub + ';">加载中…</div>');
+        api('GET', '/user/kc/topup/orders').then(function (res) {
+            var host = b.querySelector('#kc-tp-orders');
+            if (!host) { return; }
+            if (!res || !res.ok) {
+                host.innerHTML = '<div style="color:' + t.err + ';">充值记录加载失败，请稍后重试</div>';
+                return;
+            }
+            var groups = (res.data && res.data.groups) || {};
+            var all = (res.data && res.data.orders) || [];
+            var ttl = (res.data && res.data.ttl) || 1800;
+            if (!all.length) {
+                host.innerHTML = '<div style="text-align:center;padding:26px 0;color:' + t.sub + ';">还没有充值记录</div>';
+                appendBackBtn(b, renderAmountStep, t);
+                return;
+            }
+            // 顺序：待支付 → 已失效 → 已到账 → 处理失败（同状态内按时间倒序，接口已排好）
+            var order = ['pending', 'overdue', 'done', 'failed'];
+            var titles = { pending: '待支付', overdue: '已失效', done: '已到账', failed: '处理失败' };
+            var html = '<div style="font-size:12px;color:' + t.sub + ';margin-bottom:10px;">充值订单有效期 ' + Math.round(ttl / 60) + ' 分钟，超时未付自动失效，不影响重新发起。</div>';
+            order.forEach(function (k) {
+                var list = groups[k] || [];
+                if (!list.length) { return; }
+                var meta = KC_TOPUP_STATUS[k] || { label: k, color: t.sub };
+                html += '<div style="margin:14px 0 6px;font-size:13px;font-weight:600;color:' + t.title + ';">' +
+                    titles[k] + ' <span style="font-weight:400;color:' + t.sub + ';">(' + list.length + ')</span></div>';
+                list.forEach(function (o) {
+                    var left = 0;
+                    if (k === 'pending' && o.expires_at) { left = Math.max(0, o.expires_at - Math.floor(Date.now() / 1000)); }
+                    var leftTxt = k === 'pending'
+                        ? (left > 0 ? ('剩余 ' + Math.floor(left / 60) + ' 分 ' + (left % 60) + ' 秒') : '即将失效')
+                        : '';
+                    html += '<div style="border:1px solid ' + t.border + ';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:' + t.field + ';">' +
+                        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">' +
+                        '<b style="font-size:14px;color:' + t.title + ';">$' + ((o.amount || 0) / 100).toFixed(2) + '</b>' +
+                        '<span style="font-size:12px;font-weight:600;color:' + meta.color + ';">' + meta.label + '</span>' +
+                        '</div>' +
+                        '<div style="font-size:11.5px;color:' + t.sub + ';margin-top:5px;line-height:1.7;">' +
+                        '订单 <span style="font-family:monospace;">' + String(o.trade_no).slice(-12) + '</span><br>' +
+                        '发起 ' + kcFmtTime(o.created_at) +
+                        (o.paid_at ? (' · 到账 ' + kcFmtTime(o.paid_at)) : '') +
+                        (leftTxt ? (' · <span style="color:' + meta.color + ';">' + leftTxt + '</span>') : '') +
+                        (o.error_msg ? ('<br><span style="color:' + t.err + ';">' + o.error_msg + '</span>') : '') +
+                        '</div></div>';
+                });
+            });
+            host.innerHTML = html;
+            appendBackBtn(b, renderAmountStep, t);
+        }).catch(function () {
+            var host = b.querySelector('#kc-tp-orders');
+            if (host) { host.innerHTML = '<div style="color:' + t.err + ';">充值记录加载失败</div>'; }
+            appendBackBtn(b, renderAmountStep, t);
+        });
+    }
+
+    // 台账页底部「返回充值」按钮
+    function appendBackBtn(host, backFn, t) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '继续充值';
+        btn.style.cssText = 'margin-top:14px;width:100%;padding:11px 0;border:1px solid ' + t.border +
+            ';background:transparent;color:' + t.text + ';border-radius:8px;font-size:14px;cursor:pointer;';
+        btn.addEventListener('click', backFn);
+        host.appendChild(btn);
+    }
+
+
+    function renderAmountStep() {
+        var t = theme();
+        setTitle('余额充值 · 选择金额');
+        var b = setBody(
+            '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">' +
+              PRESET_AMOUNTS.map(function (y) {
+                  return '<button type="button" data-y="' + y + '" class="kc-amt-btn" style="flex:1;min-width:80px;padding:12px 0;border:1px solid ' + t.border + ';background:' + t.field + ';color:' + t.title + ';border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">$' + y + '</button>';
+              }).join('') +
+            '</div>' +
+            '<div style="font-size:13px;color:' + t.sub + ';margin-bottom:6px;">或自定义金额（整数美元，' + MIN_USD + '~' + MAX_USD + '）</div>' +
+            '<div style="display:flex;gap:10px;align-items:center;">' +
+              '<span style="color:' + t.title + ';font-weight:600;">$</span>' +
+              '<input id="kc-topup-input" type="number" min="' + MIN_USD + '" max="' + MAX_USD + '" step="1" placeholder="如 20" ' +
+                 'style="flex:1;padding:10px 12px;border:1px solid ' + t.border + ';background:' + t.field + ';color:' + t.title + ';border-radius:8px;font-size:15px;outline:none;box-sizing:border-box;"/>' +
+            '</div>' +
+            '<button id="kc-topup-next" type="button" style="margin-top:16px;width:100%;padding:12px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:15px;font-weight:600;cursor:pointer;">下一步</button>' +
+            '<button id="kc-topup-orders-btn" type="button" style="margin-top:10px;width:100%;padding:10px 0;border:1px solid ' + t.border + ';background:transparent;color:' + t.text + ';border-radius:8px;font-size:13px;cursor:pointer;">查看充值记录</button>' +
+            '<div style="margin-top:12px;font-size:12px;color:' + t.sub + ';line-height:1.7;">充值到账后可用于购买本站商品与订阅。</div>'
+        );
+
+        var selYuan = 0;
+        var input = b.querySelector('#kc-topup-input');
+        Array.prototype.forEach.call(b.querySelectorAll('.kc-amt-btn'), function (btn) {
+            btn.addEventListener('click', function () {
+                selYuan = parseInt(btn.getAttribute('data-y'), 10);
+                input.value = '';
+                Array.prototype.forEach.call(b.querySelectorAll('.kc-amt-btn'), function (x) {
+                    x.style.borderColor = theme().border; x.style.background = theme().field;
+                });
+                btn.style.borderColor = t.ok; btn.style.background = 'rgba(24,160,88,.12)';
+            });
+        });
+        input.addEventListener('input', function () {
+            selYuan = 0;
+            Array.prototype.forEach.call(b.querySelectorAll('.kc-amt-btn'), function (x) {
+                x.style.borderColor = theme().border; x.style.background = theme().field;
+            });
+        });
+
+        b.querySelector('#kc-topup-next').addEventListener('click', function () {
+            var y = selYuan || parseInt(input.value, 10);
+            if (!y || y < MIN_USD || y > MAX_USD) {
+                showErr(b, '请输入 ' + MIN_USD + '~' + MAX_USD + ' 之间的整数金额');
+                return;
+            }
+            showErr(b, '');
+            renderPayStep(y * 100);
+        });
+
+        var ordersBtn = b.querySelector('#kc-topup-orders-btn');
+        if (ordersBtn) { ordersBtn.addEventListener('click', function () { renderTopupOrders(); }); }
+    }
+
+    function renderPayStep(amountFen) {
+        var t = theme();
+        setTitle('余额充值 · 支付方式');
+        var b = setBody('<div style="font-size:14px;color:' + t.sub + ';">正在加载支付方式…</div>');
+
+        api('GET', '/api/v1/user/order/getPaymentMethod', undefined).then(function (res) {
+            if (!res.ok) { b.innerHTML = ''; showErr(b, res.error); return; }
+            var methods = (res.data && res.data.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+            // 兼容两种信封：{data:[...]} 与直接 [...]
+            if (res.data && Array.isArray(res.data)) { methods = res.data; }
+            if (!methods.length) {
+                b.innerHTML = '<div style="font-size:14px;color:' + t.text + ';line-height:2;">本站暂未配置在线支付渠道，请联系管理员。</div>';
+                return;
+            }
+            var listHtml = methods.map(function (m, i) {
+                var fee = '';
+                if ((m.handling_fee_fixed && +m.handling_fee_fixed > 0) || (m.handling_fee_percent && +m.handling_fee_percent > 0)) {
+                    fee = '<span style="font-size:12px;color:' + t.warn + ';">（含手续费）</span>';
+                }
+                return '<label class="kc-pay-item" data-i="' + i + '" style="display:flex;align-items:center;gap:10px;padding:12px;border:1px solid ' + t.border + ';background:' + t.field + ';border-radius:8px;cursor:pointer;margin-bottom:8px;">' +
+                    '<input type="radio" name="kc-pay" data-id="' + m.id + '" ' + (i === 0 ? 'checked' : '') + ' style="accent-color:' + t.ok + ';"/>' +
+                    '<span style="flex:1;font-size:14px;color:' + t.title + ';">' + esc(m.name || ('渠道 #' + m.id)) + '</span>' + fee +
+                  '</label>';
+            }).join('');
+
+            b.innerHTML =
+                '<div style="font-size:14px;color:' + t.text + ';margin-bottom:12px;">充值金额：<b style="color:' + t.title + ';font-size:16px;">$' + yuan(amountFen) + '</b></div>' +
+                listHtml +
+                '<button id="kc-topup-pay" type="button" style="margin-top:8px;width:100%;padding:12px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:15px;font-weight:600;cursor:pointer;">确认支付 $' + yuan(amountFen) + '</button>';
+
+            var chosen = methods[0] ? methods[0].id : null;
+            Array.prototype.forEach.call(b.querySelectorAll('input[name="kc-pay"]'), function (r) {
+                r.addEventListener('change', function () { chosen = parseInt(r.getAttribute('data-id'), 10); });
+            });
+
+            b.querySelector('#kc-topup-pay').addEventListener('click', function () {
+                var btn = this;
+                if (!chosen) { showErr(b, '请选择支付方式'); return; }
+                btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = '创建订单中…';
+                showErr(b, '');
+                createAndPay(amountFen, chosen, b, btn);
+            });
+        });
+    }
+
+    function createAndPay(amountFen, methodId, container, payBtn) {
+        // ① prepare：金额 → 一次性充值套餐
+        api('POST', '/user/kc/topup/prepare', { amount: amountFen }).then(function (r1) {
+            if (!r1.ok) { resetPayBtn(payBtn); showErr(container, r1.error); return; }
+            var planId = r1.data && r1.data.plan_id;
+            if (!planId) { resetPayBtn(payBtn); showErr(container, '套餐准备失败'); return; }
+
+            // ② save：原生下单（⚠️ FormRequest 白名单是旧版键 onetime_price，
+            //    传 'onetime' 会被「套餐周期参数有误」拒绝）
+            api('POST', '/api/v1/user/order/save', { plan_id: planId, period: 'onetime_price' }).then(function (r2) {
+                if (!r2.ok) { resetPayBtn(payBtn); showErr(container, r2.error); return; }
+                var tradeNo = (r2.data && r2.data.data) ? r2.data.data : r2.data;
+                if (!tradeNo || typeof tradeNo !== 'string') { resetPayBtn(payBtn); showErr(container, '订单创建失败'); return; }
+
+                // ③ checkout：拉起支付
+                api('POST', '/api/v1/user/order/checkout', { trade_no: tradeNo, method: methodId }, { hasType: true }).then(function (r3) {
+                    if (!r3.ok) { resetPayBtn(payBtn); showErr(container, r3.error); return; }
+                    if (r3.type === -1) { pollPayResult(tradeNo, container, 0); return; }   // 0 元单直接进轮询
+                    var payData = r3.data;
+                    // type=0：URL 跳转；type=1：二维码/内容展示 —— 但 data 为 http(s) 链接时
+                    // （如 BEpusdt 收银台 URL）同样自动新窗打开，用户才能看到支付页
+                    if (typeof payData === 'string' && (r3.type === 0 || /^https?:\/\//i.test(payData))) {
+                        try { window.open(payData, '_blank', 'noopener'); } catch (e) { window.location.href = payData; }
+                    }
+                    renderWaitingStep(tradeNo, amountFen, container, payData);
+                });
+            });
+        });
+    }
+
+    function resetPayBtn(btn) {
+        btn.disabled = false; btn.style.opacity = '1'; btn.textContent = btn.textContent.replace('创建订单中…', '确认支付');
+    }
+
+    function renderWaitingStep(tradeNo, amountFen, container, payData) {
+        var t = theme();
+        setTitle('余额充值 · 等待支付');
+        var qrHtml = '';
+        if (payData && typeof payData === 'string' && payData.length < 300) {
+            qrHtml = '<div style="margin-top:10px;font-size:12px;color:' + t.sub + ';word-break:break-all;">支付内容：' + esc(payData) + '</div>';
+        }
+        container.innerHTML =
+            '<div style="font-size:14px;color:' + t.text + ';line-height:2;">' +
+              '订单号：<code style="font-size:12px;color:' + t.title + ';">' + esc(tradeNo) + '</code><br/>' +
+              '应付：<b style="color:' + t.title + ';font-size:16px;">$' + yuan(amountFen) + '</b><br/>' +
+              '<span id="kc-pay-wait">等待支付结果，完成后本页自动更新…</span>' +
+            '</div>' + qrHtml +
+            '<button id="kc-pay-done-manual" type="button" style="margin-top:14px;width:100%;padding:10px 0;border:1px solid ' + t.border + ';background:transparent;color:' + t.text + ';border-radius:8px;font-size:13px;cursor:pointer;">我已完成支付，手动刷新</button>';
+
+        container.querySelector('#kc-pay-done-manual').addEventListener('click', function () {
+            pollOncePay(tradeNo, container);
+        });
+        startPayPoll(tradeNo, container);
+    }
+
+    function startPayPoll(tradeNo, container) {
+        stopPayPoll();
+        var n = 0;
+        payPollTimer = setInterval(function () {
+            if (++n > POLL_PAY_MAX) { stopPayPoll(); return; }
+            pollOncePay(tradeNo, container);
+        }, POLL_PAY_MS);
+    }
+
+    function stopPayPoll() {
+        if (payPollTimer) { clearInterval(payPollTimer); payPollTimer = null; }
+    }
+
+    function pollOncePay(tradeNo, container) {
+        api('GET', '/api/v1/user/order/check?trade_no=' + encodeURIComponent(tradeNo), undefined).then(function (res) {
+            if (!res.ok) { return; }
+            var st = (res.data && typeof res.data.data !== 'undefined') ? res.data.data : res.data;
+            if (+st === 3) {
+                stopPayPoll();
+                // 到账确认：查充值记录（加钱由支付回调钩子完成，可能有 1~2 秒延迟）
+                api('GET', '/user/kc/topup/info?trade_no=' + encodeURIComponent(tradeNo), undefined).then(function (r2) {
+                    var amount = (r2.ok && r2.data && r2.data.amount) ? r2.data.amount : 0;
+                    var after = (r2.ok && r2.data && r2.data.balance_after) ? r2.data.balance_after : 0;
+                    renderTopupDone(container, amount, after);
+                });
+            } else if (+st === 2) {
+                stopPayPoll();
+                var t = theme();
+                container.innerHTML = '<div style="font-size:14px;color:' + t.err + ';line-height:2;">订单已取消。如已付款请联系客服处理。</div>';
+            }
+        });
+    }
+
+    function renderTopupDone(container, amountFen, balanceAfter) {
+        var t = theme();
+        setTitle('余额充值 · 完成');
+        var extra = balanceAfter ? ('，当前余额 $' + yuan(balanceAfter)) : '';
+        container.innerHTML =
+            '<div style="text-align:center;padding:12px 0;">' +
+              '<div style="font-size:40px;line-height:1;">✅</div>' +
+              '<div style="margin-top:12px;font-size:16px;font-weight:600;color:' + t.title + ';">充值成功</div>' +
+              '<div style="margin-top:8px;font-size:14px;color:' + t.text + ';">' +
+                (amountFen ? ('$' + yuan(amountFen) + ' 已到账余额' + extra + '。') : '余额已到账。') +
+              '</div>' +
+              '<button id="kc-topup-close2" type="button" style="margin-top:16px;padding:10px 32px;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;">好的</button>' +
+            '</div>';
+        container.querySelector('#kc-topup-close2').addEventListener('click', closePanel);
+    }
+
+    // ================================================================
+    // 兑卡面板（D1）
+    // ================================================================
+    var taskPollTimer = null;
+    var taskState = { cdk: '', label: '' };
+
+    function openRedeem() {
+        openPanel('兑换卡密');
+        var t = theme();
+        setTitle('兑换卡密 · 输入卡密');
+        var b = setBody(
+            '<div style="font-size:13px;color:' + t.sub + ';margin-bottom:10px;">输入购买获得的卡密，开通会打在你自己提供的 ChatGPT 账号上。</div>' +
+            '<input id="kc-cdk-input" type="text" maxlength="64" placeholder="如 KC-XXXXXX" autocomplete="off" spellcheck="false" ' +
+              'style="width:100%;padding:11px 12px;border:1px solid ' + t.border + ';background:' + t.field + ';color:' + t.title + ';border-radius:8px;font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5px;outline:none;box-sizing:border-box;"/>' +
+            '<button id="kc-cdk-verify" type="button" style="margin-top:14px;width:100%;padding:12px 0;border:0;border-radius:8px;background:#2080f0;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">验 证</button>'
+        );
+
+        // URL 预填（KC 跳转链接 ?cdk= 兼容）
+        try {
+            var m = /[?&]cdk=([^&]+)/.exec(window.location.search || '');
+            if (m) { b.querySelector('#kc-cdk-input').value = decodeURIComponent(m[1]); }
+        } catch (e) { }
+
+        b.querySelector('#kc-cdk-verify').addEventListener('click', function () {
+            var cdk = (b.querySelector('#kc-cdk-input').value || '').trim();
+            if (!cdk) { showErr(b, '请输入卡密'); return; }
+            showErr(b, '');
+            var btn = this;
+            btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = '验证中…';
+            api('POST', '/kc/redeem/verify', { cdk: cdk }, { noAuth: true }).then(function (res) {
+                btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '验 证';
+                if (!res.ok) { showErr(b, res.error); return; }
+                var d = res.data || {};
+                taskState.cdk = cdk;
+                taskState.label = d.plan_label || d.plan_type || '';
+                if ((d.status === 'processing' || d.job_key) && d.status !== 'pending') {
+                    renderTaskPoll(); // 该卡密已在开通中，直接进进度
+                    return;
+                }
+                renderSessionStep();
+            });
+        });
+    }
+
+    function renderSessionStep() {
+        var t = theme();
+        setTitle('兑换卡密 · 提供 ChatGPT 凭据');
+        var b = setBody(
+            '<div style="font-size:13px;color:' + t.text + ';line-height:1.9;margin-bottom:12px;">' +
+              '卡密验证通过' + (taskState.label ? ('：<b style="color:' + t.title + ';">' + esc(taskState.label) + '</b>') : '') + '。<br/>' +
+              '请粘贴你 ChatGPT 账号的 <b style="color:' + t.title + ';">Session Token</b>，系统将自动为你开通。' +
+            '</div>' +
+            '<div style="font-size:12px;color:' + t.sub + ';line-height:1.8;background:' + t.field + ';border-radius:8px;padding:10px 12px;margin-bottom:12px;">' +
+              '获取方式：浏览器登录 <b>chatgpt.com</b> → 新标签打开 <b>chatgpt.com/api/auth/session</b> → ' +
+              '页面显示的 JSON 全选复制，粘贴到下方。' +
+            '</div>' +
+            '<textarea id="kc-session-input" rows="4" maxlength="20000" placeholder="粘贴 Session Token（仅用于本次开通，不落库、不记录）" ' +
+              'style="width:100%;padding:10px 12px;border:1px solid ' + t.border + ';background:' + t.field + ';color:' + t.title + ';border-radius:8px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace;outline:none;box-sizing:border-box;resize:vertical;"></textarea>' +
+            '<button id="kc-session-start" type="button" style="margin-top:12px;width:100%;padding:12px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:15px;font-weight:600;cursor:pointer;">开始开通</button>'
+        );
+
+        b.querySelector('#kc-session-start').addEventListener('click', function () {
+            var session = (b.querySelector('#kc-session-input').value || '').trim();
+            if (session.length < 20) { showErr(b, 'Session Token 看起来不完整，请重新复制粘贴'); return; }
+            showErr(b, '');
+            var btn = this;
+            btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = '提交中…';
+            api('POST', '/kc/redeem/start', { cdk: taskState.cdk, session: session }, { noAuth: true }).then(function (res) {
+                if (!res.ok) {
+                    btn.disabled = false; btn.style.opacity = '1'; btn.textContent = '开始开通';
+                    showErr(b, res.error);
+                    return;
+                }
+                renderTaskPoll();
+            });
+        });
+    }
+
+    function renderTaskPoll() {
+        var t = theme();
+        setTitle('兑换卡密 · 开通进度');
+        var b = setBody(
+            '<div style="height:6px;background:' + t.field + ';border-radius:3px;overflow:hidden;margin-bottom:14px;">' +
+              '<div id="kc-task-bar" style="height:100%;width:5%;background:#2080f0;transition:width .5s ease;"></div>' +
+            '</div>' +
+            '<div id="kc-task-msg" style="font-size:14px;color:' + t.text + ';line-height:1.9;">正在连接开通服务…</div>' +
+            '<div style="margin-top:14px;font-size:12px;color:' + t.sub + ';line-height:1.8;">开通期间请勿关闭本页面。预计 3~10 分钟完成，完成后此页面自动更新。</div>'
+        );
+
+        var n = 0;
+        var poll = function () {
+            api('GET', '/kc/redeem/status?cdk=' + encodeURIComponent(taskState.cdk), undefined, { noAuth: true }).then(function (res) {
+                if (!res.ok) { return; }
+                var d = res.data || {};
+                var msgEl = b.querySelector('#kc-task-msg');
+                var bar = b.querySelector('#kc-task-bar');
+                if (!msgEl) { return; }
+
+                var prog = (typeof d.progress === 'number') ? d.progress : null;
+                var status = String(d.task_status || '').toLowerCase();
+                var text = String(d.message || d.status_cn || '');
+
+                if (status === 'completed' || prog === 100) {
+                    stopAllPolls();
+                    bar.style.width = '100%'; bar.style.background = t.ok;
+                    msgEl.innerHTML = '<b style="color:' + t.ok + ';font-size:15px;">🎉 开通完成！</b><br/>' +
+                        '订阅已打在你提供的 ChatGPT 账号上，重新登录 ChatGPT 即可看到新订阅。';
+                    return;
+                }
+                if (status === 'failed') {
+                    stopAllPolls();
+                    bar.style.width = '100%'; bar.style.background = t.err;
+                    msgEl.innerHTML = '<b style="color:' + t.err + ';font-size:15px;">开通失败</b><br/>' +
+                        esc(text || '详情请联系客服。') +
+                        ' <a href="javascript:void(0)" id="kc-task-retry" style="color:#2080f0;text-decoration:none;">重新提交</a>';
+                    var retry = b.querySelector('#kc-task-retry');
+                    if (retry) { retry.addEventListener('click', function () { openRedeem(); }); }
+                    return;
+                }
+                // 进行中
+                var width = (prog && prog > 0) ? Math.max(5, Math.min(99, prog)) : Math.min(95, 5 + n * 2);
+                bar.style.width = width + '%';
+                msgEl.textContent = text || ('开通中…（' + width + '%）');
+                if (++n > POLL_TASK_MAX) { stopAllPolls(); }
+            });
+        };
+
+        poll();
+        stopAllPolls();
+        taskPollTimer = setInterval(poll, POLL_TASK_MS);
+    }
+
+    // ================================================================
+    // 订单页增强（D3）：充值订单显示「已充值 $X 到余额」
+    // ================================================================
+    var ORDER_RE = /^#\/order\/([A-Za-z0-9_-]+)$/;
+    var TOPUP_CARD_ID = 'kc-topup-result-card';
+    var topupInflight = false;
+
+    function orderTradeNo() {
+        var m = ORDER_RE.exec(window.location.hash || '');
+        return m ? m[1] : '';
+    }
+
+    function injectTopupCard() {
+        try {
+            var tn = orderTradeNo();
+            if (!tn) {
+                var old = document.getElementById(TOPUP_CARD_ID);
+                if (old && old.parentNode) { old.parentNode.removeChild(old); }
+                return;
+            }
+            if (topupInflight) { return; }
+            var exist = document.getElementById(TOPUP_CARD_ID);
+            if (exist && exist.getAttribute('data-trade-no') === tn) { return; }
+            if (exist && exist.parentNode) { exist.parentNode.removeChild(exist); }
+
+            var token = readToken();
+            if (!token) { return; }
+            var host = document.querySelector('section.flex-1 > section > div.flex.flex-wrap');
+            if (!host) { return; }
+
+            topupInflight = true;
+            api('GET', '/user/kc/topup/info?trade_no=' + encodeURIComponent(tn), undefined).then(function (res) {
+                topupInflight = false;
+                if (!res.ok || !res.data || !res.data.is_topup) { return; }
+                var d = res.data;
+                if (getTradeNoSafe() !== tn) { return; }
+                var h = document.querySelector('section.flex-1 > section > div.flex.flex-wrap');
+                if (!h || document.getElementById(TOPUP_CARD_ID)) { return; }
+
+                detectDark();
+                var t = theme();
+                var done = (+d.order_status === 3) && (d.status === 'done');
+                var card = document.createElement('div');
+                card.id = TOPUP_CARD_ID;
+                card.setAttribute('data-trade-no', tn);
+                card.style.cssText = 'width:100%;margin-top:20px;box-sizing:border-box;';
+                card.innerHTML =
+                    '<div style="background:' + t.bg + ';border:1px solid ' + (done ? 'rgba(24,160,88,.4)' : t.border) + ';border-radius:8px;padding:20px;box-sizing:border-box;font-family:inherit;">' +
+                      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+                        '<span style="display:inline-block;width:4px;height:16px;background:' + t.ok + ';border-radius:2px;"></span>' +
+                        '<span style="font-size:16px;font-weight:600;color:' + t.title + ';">余额充值</span>' +
+                        '<span style="font-size:12px;padding:2px 8px;border-radius:4px;background:rgba(24,160,88,.12);color:' + (done ? t.ok : t.warn) + ';">' + (done ? '已到账' : '等待支付') + '</span>' +
+                      '</div>' +
+                      '<div style="font-size:14px;color:' + t.text + ';line-height:2;">' +
+                        (done
+                          ? ('本次充值 <b style="color:' + t.title + ';font-size:16px;">$' + yuan(d.amount) + '</b> 已到账账户余额' + (d.balance_after ? ('，当前余额 <b style="color:' + t.ok + ';">$' + yuan(d.balance_after) + '</b>') : '') + '。')
+                          : '订单待支付，支付完成后余额将自动到账（本页会自动刷新状态）。') +
+                      '</div>' +
+                    '</div>';
+                h.appendChild(card);
+
+                // 待支付时轮询订单状态，完成后刷新卡片
+                if (!done) {
+                    var waitN = 0;
+                    var waitTimer = setInterval(function () {
+                        if (orderTradeNo() !== tn) { clearInterval(waitTimer); return; }
+                        if (++waitN > 40) { clearInterval(waitTimer); return; }
+                        api('GET', '/api/v1/user/order/check?trade_no=' + encodeURIComponent(tn), undefined).then(function (r) {
+                            if (r.ok) {
+                                var st = (r.data && typeof r.data.data !== 'undefined') ? r.data.data : r.data;
+                                if (+st !== 0) { clearInterval(waitTimer); setTimeout(injectTopupCard, 1200); }
+                            }
+                        });
+                    }, 4000);
+                }
+            }).catch(function () { topupInflight = false; });
+        } catch (e) { topupInflight = false; }
+    }
+
+    function getTradeNoSafe() {
+        var m = ORDER_RE.exec(window.location.hash || '');
+        return m ? m[1] : '';
+    }
+
+    // ================================================================
+    // 启动
+    // ================================================================
+    function boot() {
+        buildFloatButtons();
+    }
+
+    window.addEventListener('hashchange', function () {
+        setTimeout(injectTopupCard, 300);
+    });
+    try {
+        var mo = new MutationObserver(function () {
+            injectTopupCard();
+        });
+        mo.observe(document.body, { childList: true, subtree: true });
+    } catch (e) { }
+
+    setTimeout(boot, 400);
+    setTimeout(boot, 1500);
+    setTimeout(injectTopupCard, 1000);
+
+    // URL 参数直开面板（客服引导用）：?kc_panel=topup | redeem
+    try {
+        var pm = /[?&]kc_panel=(topup|redeem)/.exec(window.location.search || '');
+        if (pm) {
+            setTimeout(function () { (pm[1] === 'topup' ? openTopup : openRedeem)(); }, 1200);
+        }
+    } catch (e) { }
+})();
+</script>

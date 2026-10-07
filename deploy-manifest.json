@@ -1,0 +1,49 @@
+{
+  "manifest_version": "2026-10-07",
+  "project": "KC-PAY-GPT",
+  "description": "Single source of truth for the one-click deploy scripts (kc-deploy_20261007.ps1 / kc-deploy_20261007.sh). To add, remove, or rename a service, edit ONLY this file; both Windows and Linux engines pick up the change automatically. Run `verify` to compare the expected containers against what is actually running.",
+  "services": [
+    {
+      "id": "kc",
+      "name": "KC topup engine (app + mysql)",
+      "type": "compose",
+      "compose_path": "docker-compose.yml",
+      "project": "kc-gpt-pay2",
+      "containers": ["kc-gpt-pay2-app", "kc-gpt-pay2-mysql"],
+      "ports": ["3100:3000", "3310:3306"],
+      "health_url": "http://localhost:3100/api/public/runtime",
+      "access_urls": ["http://localhost:3100/admin-login"],
+      "requires_env": [".env"],
+      "build": true,
+      "inject": false
+    },
+    {
+      "id": "xboard",
+      "name": "Xboard storefront",
+      "type": "compose",
+      "compose_path": "../Xboard/docker-compose.yml",
+      "project": "xboard",
+      "containers": ["xboard"],
+      "ports": ["7001:80"],
+      "health_url": "http://localhost:7001/",
+      "access_urls": ["http://localhost:7001/5fea4ca1"],
+      "requires_env": [],
+      "build": false,
+      "inject": true
+    },
+    {
+      "id": "bepusdt",
+      "name": "BEpusdt USDT gateway",
+      "type": "standalone",
+      "image": "v03413/bepusdt:latest",
+      "volume": "../bepusdt:/var/lib/bepusdt",
+      "containers": ["bepusdt"],
+      "ports": ["8080:8080"],
+      "health_url": "http://localhost:8080/",
+      "access_urls": ["http://localhost:8080/0c09205c71"],
+      "requires_env": [],
+      "build": false,
+      "inject": false
+    }
+  ]
+}

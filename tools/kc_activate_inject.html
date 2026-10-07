@@ -1,0 +1,455 @@
+<!-- ===================================================================
+     KC 代充集成 · 订单页「去开通」卡片（段C3）
+     -------------------------------------------------------------------
+     注入位置：Xboard 主题配置 custom_html（theme/Xboard/dashboard.blade.php
+               的 {!! $theme_config['custom_html'] !!}，位于 #app 之外）
+     触发路由：#/order/{trade_no}（前台为 hash 模式）
+     数据来源：段C2 插件接口 GET /user/kc/card?trade_no=
+     跳转目标：{KC_BASE}/?cdk={cdk}（KC 自助兑卡页，卡密自动预填）
+     -------------------------------------------------------------------
+     ⚠️ 上线前必须把下方 KC_BASE 改成 KC 的真实对外域名
+     =================================================================== -->
+<script>
+(function () {
+    'use strict';
+
+    // ===== 配置 =====
+    var KC_BASE = 'http://localhost:3100';   // ⚠️ 上线前改为 KC 真实域名
+    var CARD_ID = 'kc-activate-card';
+    var ROUTE_RE = /^#\/order\/([A-Za-z0-9_-]+)$/;
+    var MOUNT_SEL = 'section.flex-1 > section > div.flex.flex-wrap';
+    var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
+    var POLL_INTERVAL_MS = 5000;             // 仅「开通中」时轮询，5 秒一次
+
+    if (window.__kcActivateLoaded) { return; }
+    window.__kcActivateLoaded = true;
+
+    // 状态点脉冲动画（开通中时用）—— 一次性注入，避免重复
+    (function ensurePulseStyle() {
+        try {
+            if (document.getElementById('kc-pulse-style')) { return; }
+            var s = document.createElement('style');
+            s.id = 'kc-pulse-style';
+            s.textContent = '@keyframes kcPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}';
+            (document.head || document.documentElement).appendChild(s);
+        } catch (e) { }
+    })();
+
+    // ===== 工具 =====
+    function readToken() {
+        try {
+            var raw = localStorage.getItem(TOKEN_KEY);
+            if (!raw) { return ''; }
+            var obj = JSON.parse(raw);
+            if (obj && obj.value) { return String(obj.value); }
+            // 兼容个别版本直接存字符串
+            return typeof obj === 'string' ? obj : '';
+        } catch (e) { return ''; }
+    }
+
+    function getTradeNo() {
+        var m = ROUTE_RE.exec(window.location.hash || '');
+        return m ? m[1] : '';
+    }
+
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
+    var IS_DARK = false;
+    function detectDark() {
+        try {
+            var bg = getComputedStyle(document.body).backgroundColor || '';
+            var m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg);
+            if (m) {
+                var lum = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]);
+                IS_DARK = lum < 128;
+            }
+        } catch (e) { }
+    }
+
+    function theme() {
+        return IS_DARK
+            ? { bg: '#1c1c1f', border: '#2f2f33', title: '#f2f2f3', text: '#c9c9cc', code: '#1a2c22', codeTx: '#7fd8a4', track: '#2f2f33' }
+            : { bg: '#ffffff', border: '#efeff5', title: '#1f1f23', text: '#6b6b76', code: '#f3fbf6', codeTx: '#18a058', track: '#eef0f4' };
+    }
+
+    // ===== 开通状态：展示映射（段C4）=====
+    // 与后端 KcCard::$kcStatusMap 对齐：pending / running / completed / failed
+    // bar 为「拿不到真实 progress 时的兜底值」（段C5：有真进度就用真的）
+    var KC_STATUS_STYLE = {
+        pending:   { dot: '#9aa0a6', text: '待开通',   spin: false, bar: 0   },
+        running:   { dot: '#f0a020', text: '开通中',   spin: true,  bar: 45  },
+        completed: { dot: '#18a058', text: '已完成',   spin: false, bar: 100 },
+        failed:    { dot: '#d03050', text: '开通失败', spin: false, bar: 100 }
+    };
+
+    // 轮询句柄（模块级，供离开页面 / 终态时清理）
+    var pollTimer = null;
+    var pollTradeNo = '';
+
+    function stopPoll() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        pollTradeNo = '';
+    }
+
+    // ===== 卡片构建 =====
+    function buildCard(data, tradeNo) {
+        var t = theme();
+        var cdk = String(data.cdk || '');
+        var planCn = ({ plus: 'ChatGPT Plus', pro_5x: 'ChatGPT Pro 5x', pro_20x: 'ChatGPT Pro 20x' })[data.plan_type] || 'ChatGPT Plus';
+        var jumpUrl = KC_BASE + '/?cdk=' + encodeURIComponent(cdk);
+        // FEAT-010：已开通的订单不再展示卡密与兑卡入口（CDK 兑换彻底独立）；
+        // 未开通（pending / running / failed）仍保留卡密作为兜底（向导中断、人工发货等场景）
+        var kcStatus = String(data.kc_status || '').toLowerCase();
+        var activated = (kcStatus === 'completed' || kcStatus === 'done' || kcStatus === 'success');
+
+
+        var wrap = document.createElement('div');
+        wrap.id = CARD_ID;
+        wrap.setAttribute('data-trade-no', tradeNo);
+        wrap.style.cssText = 'width:100%;margin-top:20px;box-sizing:border-box;';
+
+        wrap.innerHTML =
+            '<div style="background:' + t.bg + ';border:1px solid ' + t.border + ';border-radius:8px;padding:20px;box-sizing:border-box;font-family:inherit;">' +
+              '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">' +
+                '<span style="display:inline-block;width:4px;height:16px;background:#18a058;border-radius:2px;"></span>' +
+                '<span style="font-size:16px;font-weight:600;color:' + t.title + ';">代充开通</span>' +
+                // 状态徽章（由 refreshStatus 更新）
+                '<span id="kc-status-badge" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#9aa0a6;background:rgba(154,160,166,.12);padding:2px 8px;border-radius:4px;">' +
+                  '<span id="kc-status-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#9aa0a6;"></span>' +
+                  '<span id="kc-status-text">待开通</span>' +
+                '</span>' +
+              '</div>' +
+              // 进度条（仅开通中时显示）
+              '<div id="kc-status-track" style="display:none;height:4px;background:' + t.track + ';border-radius:2px;overflow:hidden;margin-bottom:14px;">' +
+                '<div id="kc-status-bar" style="height:100%;width:0%;background:#f0a020;transition:width .4s ease;"></div>' +
+              '</div>' +
+              '<div id="kc-status-hint" style="font-size:13px;color:' + t.text + ';line-height:1.9;margin-bottom:14px;">' +
+                '本订单已自动发放代充卡密，点击下方按钮前往兑卡页完成开通。' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">' +
+                '<span style="font-size:13px;color:' + t.text + ';min-width:42px;">卡密</span>' +
+                '<code id="kc-cdk-text" style="flex:1;min-width:220px;background:' + t.code + ';color:' + t.codeTx + ';padding:9px 12px;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;letter-spacing:.5px;user-select:all;">' + esc(cdk) + '</code>' +
+                '<button id="kc-copy-btn" type="button" style="padding:9px 16px;border:1px solid ' + t.border + ';background:transparent;color:' + t.text + ';border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;">复制</button>' +
+              '</div>' +
+              '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
+                '<button id="kc-goto-btn" type="button" style="padding:10px 24px;border:0;background:#18a058;color:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;">去开通 →</button>' +
+                '<span id="kc-goto-hint" style="font-size:12px;color:' + t.text + ';">在新页面点「兑换卡密」，粘贴 Session 即可自动开通</span>' +
+              '</div>' +
+              '<div style="font-size:12px;color:' + t.text + ';margin-top:12px;padding-top:12px;border-top:1px solid ' + t.border + ';">套餐：' + esc(planCn) + '</div>' +
+            '</div>';
+
+        // 绑定（用 addEventListener 而非内联 onclick，避免 CSP 与转义问题）
+        var copyBtn = wrap.querySelector('#kc-copy-btn');
+        var goBtn = wrap.querySelector('#kc-goto-btn');
+
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function () {
+                var done = function () {
+                    copyBtn.textContent = '已复制';
+                    setTimeout(function () { copyBtn.textContent = '复制'; }, 1800);
+                };
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(cdk).then(done, function () { fallbackCopy(cdk, done); });
+                    } else { fallbackCopy(cdk, done); }
+                } catch (e) { fallbackCopy(cdk, done); }
+            });
+        }
+
+        if (goBtn) {
+            goBtn.addEventListener('click', function () {
+                window.open(jumpUrl, '_blank', 'noopener');
+            });
+        }
+
+        // FEAT-010（DOM 后处理）：已开通的订单移除卡密区与兑卡入口，改为「已开通」提示；
+        // 未开通（pending/running/failed）保留卡密作为兜底（向导中断、人工发货等场景）
+        if (activated) {
+            var hintEl = wrap.querySelector('#kc-status-hint');
+            if (hintEl) { hintEl.textContent = '已为你完成开通，重新登录 ChatGPT 账号即可看到新订阅，本单已完成。'; }
+            var cdkEl = wrap.querySelector('#kc-cdk-text');
+            if (cdkEl && cdkEl.parentElement) { cdkEl.parentElement.remove(); }
+            var goEl = wrap.querySelector('#kc-goto-btn');
+            if (goEl && goEl.parentElement) { goEl.parentElement.remove(); }
+            var badgeEl = wrap.querySelector('#kc-status-text');
+            if (badgeEl) { badgeEl.textContent = '已开通'; }
+            var dotEl = wrap.querySelector('#kc-status-dot');
+            var badgeBox = wrap.querySelector('#kc-status-badge');
+            if (dotEl) { dotEl.style.background = '#18a058'; }
+            if (badgeBox) { badgeBox.style.color = '#18a058'; badgeBox.style.background = 'rgba(24,160,88,.12)'; }
+        }
+
+        return wrap;
+    }
+
+    function fallbackCopy(text, done) {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done && done();
+        } catch (e) { }
+    }
+
+    // ===== 开通状态刷新（段C4）=====
+
+    /**
+     * 更新卡片上的状态 UI。
+     * 幂等：只改 textContent / style，不重建卡片。
+     *
+     * 段C5 增强：
+     *   opt.progress —— 真实进度百分比（0~100）。拿不到时退回 KC_STATUS_STYLE.bar
+     *   opt.message  —— KC 侧实时提示/失败原因。拿不到时退回通用文案
+     */
+    function paintStatus(kcStatus, opt) {
+        opt = opt || {};
+        var card = document.getElementById(CARD_ID);
+        if (!card) { return; }
+
+        var st = KC_STATUS_STYLE[kcStatus] || KC_STATUS_STYLE.pending;
+        var t = theme();
+
+        var badge = card.querySelector('#kc-status-badge');
+        var dot   = card.querySelector('#kc-status-dot');
+        var text  = card.querySelector('#kc-status-text');
+        var track = card.querySelector('#kc-status-track');
+        var bar   = card.querySelector('#kc-status-bar');
+        var hint  = card.querySelector('#kc-status-hint');
+
+        // 徽章：底色按状态色淡染
+        if (badge && dot && text) {
+            badge.style.color = st.dot;
+            badge.style.background = 'rgba(' + hexToRgb(st.dot) + ',.12)';
+            dot.style.background = st.dot;
+            // 开通中给个脉冲，视觉上"活的"
+            dot.style.animation = st.spin ? 'kcPulse 1.2s ease-in-out infinite' : 'none';
+            text.textContent = st.text;
+        }
+
+        // 段C5：进度宽度优先级 = 真实 progress > 状态默认值
+        var width = null;
+        var realProgress = (typeof opt.progress === 'number' && isFinite(opt.progress))
+            ? Math.max(0, Math.min(100, Math.round(opt.progress)))
+            : null;
+
+        if (kcStatus === 'running') {
+            width = (realProgress === null || realProgress <= 0) ? st.bar : realProgress;
+        } else if (kcStatus === 'completed') {
+            width = 100;
+        } else if (kcStatus === 'failed') {
+            // KC 失败分支会把 progress 写成 0；此处强制 100%，否则视觉矛盾
+            width = 100;
+        }
+
+        // 进度条
+        if (track && bar) {
+            if (width === null) {
+                track.style.display = 'none';
+            } else {
+                track.style.display = 'block';
+                bar.style.background = st.dot;
+                bar.style.width = width + '%';
+            }
+        }
+
+        // 段C5：文案优先用 KC 实时 message
+        var liveMsg = (typeof opt.message === 'string' && opt.message) ? opt.message : '';
+
+        // 文案
+        if (hint) {
+            if (kcStatus === 'running') {
+                hint.textContent = liveMsg || '正在为你开通，请稍候…此页面会自动更新进度。';
+            } else if (kcStatus === 'completed') {
+                hint.textContent = liveMsg || '开通已完成，可前往 ChatGPT 查看订阅状态。';
+            } else if (kcStatus === 'failed') {
+                hint.textContent = liveMsg || '开通失败，请重新提交 Session 或联系客服。';
+                hint.style.color = '#d03050';
+            } else {
+                hint.style.color = t.text;
+                hint.textContent = '本订单已自动发放代充卡密，点击下方按钮前往兑卡页完成开通。';
+            }
+            // 非失败态恢复主题色（避免上一次失败态遗留红字）
+            if (kcStatus !== 'failed') { hint.style.color = t.text; }
+        }
+
+        // 完成后把主按钮改成"已完成"观感（不再引导重复开通）
+        var goBtn = card.querySelector('#kc-goto-btn');
+        var goHint = card.querySelector('#kc-goto-hint');
+        if (goBtn) {
+            if (kcStatus === 'completed') {
+                goBtn.textContent = '已完成 ✓';
+                goBtn.style.background = '#9aa0a6';
+                goBtn.style.cursor = 'default';
+                if (goHint) { goHint.textContent = ''; }
+            } else if (kcStatus === 'failed') {
+                goBtn.textContent = '重新开通 →';
+                goBtn.style.background = '#18a058';
+                goBtn.style.cursor = 'pointer';
+                if (goHint) { goHint.textContent = '可重新提交 Session 再试一次'; }
+            } else if (kcStatus === 'running') {
+                goBtn.textContent = '开通中…';
+                goBtn.style.background = '#f0a020';
+                if (goHint) { goHint.textContent = '请勿重复提交，可在新页面查看实时进度'; }
+            }
+        }
+
+        card.setAttribute('data-kc-status', kcStatus);
+        if (width !== null) { card.setAttribute('data-kc-progress', String(width)); }
+    }
+
+    function hexToRgb(hex) {
+        var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return m ? (parseInt(m[1], 16) + ',' + parseInt(m[2], 16) + ',' + parseInt(m[3], 16)) : '154,160,166';
+    }
+
+    /**
+     * 查询一次开通状态（走 Xboard 插件代理，绕开 KC 无 CORS）。
+     */
+    function refreshStatus(tradeNo) {
+        var token = readToken();
+        if (!token) { return; }
+
+        fetch('/user/kc/status?trade_no=' + encodeURIComponent(tradeNo), {
+            headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (!j || j.status !== 'success') { return; }
+            var d = j.data || {};
+            var kcStatus = d.kc_status || 'pending';
+            // 段C5：把真实 progress / message 一并交给 paintStatus
+            paintStatus(kcStatus, {
+                stale: !!d.stale,
+                progress: (typeof d.progress === 'number') ? d.progress : null,
+                message: (typeof d.message === 'string') ? d.message : ''
+            });
+
+            // 终态 → 停止轮询
+            if (d.terminal || kcStatus === 'completed' || kcStatus === 'failed') {
+                stopPoll();
+                return;
+            }
+            // 开通中 → 确保轮询在跑
+            if (kcStatus === 'running') { startPoll(tradeNo); }
+        })
+        .catch(function () { /* 静默 */ });
+    }
+
+    /**
+     * 按需轮询：仅「开通中」时启动，5s/次。
+     * 未开始开通（pending）不轮询，避免白跑请求。
+     */
+    function startPoll(tradeNo) {
+        if (pollTimer && pollTradeNo === tradeNo) { return; }   // 已在跑同一订单
+        stopPoll();
+        pollTradeNo = tradeNo;
+        pollTimer = setInterval(function () {
+            // 路由已切换 → 停
+            if (getTradeNo() !== pollTradeNo) { stopPoll(); return; }
+            refreshStatus(pollTradeNo);
+        }, POLL_INTERVAL_MS);
+    }
+
+    // ===== 注入主逻辑 =====
+    var inflight = false;
+
+    function inject() {
+        try {
+            var tradeNo = getTradeNo();
+            if (!tradeNo) {
+                stopPoll();                                            // 离开订单页 → 停轮询
+                return;
+            }
+            if (inflight) { return; }
+
+            // 幂等：已成为同订单的卡片则跳过
+            var exist = document.getElementById(CARD_ID);
+            if (exist) {
+                if (exist.getAttribute('data-trade-no') === tradeNo) { return; }
+                exist.parentNode && exist.parentNode.removeChild(exist);   // 换订单 → 清旧卡
+                stopPoll();
+            }
+
+            var host = document.querySelector(MOUNT_SEL);
+            if (!host) { return; }                                     // 容器未渲染，等下次
+
+            var token = readToken();
+            if (!token) { return; }                                    // 未登录 → 静默
+
+            inflight = true;
+            fetch('/user/kc/card?trade_no=' + encodeURIComponent(tradeNo), {
+                headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                inflight = false;
+                if (!j || j.status !== 'success') { return; }
+                var d = j.data || {};
+                // 仅在「已发放且有卡密」时注入；failed/skipped/未发卡一律静默
+                if (d.status !== 'issued' || !d.cdk) { return; }
+                // 二次确认路由未变、宿主仍在
+                if (getTradeNo() !== tradeNo) { return; }
+                var h = document.querySelector(MOUNT_SEL);
+                if (!h) { return; }
+                if (document.getElementById(CARD_ID)) { return; }
+                detectDark();
+                h.appendChild(buildCard(d, tradeNo));
+                // 卡片就位后立刻查一次状态（返回页面时也能第一时间显示）
+                refreshStatus(tradeNo);
+            })
+            .catch(function () { inflight = false; /* 静默：不干扰订单页 */ });
+
+        } catch (e) { inflight = false; /* 静默 */ }
+    }
+
+    // ===== 路由监听 + 定点补插 =====
+    window.addEventListener('hashchange', function () {
+        stopPoll();
+        setTimeout(inject, 250);
+    });
+
+    // 观察 body 子树：仅用于「Vue 重建容器后补插」，不做路由判断
+    // inject() 首行即快速 return，非订单页开销极小
+    try {
+        var mo = new MutationObserver(function () {
+            if (getTradeNo()) { inject(); }
+        });
+        mo.observe(document.body, { childList: true, subtree: true });
+    } catch (e) { }
+
+    // ===== 返回页面时自动刷新（段C4 主路径）=====
+    // 覆盖「跳去 KC 开通 → 切回 Xboard 订单页」：切回时立即查一次状态
+    function onBackToPage() {
+        var tradeNo = getTradeNo();
+        if (!tradeNo) { return; }
+        if (!document.getElementById(CARD_ID)) {
+            // 卡片还没建（首次或刚切路由）→ 走完整注入
+            setTimeout(inject, 200);
+            return;
+        }
+        refreshStatus(tradeNo);
+    }
+
+    try {
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') { onBackToPage(); }
+        });
+        window.addEventListener('focus', onBackToPage);
+        window.addEventListener('pageshow', onBackToPage);
+    } catch (e) { }
+
+    // 首次进入（可能已是订单页）
+    setTimeout(inject, 800);
+    setTimeout(inject, 2000);
+})();
+</script>

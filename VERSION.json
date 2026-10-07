@@ -1,0 +1,106 @@
+{
+  "version": "1.7.1",
+  "version_tag": "v1.7.1",
+  "date": "2026-10-07",
+  "title": "仓库恢复与 git 安全护栏：git-safe 拦截危险命令 + 快照留底",
+  "product_panorama": "docs/产品全景.md",
+  "changelog": "CHANGELOG.md",
+  "conventions": "docs/开发规范.md",
+  "status_doc": "docs/00_项目状态.md",
+  "deploy_manifest": "deploy-manifest.json",
+  "reading_order": [
+    "README.md#开发协作入口",
+    "docs/产品全景.md",
+    "CHANGELOG.md#顶部第一条",
+    "docs/00_项目状态.md",
+    "docs/开发规范.md",
+    ".workbuddy/memory/MEMORY.md"
+  ],
+  "doc_gate": {
+    "script": "tools/check-docs-sync.js",
+    "npm": "npm run docs:check",
+    "git_hook": ".githooks/pre-commit（已 git config core.hooksPath .githooks 启用）",
+    "exit_code": "0=通过 1=有FAIL项应阻止提交",
+    "json_mode": "node tools/check-docs-sync.js --json",
+    "bypass": "git commit --no-verify（仅限纯文案修正，不要常态化使用）"
+  },
+  "doc_authority": {
+    "产品能力与边界": "docs/产品全景.md —— 唯一正本；与散落的 FEAT/ARC 文档冲突时以此为准",
+    "版本记录": "CHANGELOG.md —— 只追加不覆写；最新永远在顶部第一条",
+    "环境与运维": "docs/00_项目状态.md + DEPLOY_GUIDE.md",
+    "接口与数据库": "docs/接口/",
+    "验证记录": "docs/验收/",
+    "历史设计": "docs/设计/ 对应 FEAT 文档"
+  },
+  "product_scope": {
+    "产品定位": "ChatGPT Plus / Pro 自动代充平台",
+    "四个组成部分": [
+      "KC 代充引擎",
+      "Xboard 商城（过渡期，用户当前使用的页面）",
+      "BEpusdt USDT 收款网关",
+      "独立业务后台（新建中）"
+    ],
+    "核心原则": "付款成功不等于开通成功 —— 支付与履约状态分离",
+    "三档规划": {
+      "待做": [
+        "独立前台完整支付",
+        "独立前台代充履约",
+        "真实生产首单验证（需批准）",
+        "真实链上钱包地址（需用户提供，当前阻塞）",
+        "旧数据迁移",
+        "灰度切换"
+      ],
+      "明确不做": [
+        "发票功能",
+        "分销提现与推广看板",
+        "Xboard 节点/流量/订阅链接/客户端",
+        "KC 技术后台菜单迁移",
+        "优惠券与在线客服",
+        "链上钱包自动扫描"
+      ],
+      "远期只记录": ["R1 · 自有代充能力", "R2 · 对外多租户平台/White-label"]
+    }
+  },
+  "latest": {
+    "added": [
+      "tools/check-docs-sync.js —— 文档同步自检，15 项检查（版本一致/全景滞后/结构完整/红线未删/规范步骤/编码/入口引用）",
+      ".githooks/pre-commit —— 提交前硬拦截，已启用 core.hooksPath",
+      "package.json 新增 docs:check / docs:check:json，pretest 接入自检",
+      "产品全景功能行加 <!-- feat:xxx --> 标记，便于按功能追溯滞后范围"
+    ],
+    "changed": [
+      "开发规范新增第 6 节「文档同步闸门」，列出全部拦截条件与绕过方式",
+      "开发规范第 7 节新增警告：不要在有未提交新文件的工作区跑 git reset --hard",
+      "产品全景维护规则补充「更新对应版本号」与「提交前跑自检」"
+    ],
+    "verified": [
+      "正常态 15 项全过退出码 0",
+      "故障注入：人为令全景滞后 + 改章节标题，准确报 2 项 FAIL 退出码 1，验证后文件完整还原",
+      "确认 node 在 Git 自带 sh 中可解析，钩子不会因找不到解释器失效"
+    ],
+    "risks": [
+      "仅新增校验脚本与钩子，不改动业务代码，无需重建容器",
+      "首次启用钩子后若存在历史遗留文档不一致，提交会被拦下，按提示补全或 --no-verify 临时跳过"
+    ]
+  },
+  "next": [
+    "后续每次功能迭代，提交前跑 node tools/check-docs-sync.js；新增功能时在产品全景对应行加 <!-- feat:xxx --> 标记",
+    "真实生产端到端首单验证（先只读验通，再放小额单；生产 key = 真实资金）",
+    "补真实链上钱包地址（BEpusdt 非托管收款，当前硬阻塞）"
+  ],
+  "immutable_constraints": {
+    "zovocard_mock_locked": "ZOVOCARD_MOCK=1 + REQUIRE_ZOVOCARD_MOCK=1 持续开启",
+    "session_never_persisted": "不保存 Session / token / Cookie / 密码 / 卡号 / CVC",
+    "live_payment_disabled": "真实支付、真实履约、对外上游 API 全部关闭",
+    "kc_menu_untouched": "KC 后台及技术菜单保持原样",
+    "ledger_immutable": "资金由不可变流水驱动，余额变动须有唯一 event_key",
+    "concurrency_insert_ignore": "并发抢占必须 INSERT IGNORE，禁用 ON DUPLICATE KEY UPDATE",
+    "no_secrets_in_docs": ".env 凭据不得写入任何文档、注释或 CHANGELOG"
+  },
+  "services": [
+    { "id": "kc", "type": "compose", "project": "kc-gpt-pay2", "host_ports": ["3100:3000", "3310:3306"] },
+    { "id": "xboard", "type": "compose", "project": "xboard", "host_ports": ["7001:80"] },
+    { "id": "bepusdt", "type": "standalone", "host_ports": ["8080:8080"] }
+  ],
+  "history_note": "v1.0.0 ~ v1.5.0 为 2026-10-07 事后回填整理；v1.6.0 起按开发规范执行；v1.7.0 起文档同步由脚本+钩子强制保证。"
+}

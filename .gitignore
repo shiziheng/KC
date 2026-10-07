@@ -1,0 +1,105 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# Runtime artefacts
+_server.out.log
+_server.err.log
+debug_screenshots/
+product_files/
+data/hcaptcha-config.json
+data/browser-pool/
+# Local recovery copies are never part of a commit.
+.codex-recovery/
+scratch/
+mail.txt
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# Stray images at repo root (IDE paste artefacts)
+/[A-F0-9][A-F0-9]*.png
+/[A-F0-9][A-F0-9]*.jpg
+/[A-F0-9][A-F0-9]*.jpeg
+/[A-F0-9][A-F0-9]*.webp
+
+# Local DB dumps & exports
+*.sql.gz
+*.sqlite
+*.db
+
+# Sister project (kept as a separate repo)
+plus_gopay/
+
+# --- Recovery snapshot (created after a 2026-10-07 incident) ---
+_recovery_snapshot/
+# Backup of the corrupted .git produced during the same incident (kept on disk,
+# never committed — the packed objects were already lost so it cannot recover history).
+.git_broken_backup/
+
+# Root-level one-off temp files produced by tooling/scripts
+_*.txt
+_*.tmp
+
+# --- One-off temp files produced by tooling/scripts ---
+_ps_parse.txt
+_r.txt
+_pan_backup.tmp
+_chrome_cleanup.txt
+_sql.log
+_update.sql
+_c.txt
+_v.txt
+_f.txt
+
+# --- One-off debug artefacts ---
+# Verification screenshots & scratch output from headless runs.
+tools/_*.png
+tools/_*.jpg
+tools/_*.txt
+tools/_*.tar.gz
+tools/_*.zip
+# One-off debug scripts (FEAT/_sN/_rN/_ux/_f1x/_fix/_mk/_hook/_demo...).
+# NOTE: reusable tooling does NOT use the underscore prefix and stays tracked --
+#       verify-business-backend.js, reconcile-kc-xboard.js, check-docs-sync.js,
+#       xboard-apply-custom-html.js, xboard-restore-custom-html.js,
+#       xboard-set-custom-html.php, xboard-kc-*.php, xboard-patch-*.php,
+#       test-integration-*.js, kc_*_inject.html
+tools/_*.js
+tools/_*.php
+tools/_reg_result.txt
+tools/_ux_notes.txt
+tools/_fix1_out.txt
+# Reference source copies pulled out of the Xboard container for diffing.
+# The authoritative versions live in tools/xboard-patches/.
+tools/_rc/
+tools/_xb_src/
+
+# --- Leftover Chrome profiles from headless verification ---
+# These contain .dmp crash dumps and multi-hundred-file junk; never commit them.
+tools/_chrome_tmp*/
+tools/_d4prof*/
+tools/_d4prof_b/
+tools/_recon_prof*/
+tools/_recon_prof2/
+tools/_recon_prof3/
+tools/_ref/
+web/_reg_prof/
+**/chrome-prof/
+**/_reg_prof/
+**/_chrome_tmp*/
+*.dmp

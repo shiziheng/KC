@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>代充运营台</title>
+  <style>
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#142235;background:#f4f7fb;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh}.shell{display:flex;min-height:100vh}.side{width:244px;background:#fff;border-right:1px solid #e5eaf1;padding:24px 16px;display:flex;flex-direction:column;flex-shrink:0}.brand{font-size:19px;font-weight:750;padding:8px 10px 24px}.brand small{display:block;font-size:12px;color:#7b8798;font-weight:500;margin-top:5px}.nav{display:grid;gap:6px}.nav button{border:0;background:transparent;text-align:left;padding:11px 12px;border-radius:9px;color:#46566b;font-size:14px;cursor:pointer}.nav button:hover,.nav button.active{background:#eaf2ff;color:#1f5fc4;font-weight:650}.side-foot{margin-top:auto;color:#8290a2;font-size:12px;line-height:1.6;padding:16px 10px 0}.main{flex:1;min-width:0;padding:28px clamp(18px,3vw,42px)}.head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}.head h1{font-size:24px;margin:0 0 5px}.muted{color:#738197;font-size:13px}.badge{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#fff3d7;color:#895e00;font-size:12px;font-weight:700}.cards{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:14px;margin-bottom:20px}.card,.panel{background:#fff;border:1px solid #e7ebf1;border-radius:12px;box-shadow:0 2px 7px #1e355208}.card{padding:18px}.card .label{font-size:12px;color:#738197}.card .value{font-size:25px;font-weight:750;margin-top:9px}.panel{padding:18px;margin-bottom:16px}.panel h2{font-size:16px;margin:0 0 14px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.toolbar h2{margin:0}.toolbar-actions{display:flex;gap:8px}.btn{border:0;border-radius:8px;background:#2869cc;color:#fff;padding:9px 13px;font-size:13px;font-weight:650;cursor:pointer}.btn:hover{background:#1e56ad}.btn.secondary{background:#eef2f7;color:#33445a}.btn.danger{background:#fff0ed;color:#b33623}.btn.small{padding:6px 9px}.search,input,select,textarea{font:inherit}.search,input,select,textarea{border:1px solid #d9e0e9;border-radius:8px;padding:9px 10px;background:#fff;color:#1b2a3c}.search{min-width:220px}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}th,td{padding:11px 9px;border-bottom:1px solid #edf0f4;text-align:left}th{color:#6f7d90;font-weight:600;background:#fafbfd}td{color:#26374b}.status{display:inline-block;border-radius:999px;padding:4px 8px;background:#edf3fc;color:#4d627d;font-size:11px}.status.paid,.status.onsale{background:#e9f8ef;color:#187a43}.status.manual_review,.status.unpaid,.status.pending,.status.off_sale{background:#fff3d7;color:#895e00}.empty{padding:32px;text-align:center;color:#8390a2}.notice{border:1px solid #f0d796;background:#fff9e9;color:#765712;border-radius:9px;padding:12px 14px;font-size:13px;line-height:1.55;margin-bottom:16px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.field{display:grid;gap:6px}.field label{font-size:12px;color:#627287;font-weight:650}.field.full{grid-column:1/-1}.field textarea{min-height:76px;resize:vertical}.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}.modal{position:fixed;inset:0;background:#13223870;display:flex;align-items:center;justify-content:center;padding:18px;z-index:5}.modal[hidden]{display:none}.dialog{width:min(600px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 16px 50px #13223840}.dialog h2{margin:0 0 16px;font-size:18px}.toast{position:fixed;right:22px;bottom:22px;background:#172a43;color:#fff;padding:12px 16px;border-radius:9px;box-shadow:0 6px 20px #14223530;z-index:8}.toast[hidden]{display:none}.inline{display:flex;gap:8px;align-items:center}.right{text-align:right}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.subtle{font-size:11px;color:#8793a3}.mobile-toggle{display:none}
+    @media(max-width:850px){.side{width:205px}.cards{grid-template-columns:repeat(2,minmax(120px,1fr))}.main{padding:20px 16px}}
+    @media(max-width:620px){.shell{display:block}.side{width:auto;padding:10px 12px;border-right:0;border-bottom:1px solid #e5eaf1}.brand{padding:4px 5px 9px}.nav{display:flex;overflow:auto}.nav button{white-space:nowrap}.side-foot{display:none}.main{padding:16px 12px}.head h1{font-size:20px}.cards{gap:8px}.card{padding:13px}.toolbar{align-items:flex-start;flex-direction:column}.search{min-width:0;width:100%}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">代充运营台<small>业务管理入口</small></div>
+      <nav class="nav" id="nav">
+        <button class="active" data-page="home">工作台</button>
+        <button data-page="products">代充商品</button>
+        <button data-page="orders">订单管理</button>
+        <button data-page="topups">USDT 充值与补单</button>
+        <button data-page="wallets">余额与流水账户</button>
+      </nav>
+      <div class="side-foot">这是独立业务菜单，不改 KC 技术后台菜单。<br>充值和补单当前均为本地模拟。</div>
+    </aside>
+    <main class="main">
+      <header class="head"><div><h1 id="title">工作台</h1><div class="muted">商品、订单和充值异常统一处理</div></div><span class="badge">MOCK 模式 · 不会真实收款或扣款</span></header>
+      <div id="content"><div class="panel empty">正在连接业务后台…</div></div>
+    </main>
+  </div>
+  <div class="modal" id="modal" hidden><div class="dialog" id="dialog"></div></div>
+  <div class="toast" id="toast" hidden></div>
+<script>
+(() => {
+  'use strict';
+  const API = '/api/admin/business';
+  const TOKEN_KEY = 'plus_admin_token';
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const content = $('#content');
+  const titles = { home: '工作台', products: '代充商品', orders: '订单管理', topups: 'USDT 充值与补单', wallets: '余额与流水账户' };
+  let currentPage = 'home';
+  let products = [];
+  let topups = [];
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  }
+  function toast(message) {
+    const el = $('#toast'); el.textContent = message; el.hidden = false;
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => { el.hidden = true; }, 3200);
+  }
+  function idempotencyKey() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return `biz-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+  async function api(path, options = {}) {
+    const headers = { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}`, ...(options.headers || {}) };
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    const response = await fetch(API + path, { ...options, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      let loginUrl = '/admin-login';
+      try { const paths = await fetch('/api/public/admin-paths').then((r) => r.json()); loginUrl = paths.loginUrl || loginUrl; } catch (_) {}
+      window.location.href = loginUrl; throw new Error('登录已失效');
+    }
+    if (!response.ok || payload.success !== true) throw new Error(payload.message || '操作失败，请稍后重试');
+    return payload.data;
+  }
+  function statusLabel(value) {
+    const labels = { paid: '已入账', unpaid: '待支付', pending: '待核验', manual_review: '待人工核验', completed: '已完成', failed: '失败', onsale: '销售中', off_sale: '已下架', not_required: '无需履约', none: '—' };
+    return labels[value] || value || '—';
+  }
+  function statusClass(value) { return ['paid', 'unpaid', 'pending', 'manual_review', 'completed', 'onsale', 'off_sale'].includes(value) ? value : ''; }
+  function cellStatus(value) { return `<span class="status ${statusClass(value)}">${escapeHtml(statusLabel(value))}</span>`; }
+  function showError(error) { toast(error?.message || '操作失败'); }
+  function pageHeading(note = '') { return `<div class="notice">${escapeHtml(note || '当前页面只使用本系统业务库；所有支付、充值和履约状态均为模拟数据。')}</div>`; }
+
+  async function render() {
+    currentPage = currentPage in titles ? currentPage : 'home';
+    $('#title').textContent = titles[currentPage];
+    $('#nav').querySelectorAll('button').forEach((button) => button.classList.toggle('active', button.dataset.page === currentPage));
+    try {
+      if (currentPage === 'home') await renderHome();
+      else if (currentPage === 'products') await renderProducts();
+      else if (currentPage === 'orders') await renderOrders();
+      else if (currentPage === 'topups') await renderTopups();
+      else await renderWallets();
+    } catch (error) { content.innerHTML = `<div class="panel"><div class="notice">${escapeHtml(error.message)}<br><span class="subtle">未修改 KC/Xboard 数据。若业务库状态异常，请先检查 kc_business 与迁移记录。</span></div><button class="btn secondary" onclick="location.reload()">重试</button></div>`; }
+  }
+
+  async function renderHome() {
+    const data = await api('/summary');
+    content.innerHTML = `${pageHeading('运营首页。这里的数字来自独立业务库，Mock 流水不会影响 KC/Xboard 的真实余额。')}
+      <div class="cards">
+        <div class="card"><div class="label">销售中商品</div><div class="value">${Number(data.onSaleProducts)}</div></div>
+        <div class="card"><div class="label">待处理订单</div><div class="value">${Number(data.ordersNeedAttention)}</div></div>
+        <div class="card"><div class="label">待核验充值</div><div class="value">${Number(data.topupsNeedAttention)}</div></div>
+        <div class="card"><div class="label">模拟余额流水</div><div class="value">${Number(data.mockLedgerEntries)}</div></div>
+      </div>
+      <section class="panel"><h2>本期范围</h2><div class="muted">配置商品、查看业务订单、演练 USDT 随机尾数识别与补单。不会连接链上钱包，不会调用 ZovoCard，也不会保存 Session、Token 或 Cookie。</div></section>`;
+  }
+
+  async function renderProducts() {
+    products = await api('/products');
+    content.innerHTML = `${pageHeading('只管理代充商品；价格按商品币种保存（USD 两位小数，USDT 六位小数）。')}
+      <section class="panel"><div class="toolbar"><h2>商品列表</h2><button class="btn" id="addProduct">新增商品</button></div>
+      <div class="table-wrap"><table><thead><tr><th>编号</th><th>商品名称</th><th>套餐</th><th>面值</th><th>售价</th><th>成本参考</th><th>状态</th><th>版本</th><th></th></tr></thead>
+      <tbody>${products.length ? products.map((p) => `<tr><td class="mono">${escapeHtml(p.productCode)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.planCode)}</td><td>${escapeHtml(p.faceAmount)} ${escapeHtml(p.currency)}</td><td>${escapeHtml(p.sellingAmount)} ${escapeHtml(p.currency)}</td><td>${p.costAmount ? `${escapeHtml(p.costAmount)} ${escapeHtml(p.currency)}` : '—'}</td><td>${cellStatus(p.availability)}</td><td>${p.version}</td><td><button class="btn secondary small" data-edit-product="${p.id}">编辑</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">暂无商品，请新增代充商品</td></tr>'}</tbody></table></div></section>
+      <section class="panel"><div class="toolbar"><h2>快速创建模拟订单</h2></div><form id="mockOrderForm" class="form-grid">
+        <div class="field"><label>商品</label><select name="productId" required>${products.filter((p) => p.availability === 'onsale').map((p) => `<option value="${p.id}">${escapeHtml(p.name)} · ${escapeHtml(p.sellingAmount)} ${escapeHtml(p.currency)}</option>`).join('')}</select></div>
+        <div class="field"><label>账号邮箱（只保存脱敏值与哈希）</label><input name="accountEmail" type="email" maxlength="254" required autocomplete="off"></div>
+        <div class="field full"><div class="form-actions"><button class="btn" type="submit" ${products.some((p) => p.availability === 'onsale') ? '' : 'disabled'}>创建模拟订单</button></div></div>
+      </form></section>`;
+    $('#addProduct').onclick = () => openProductForm();
+    content.querySelectorAll('[data-edit-product]').forEach((button) => button.onclick = () => openProductForm(products.find((p) => p.id === Number(button.dataset.editProduct))));
+    $('#mockOrderForm').onsubmit = createOrder;
+  }
+
+  function openProductForm(product = null) {
+    const p = product || { productCode: '', name: '', planCode: 'plus', currency: 'USD', faceAmount: '', sellingAmount: '', costAmount: '', availability: 'onsale' };
+    $('#dialog').innerHTML = `<h2>${product ? '编辑商品' : '新增代充商品'}</h2><form id="productForm" class="form-grid">
+      <div class="field"><label>商品编号</label><input name="productCode" value="${escapeHtml(p.productCode)}" maxlength="64" required></div>
+      <div class="field"><label>商品名称</label><input name="name" value="${escapeHtml(p.name)}" maxlength="160" required></div>
+      <div class="field"><label>套餐类型</label><select name="planCode">${[['plus','Plus'],['pro_5x','Pro 5x'],['pro_20x','Pro 20x']].map(([v,l]) => `<option value="${v}" ${p.planCode === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>币种</label><select name="currency"><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="USDT" ${p.currency === 'USDT' ? 'selected' : ''}>USDT</option></select></div>
+      <div class="field"><label>商品面值</label><input name="faceAmount" inputmode="decimal" value="${escapeHtml(p.faceAmount)}" required></div>
+      <div class="field"><label>售价</label><input name="sellingAmount" inputmode="decimal" value="${escapeHtml(p.sellingAmount)}" required></div>
+      <div class="field"><label>成本参考（可空）</label><input name="costAmount" inputmode="decimal" value="${escapeHtml(p.costAmount)}"></div>
+      <div class="field"><label>销售状态</label><select name="availability"><option value="onsale" ${p.availability === 'onsale' ? 'selected' : ''}>销售中</option><option value="off_sale" ${p.availability === 'off_sale' ? 'selected' : ''}>下架</option></select></div>
+      <div class="field full"><div class="notice">套餐履约目前强制 Mock；商品配置不会触发真实供应商请求。</div></div>
+      <div class="field full form-actions"><button type="button" class="btn secondary" id="cancelProduct">取消</button><button class="btn" type="submit">保存</button></div>
+    </form>`;
+    $('#modal').hidden = false;
+    $('#cancelProduct').onclick = closeModal;
+    $('#productForm').onsubmit = async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      const body = Object.fromEntries(form.entries());
+      try {
+        await api(product ? `/products/${product.id}` : '/products', { method: product ? 'PUT' : 'POST', body });
+        closeModal(); toast('商品已保存'); await renderProducts();
+      } catch (error) { showError(error); }
+    };
+  }
+
+  async function createOrder(event) {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    const body = { productId: Number(form.get('productId')), accountEmail: form.get('accountEmail') };
+    try {
+      const result = await api('/orders/mock', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() }, body });
+      toast(`模拟订单已创建：${result.orderRef}`); currentPage = 'orders'; await render();
+    } catch (error) { showError(error); }
+  }
+
+  async function renderOrders(search = '') {
+    const rows = await api(`/orders?q=${encodeURIComponent(search)}`);
+    content.innerHTML = `${pageHeading('支付状态和履约状态分开显示。模拟订单只保留脱敏账号信息，不保存任何授权凭据。')}
+      <section class="panel"><div class="toolbar"><h2>订单</h2><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="订单号 / 脱敏邮箱 / 商品" value="${escapeHtml(search)}"><button class="btn secondary" id="searchOrders">查询</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>订单号</th><th>商品</th><th>账号</th><th>金额</th><th>支付</th><th>履约</th><th>售后</th><th>创建时间</th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td class="mono">${escapeHtml(r.orderRef)}</td><td>${escapeHtml(r.productName)}</td><td>${escapeHtml(r.account || '—')}</td><td>${escapeHtml(r.amount)} ${escapeHtml(r.currency)}</td><td>${cellStatus(r.paymentStatus)}</td><td>${cellStatus(r.fulfillmentStatus)}</td><td>${cellStatus(r.afterSalesStatus)}</td><td>${escapeHtml(r.createdAt || '')}</td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无订单</td></tr>'}
+      </tbody></table></div></section>`;
+    $('#searchOrders').onclick = () => renderOrders($('#orderSearch').value);
+    $('#orderSearch').onkeydown = (event) => { if (event.key === 'Enter') renderOrders(event.currentTarget.value); };
+  }
+
+  async function renderTopups(search = '') {
+    topups = await api(`/topups?q=${encodeURIComponent(search)}`);
+    content.innerHTML = `${pageHeading('演练钱包到账但平台未同步：输入模拟凭证和实际到账金额。金额不一致时只进入人工核验，不会增加余额。')}
+      <section class="panel"><h2>新建模拟充值单</h2><form id="topupForm" class="form-grid">
+        <div class="field"><label>账号邮箱（只保存脱敏值与哈希）</label><input name="accountEmail" type="email" required autocomplete="off"></div>
+        <div class="field"><label>基础收款金额（USDT，最多 2 位小数）</label><input name="baseUsdt" type="number" min="0.01" step="0.01" placeholder="10.00" required></div>
+        <div class="field"><label>拟入平台余额（USD）</label><input name="creditUsd" type="number" min="0.01" step="0.01" placeholder="10.00" required></div>
+        <div class="field"><label>换算说明</label><input name="reason" maxlength="300" placeholder="例如：本次模拟按运营确认的汇率入账" required></div>
+        <div class="field full"><div class="subtle">系统为收款金额增加唯一随机尾数；USDT 收款金额与平台 USD 入账金额分别记录，不默认推断汇率。</div><div class="form-actions"><button class="btn" type="submit">创建模拟充值单</button></div></div>
+      </form></section>
+      <section class="panel"><div class="toolbar"><h2>充值记录</h2><div class="toolbar-actions"><input class="search" id="topupSearch" placeholder="充值号 / 订单号 / 脱敏邮箱" value="${escapeHtml(search)}"><button class="btn secondary" id="searchTopups">查询</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>充值号</th><th>订单号</th><th>账号</th><th>随机尾数</th><th>应收 USDT</th><th>实收 USDT</th><th>拟入 USD</th><th>状态</th><th>模拟凭证</th><th></th></tr></thead><tbody>
+      ${topups.length ? topups.map((r) => `<tr><td class="mono">${escapeHtml(r.paymentRef)}</td><td class="mono">${escapeHtml(r.orderRef)}</td><td>${escapeHtml(r.account || '—')}</td><td class="mono">${escapeHtml(r.randomCode)}</td><td>${escapeHtml(r.expectedUsdt)}</td><td>${escapeHtml(r.receivedUsdt)}</td><td>${escapeHtml(r.creditUsd)}</td><td>${cellStatus(r.status)}</td><td class="mono">${escapeHtml(r.transactionRef || '—')}</td><td><button class="btn secondary small" data-reconcile="${escapeHtml(r.paymentRef)}">模拟核验/补单</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">暂无充值记录</td></tr>'}
+      </tbody></table></div></section>`;
+    $('#topupSearch').onkeydown = (event) => { if (event.key === 'Enter') renderTopups(event.currentTarget.value); };
+    $('#searchTopups').onclick = () => renderTopups($('#topupSearch').value);
+    $('#topupForm').onsubmit = createTopup;
+    content.querySelectorAll('[data-reconcile]').forEach((button) => button.onclick = () => openReconcile(topups.find((r) => r.paymentRef === button.dataset.reconcile)));
+  }
+
+  async function createTopup(event) {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    const body = Object.fromEntries(form.entries());
+    try {
+      const result = await api('/topups/mock', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() }, body });
+      toast(`模拟充值单已创建：${result.paymentRef} · 应收 ${result.expectedUsdt} USDT`); await renderTopups();
+    } catch (error) { showError(error); }
+  }
+
+  function openReconcile(topup) {
+    if (!topup) return;
+    $('#dialog').innerHTML = `<h2>模拟到账核验与余额补单</h2><div class="notice">只处理本系统生成的 MOCK 充值记录。真实链上交易不会由此页面核验或入账。</div>
+      <form id="reconcileForm" class="form-grid"><div class="field full"><label>充值单</label><input value="${escapeHtml(topup.paymentRef)} · 应收 ${escapeHtml(topup.expectedUsdt)} USDT · 拟入 ${escapeHtml(topup.creditUsd)} USD" readonly></div>
+      <div class="field"><label>模拟交易凭证（必须以 MOCK- 开头）</label><input name="transactionRef" placeholder="MOCK-0123456789ABCDEF" required></div>
+      <div class="field"><label>模拟实际到账金额（USDT）</label><input name="receivedUsdt" inputmode="decimal" value="${escapeHtml(topup.expectedUsdt)}" required></div>
+      <div class="field full"><label>核验说明</label><textarea name="reason" minlength="6" maxlength="300" placeholder="说明核验依据或余额补记原因" required></textarea></div>
+      <div class="field full form-actions"><button type="button" class="btn secondary" id="cancelReconcile">取消</button><button class="btn" type="submit">提交模拟核验</button></div></form>`;
+    $('#modal').hidden = false;
+    $('#cancelReconcile').onclick = closeModal;
+    $('#reconcileForm').onsubmit = async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      try {
+        const result = await api(`/topups/${encodeURIComponent(topup.paymentRef)}/reconcile`, { method: 'POST', body: Object.fromEntries(form.entries()) });
+        closeModal(); toast(result.message); await renderTopups();
+      } catch (error) { showError(error); }
+    };
+  }
+
+  async function renderWallets(search = '') {
+    const [rows, ledger] = await Promise.all([
+      api(`/wallets?q=${encodeURIComponent(search)}`),
+      api(`/ledger?q=${encodeURIComponent(search)}`)
+    ]);
+    content.innerHTML = `${pageHeading('余额从独立钱包流水汇总。模拟充值只写 kc_business，不会同步修改 KC/Xboard 余额。')}
+      <section class="panel"><div class="toolbar"><h2>用户余额账户</h2><div class="toolbar-actions"><input class="search" id="walletSearch" placeholder="钱包号 / 用户引用 / 脱敏邮箱" value="${escapeHtml(search)}"><button class="btn secondary" id="searchWallets">查询</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>钱包号</th><th>账号</th><th>币种</th><th>可用余额</th><th>冻结余额</th><th>状态</th><th>更新时间</th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td class="mono">${escapeHtml(r.walletRef)}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.currency)}</td><td>${escapeHtml(r.available)}</td><td>${escapeHtml(r.reserved)}</td><td>${cellStatus(r.status)}</td><td>${escapeHtml(r.updatedAt || '')}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">暂无余额账户</td></tr>'}
+      </tbody></table></div></section>
+      <section class="panel"><div class="toolbar"><h2>余额变更流水</h2></div><div class="table-wrap"><table><thead><tr><th>事件编号</th><th>账号</th><th>变更</th><th>变更后余额</th><th>订单号</th><th>充值号</th><th>来源</th><th>时间</th></tr></thead><tbody>
+      ${ledger.length ? ledger.map((r) => `<tr><td class="mono">${escapeHtml(r.eventKey)}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.delta)} ${escapeHtml(r.currency)}</td><td>${escapeHtml(r.balanceAfter)} ${escapeHtml(r.currency)}</td><td class="mono">${escapeHtml(r.orderRef || '—')}</td><td class="mono">${escapeHtml(r.paymentRef || '—')}</td><td>${escapeHtml(r.source)}</td><td>${escapeHtml(r.createdAt || '')}</td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无流水</td></tr>'}
+      </tbody></table></div></section>`;
+    $('#walletSearch').onkeydown = (event) => { if (event.key === 'Enter') renderWallets(event.currentTarget.value); };
+    $('#searchWallets').onclick = () => renderWallets($('#walletSearch').value);
+  }
+
+  function closeModal() { $('#modal').hidden = true; $('#dialog').innerHTML = ''; }
+  $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
+  $('#nav').addEventListener('click', (event) => { const button = event.target.closest('button[data-page]'); if (!button) return; currentPage = button.dataset.page; render(); });
+
+  async function boot() {
+    if (!localStorage.getItem(TOKEN_KEY)) {
+      let loginUrl = '/admin-login';
+      try { const paths = await fetch('/api/public/admin-paths').then((r) => r.json()); loginUrl = paths.loginUrl || loginUrl; } catch (_) {}
+      window.location.href = loginUrl; return;
+    }
+    await render();
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

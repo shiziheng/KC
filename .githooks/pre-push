@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+/**
+ * .githooks/pre-push —— 推送前安全审查
+ *
+ * 与 pre-commit（文档同步闸门）配合，构成两道提交/推送前的自动闸门：
+ *   1. pre-commit : tools/check-docs-sync.js  —— 文档与代码是否同步
+ *   2. pre-push   : tools/git-safe.js scan   —— 是否存在无备份资产
+ *
+ * 启用：git config core.hooksPath .githooks
+ */
+'use strict';
+
+const { execFileSync } = require('child_process');
+const path = require('path');
+
+function run(args) {
+  return execFileSync(process.execPath, [path.resolve(__dirname, '..', 'tools', 'git-safe.js'), ...args], {
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
+let unbacked = 0;
+try {
+  const out = run(['scan']);
+  process.stdout.write(out);
+} catch (e) {
+  process.stdout.write((e.stdout || '') + (e.stderr || ''));
+  // scan 发现无备份资产时以退出码 1 返回 —— 这是警告，不是错误
+  if (e.status === 1) unbacked = 1;
+  else if (e.status !== 0) {
+    console.error('\n安全审查脚本异常，跳过本次推送前检查。');
+  }
+}
+
+if (unbacked) {
+  console.error('\n推送前提醒：工作区存在未提交的新文件/目录。');
+  console.error('这些内容没有任何备份，若本地损坏将无法恢复。');
+  console.error('建议先执行：node tools/git-safe.js snapshot "说明"');
+}
