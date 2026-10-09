@@ -25,6 +25,7 @@
 - git 提交者身份**只配在仓库内**（`git config user.name/email` 不加 --global），本仓库沿用 `KC-CatK <iamkc1110@gmail.com>`。
 - 恢复误删的已跟踪文件：`git checkout -- <path>`（安全）；**从未跟踪的文件无法恢复**，只能靠 `git-safe.js snapshot` 提前留底。
 - **仓库已恢复并提交**：`e65825a` (v1.7.1, 193 文件)。安全护栏 `tools/git-safe.js` + `.githooks/pre-commit`(文档闸门) + `.githooks/pre-push`(无备份资产扫描) 已就位。
+- **2026-10-09：v1.9–v1.11 全部改动（约 40 文件）仍未提交**（最后提交停在 `58d755a`）——阶段 0 必须优先固化提交；勿在未提交状态下做任何破坏性 git 操作。
 
 ## 本机环境约束（跨项目，最易浪费时间）
 - Bash 无 coreutils（ls/cat/head/tail/sleep/sh/rm...）→ 写 `.js` 用 node 跑；输出落文件再 Read。
@@ -61,6 +62,7 @@
 - `POST /api/integration/cdk/issue`（幂等）/回查/免鉴权 health。鉴权 `X-Integration-Key`。
 - 响应契约 `{success:true,data:{ref,cdk,plan_type,reused}}`（非 Zovo `code===0`）。CDK 必须 `type='自助'`（否则 403）。
 - 发卡挂 `order.open.after`（非 payment.notify.success）。
+- ⛔ **2026-10-09 核查：本组接口在 10-07 恢复时被整体回滚丢失**（`server.js` / `mysql-store.js` / `public/admin.html` 被回退到 09-24 版本），运行实测 404；完整实现已自 WorkBuddy 文件历史找回并固化在 `.codex-recovery/2026-10-09-integration-recovered/`（10-05 快照）。**修复 = 逐段合并回当前版本 + 跑 `tools/test-integration-issue-*.js` 三件验收；修复验收前不得开启真实收款。**
 
 ## ⭐⭐ 并发抢占必须 INSERT IGNORE（跨项目实测）
 - ODKU 冲突 affectedRows 仍返 1 → 超发；`INSERT IGNORE` 才正确。占位→抢到生成回填→失败释放占位+作废孤儿。
@@ -103,8 +105,8 @@
 - 当前 Git 中保留的 `tools/verify-business-backend.js` 是依赖缺失接口的旧验证脚本，不代表业务实现存在。
 - `docs/计划/代充独立后台开发计划-v1.0.0.md` 原文件缺失；现在重建的是恢复版任务清单，所有开发项重置为待审核/待实施。数据库旧迁移状态未经本次检查验证。
 
-## 三后台入口（凭据见 `.env`，勿猜）
-- KC `:3100/admin-login`；Xboard `:7001/5fea4ca1`（id=1 is_admin）；BEpusdt `:8080/0c09205c71`。
+## 后台入口（凭据见 `.env`，勿猜）
+- KC `:3100/admin-login`；Xboard `:7001/5fea4ca1`（id=1 is_admin）；BEpusdt `:8080/0c09205c71`；KC `:3100/business-admin`（独立业务后台，Mock，随独立轨道冻结）。
 - `bepusdt reset` 改用户名/密码/入口三样，但 `admin_secret`（对接令牌）不变；取凭据 `strings .../sqlite.db-wal | grep admin_`。
 - BEpusdt 登录必须点按钮（Enter 无效）。
 
