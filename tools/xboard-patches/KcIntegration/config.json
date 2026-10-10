@@ -1,7 +1,7 @@
 {
     "name": "KC 代充集成",
     "code": "kc_integration",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "description": "订单履约完成后，自动向 KC 平台申领对应的 ChatGPT 代充卡密，并在订单页展示。",
     "author": "KC",
     "type": "feature",
@@ -47,6 +47,30 @@
             "default": "{}",
             "label": "套餐映射",
             "description": "Xboard 套餐ID 到 KC 档位名的映射，JSON 格式，例如 {\"1\":\"plus\",\"2\":\"pro_5x\",\"3\":\"pro_20x\"}。可用档位：plus / pro_5x / pro_20x"
+        },
+        "card_buy_enabled": {
+            "type": "boolean",
+            "default": true,
+            "label": "启用「购买卡密」入口",
+            "description": "商品卡显示「购买卡密」次级入口（经典下单→收银台→发卡）。关闭后入口立即消失（已进入的支付不受影响），可随时开关"
+        },
+        "card_buy_label": {
+            "type": "string",
+            "default": "购买卡密",
+            "label": "卡密入口主文案",
+            "description": "商品卡次级入口主文案，建议 ≤8 字"
+        },
+        "card_buy_hint": {
+            "type": "string",
+            "default": "送朋友 / 先买后用",
+            "label": "卡密入口副文案",
+            "description": "入口副文案（显示在主文案旁），可留空"
+        },
+        "card_buy_notice": {
+            "type": "text",
+            "default": "卡密 180 天有效 · 随时兑换 · 支持转赠\n兑换需提交目标账号的 Session · 卡密售出后不支持退款",
+            "label": "卡密购买说明",
+            "description": "购买确认弹窗中的说明文案；多条用换行或「||」分隔"
         }
     }
 }

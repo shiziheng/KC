@@ -746,6 +746,26 @@
     .kc-g-step { min-width: 0; flex: 1; padding: 0 2px; }
     .kc-g-h { font-size: 18px; }
   }
+  /* --- P1「购买卡密」：商品卡次级入口 + 确认弹窗（后台可开关/可改文案） --- */
+  .kc-cb-buy { margin-top: 9px; text-align: center; }
+  .kc-cb-buy a {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+    color: var(--kc-t2); text-decoration: none;
+    border-bottom: 1px dashed var(--kc-card-border); padding-bottom: 1px;
+  }
+  .kc-cb-buy a:hover { color: var(--kc-brand); border-bottom-color: var(--kc-brand); }
+  .kc-cb-buy b { font-weight: 700; }
+  .kc-cb-buy em { font-style: normal; color: var(--kc-t3); font-size: 11.5px; }
+  #kc-buy { position: fixed; inset: 0; z-index: 9997; display: none; align-items: center; justify-content: center; padding: 18px; }
+  #kc-buy.kc-on { display: flex; }
+  .kc-buy-mask { position: absolute; inset: 0; background: rgba(10, 12, 16, .55); }
+  .kc-buy-card {
+    position: relative; width: 470px; max-width: 100%; max-height: 86vh; overflow-y: auto;
+    background: var(--kc-card-bg); border: 1px solid var(--kc-card-border);
+    border-radius: 16px; padding: 18px 18px 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .4);
+  }
+  @media (max-width: 560px) { .kc-buy-card { padding: 14px 12px 12px; border-radius: 14px; } }
   /* --- FEAT-009 商品页：服务分类筛选 + 常见问题 --- */
   .max-w-1200 > .n-radio-group.n-radio-group--button-group { display: none !important; }
   .kc-cat-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 3px 0; }
@@ -2176,6 +2196,14 @@
         var cat = card.getAttribute('data-kc-cat') || 'recharge';
         if (cat !== 'recharge') { return; }
         if (card.getAttribute('data-kc-card') !== '1') { return; }
+        // P1「购买卡密」次级入口（经典下单→收银台→发卡；后台可随时关闭）
+        var buyEl = e.target.closest && e.target.closest('.kc-cb-buy');
+        if (buyEl) {
+            e.preventDefault();
+            e.stopPropagation();
+            kcOpenCardBuy(card);
+            return;
+        }
         // 只有点「立即办理」按钮才放行；点卡片其他位置一律吞掉（不跳任何页）
         var btn = e.target.closest('.n-card__action button');
         if (!btn) { e.preventDefault(); e.stopPropagation(); return; }
@@ -2487,6 +2515,228 @@
         portalTimer = setInterval(tick, 400);
         setTimeout(tick, 0);
     }
+    // ===== P1「购买卡密」：经典「下单 → 收银台 → 发卡」入口（后台可开关 / 可改文案） =====
+    function cardBuyCfgFrom(cfg) {
+        var b = cfg && cfg.card_buy;
+        if (!b || b.enabled !== true) { return null; }
+        return {
+            label: String(b.label || '购买卡密'),
+            hint: String(b.hint || ''),
+            notice: String(b.notice || '')
+        };
+    }
+    function cardBuyCfg() { return cardBuyCfgFrom(cardCfgCache.data); }
+    function buyPeriodKey(plan) {
+        var order = ['month_price', 'quarter_price', 'half_year_price', 'year_price', 'two_year_price', 'three_year_price', 'onetime_price'];
+        for (var i = 0; i < order.length; i++) {
+            var v = plan && plan[order[i]];
+            if (typeof v === 'number' && v > 0) { return order[i]; }
+        }
+        return 'month_price';
+    }
+    var KC_BUY_SHELL = '<div class="kc-buy-mask" data-action="buy-close"></div>' +
+        '<div class="kc-buy-card"><div class="kc-g-cardhead"><div>' +
+        '<div class="kc-g-cardhead-t">购买卡密</div>' +
+        '<div class="kc-g-cardhead-s" id="kc-buy-sub"></div></div>' +
+        '<button class="kc-g-close" type="button" data-action="buy-close">关闭 ✕</button></div>' +
+        '<div id="kc-buy-body"></div>' +
+        '<div class="kc-g-foot" id="kc-buy-foot"></div></div>';
+    var kcB = { open: false, phase: 'form', plan: null, methods: null, methodId: null, balance: null, busy: false, tradeNo: '', payUrl: '', error: '' };
+    function kcBuyNoticeHtml() {
+        var cfg = cardBuyCfg() || {};
+        var lines = String(cfg.notice || '').split(/\n|\|\|/).map(function (x) {
+            return String(x).trim();
+        }).filter(function (x) { return !!x; });
+        if (!lines.length) { return ''; }
+        return '<div class="kc-g-note">' + lines.map(function (x) { return '· ' + esc(x); }).join('<br>') + '</div>';
+    }
+    function kcBuyFormHtml() {
+        var h = '<div class="kc-g-rows"><div class="kc-g-row">' +
+            '<div class="kc-g-row-top"><span>' + esc(kcB.plan ? kcB.plan.name : '') + '</span><span>' + esc(kcB.plan ? kcB.plan.priceLabel : '') + '</span></div>' +
+            '<div class="kc-g-row-meta">经典购买 · 支付成功后系统自动发卡，卡密在订单详情页查看</div></div></div>';
+        h += '<div class="kc-g-mid-lb" style="margin-top:14px">支付方式</div>';
+        var methods = kcB.methods || [];
+        if (!methods.length) {
+            h += '<div class="kc-g-note">' + (kcB.methods === null ? '支付方式加载中…' : '暂无可用的支付方式，请稍后重试或联系客服') + '</div>';
+        } else {
+            h += '<div class="kc-g-plist">';
+            for (var i = 0; i < methods.length; i++) {
+                var m = methods[i];
+                var on = kcB.methodId === m.id;
+                h += '<div class="kc-g-pitem' + (on ? ' kc-on' : '') + '" data-buy-m="' + i + '">' +
+                    '<div class="kc-g-box">✓</div><div class="kc-g-pmain">' +
+                    '<div class="kc-g-pemail">' + esc(m.name || ('支付方式 ' + (i + 1))) + '</div>' +
+                    '</div></div>';
+            }
+            h += '</div>';
+        }
+        if (kcB.balance != null) {
+            h += '<div class="kc-g-bal"><span>当前余额</span><b>$' + yuan(kcB.balance) + '</b></div>';
+        }
+        h += kcBuyNoticeHtml();
+        return h;
+    }
+    function kcBuyDoneHtml() {
+        return '<div class="kc-g-rows"><div class="kc-g-row kc-ok">' +
+            '<div class="kc-g-row-top"><span>收银台已打开</span><span>待支付</span></div>' +
+            '<div class="kc-g-row-meta">订单号 ' + esc(kcB.tradeNo) + '<br>' +
+            '① 在新打开的收银台页面完成 USDT 支付<br>' +
+            '② 支付成功后系统自动发卡，回到「我的订单」查看卡密</div></div></div>' +
+            '<div class="kc-g-note">若收银台未自动打开，请点击下方按钮手动前往。</div>';
+    }
+    function kcBuyErrHtml() {
+        return '<div class="kc-g-rows"><div class="kc-g-row kc-bad">' +
+            '<div class="kc-g-row-top"><span>下单未完成</span></div>' +
+            '<div class="kc-g-row-meta">' + esc(kcB.error || '未知错误') + '，可重试或稍后再试。</div></div></div>';
+    }
+    function kcRenderCardBuy() {
+        var box = document.getElementById('kc-buy');
+        if (!box) { return; }
+        var sub = document.getElementById('kc-buy-sub');
+        if (sub) {
+            sub.textContent = kcB.plan ? (kcB.plan.name + ' · ' + kcB.plan.priceLabel + ' · 先买后用 / 可转赠') : '';
+        }
+        var body = document.getElementById('kc-buy-body');
+        if (body) {
+            body.innerHTML = kcB.phase === 'done' ? kcBuyDoneHtml()
+                : (kcB.phase === 'error' ? kcBuyErrHtml() : kcBuyFormHtml());
+        }
+        var foot = document.getElementById('kc-buy-foot');
+        if (foot) {
+            if (kcB.phase === 'done') {
+                foot.innerHTML = (kcB.payUrl ? '<button class="kc-g-btn ghost" type="button" data-action="buy-cashier">打开收银台 ↗</button>' : '') +
+                    '<button class="kc-g-btn primary" type="button" data-action="buy-order">查看订单 →</button>';
+            } else if (kcB.phase === 'error') {
+                foot.innerHTML = '<button class="kc-g-btn ghost" type="button" data-action="buy-close">关闭</button>' +
+                    '<button class="kc-g-btn primary" type="button" data-action="buy-go">重试 →</button>';
+            } else if (kcB.busy) {
+                foot.innerHTML = '<button class="kc-g-btn ghost" type="button" data-action="buy-close">取消</button>' +
+                    '<button class="kc-g-btn primary" type="button" disabled>处理中…</button>';
+            } else {
+                foot.innerHTML = '<button class="kc-g-btn ghost" type="button" data-action="buy-close">取消</button>' +
+                    '<button class="kc-g-btn primary" type="button" data-action="buy-go"' + ((kcB.methods && kcB.methods.length) ? '' : ' disabled') + '>去支付 →</button>';
+            }
+        }
+    }
+    function kcOpenCardBuy(card) {
+        if (!cardBuyCfg()) { return; }
+        if (!readToken()) { try { window.location.hash = '#/login'; } catch (e) { } return; }
+        kcB.open = true; kcB.phase = 'form'; kcB.methods = null; kcB.methodId = null;
+        kcB.balance = null; kcB.busy = false; kcB.tradeNo = ''; kcB.payUrl = ''; kcB.error = '';
+        kcB.plan = {
+            id: card.getAttribute('data-kc-plan-id') || '',
+            name: card.getAttribute('data-kc-plan-name') || 'ChatGPT 代充',
+            priceLabel: card.getAttribute('data-kc-price-label') || '',
+            period: card.getAttribute('data-kc-period') || 'month_price'
+        };
+        var box = document.getElementById('kc-buy');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'kc-buy';
+            box.innerHTML = KC_BUY_SHELL;
+            document.body.appendChild(box);
+        }
+        box.classList.add('kc-on');
+        kcRenderCardBuy();
+        fetch('/api/v1/user/order/getPaymentMethod', { headers: { 'Accept': 'application/json', 'Authorization': normAuth(readToken()) }, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                var list = (j && j.data) ? (Array.isArray(j.data) ? j.data : (j.data.data || [])) : [];
+                kcB.methods = list;
+                if (list.length) {
+                    var pick = null;
+                    for (var i = 0; i < list.length; i++) {
+                        if (/usdt/i.test(String(list[i].name || ''))) { pick = list[i]; break; }
+                    }
+                    kcB.methodId = (pick || list[0]).id;
+                }
+                if (kcB.open) { kcRenderCardBuy(); }
+            })
+            .catch(function () { kcB.methods = []; if (kcB.open) { kcRenderCardBuy(); } });
+        fetch('/api/v1/user/info', { headers: { 'Accept': 'application/json', 'Authorization': normAuth(readToken()) }, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                kcB.balance = (j && j.data && typeof j.data.balance === 'number') ? j.data.balance : null;
+                if (kcB.open) { kcRenderCardBuy(); }
+            })
+            .catch(function () { });
+    }
+    function kcCloseCardBuy() {
+        var box = document.getElementById('kc-buy');
+        if (box) { box.classList.remove('kc-on'); }
+        kcB.open = false; kcB.busy = false;
+    }
+    function kcBuyGo() {
+        if (kcB.busy || !kcB.plan || !kcB.plan.id || !kcB.methodId) { return; }
+        if (!readToken()) { try { window.location.hash = '#/login'; } catch (e) { } return; }
+        kcB.busy = true; kcB.phase = 'form'; kcRenderCardBuy();
+        var w = null;
+        try { w = window.open('', '_blank'); } catch (e) { w = null; }
+        function closeW() { try { if (w && !w.closed) { w.close(); } } catch (e) { } }
+        function fail(msg) {
+            closeW();
+            kcB.busy = false; kcB.phase = 'error'; kcB.error = String(msg || '未知错误');
+            kcRenderCardBuy();
+        }
+        var headers = { 'Accept': 'application/json', 'Authorization': normAuth(readToken()), 'Content-Type': 'application/json' };
+        fetch('/api/v1/user/order/save', {
+            method: 'POST', headers: headers, credentials: 'same-origin',
+            body: JSON.stringify({ plan_id: Number(kcB.plan.id), period: kcB.plan.period })
+        })
+            .then(function (r) { return r.json().then(function (j) { return { code: r.status, j: j || {} }; }); })
+            .then(function (res) {
+                var tradeNo = '';
+                if (typeof res.j.data === 'string') { tradeNo = res.j.data; }
+                else if (res.j.data && res.j.data.trade_no) { tradeNo = String(res.j.data.trade_no); }
+                if (res.code !== 200 || !tradeNo) { throw new Error(res.j.message || ('下单失败（HTTP ' + res.code + '）')); }
+                kcB.tradeNo = tradeNo;
+                return fetch('/api/v1/user/order/checkout', {
+                    method: 'POST', headers: headers, credentials: 'same-origin',
+                    body: JSON.stringify({ trade_no: tradeNo, method: kcB.methodId })
+                })
+                    .then(function (r2) { return r2.json().then(function (j2) { return { code: r2.status, j: j2 || {} }; }); })
+                    .then(function (res2) {
+                        var url = typeof res2.j.data === 'string' ? res2.j.data
+                            : (res2.j.data && (res2.j.data.data || res2.j.data.url)) || '';
+                        if (res2.code !== 200 || !url) { throw new Error(res2.j.message || ('收银台创建失败（HTTP ' + res2.code + '）')); }
+                        kcB.payUrl = String(url);
+                        if (w && !w.closed) { try { w.location.href = kcB.payUrl; } catch (e) { } }
+                        kcB.busy = false; kcB.phase = 'done';
+                        kcRenderCardBuy();
+                    });
+            })
+            .catch(function (err) { fail(err && err.message ? err.message : err); });
+    }
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest) { return; }
+        var pick = e.target.closest('#kc-buy [data-buy-m]');
+        if (pick) {
+            e.preventDefault();
+            var idx = parseInt(pick.getAttribute('data-buy-m'), 10);
+            var m = (kcB.methods || [])[idx];
+            if (m) { kcB.methodId = m.id; kcRenderCardBuy(); }
+            return;
+        }
+        var act = e.target.closest('#kc-buy [data-action]');
+        if (!act) { return; }
+        var a = act.getAttribute('data-action');
+        if (a === 'buy-close') { kcCloseCardBuy(); }
+        else if (a === 'buy-go') {
+            if (kcB.phase === 'error') { kcB.phase = 'form'; kcRenderCardBuy(); }
+            kcBuyGo();
+        }
+        else if (a === 'buy-order') {
+            try { window.location.hash = '#/order/' + kcB.tradeNo; } catch (err) { }
+            kcCloseCardBuy();
+        }
+        else if (a === 'buy-cashier') {
+            if (kcB.payUrl) { try { window.open(kcB.payUrl, '_blank'); } catch (err) { } }
+        }
+    }, true);
+    document.addEventListener('keydown', function (e) {
+        if ((e.key === 'Escape' || e.keyCode === 27) && kcB.open) { kcCloseCardBuy(); }
+    }, true);
+
     // ===== FEAT-006 · plan 页商品卡片渲染（后台可配 + 兜底默认 + 三态） =====
     var planTimer = null;
     var cardCfgCache = { at: 0, data: null };
@@ -2499,11 +2749,11 @@
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 var d = (j && j.data) || {};
-                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [] };
+                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [], card_buy: d.card_buy || null };
                 cardCfgCache = { at: Date.now(), data: cfg };
                 return cfg;
             })
-            .catch(function () { return { cards: {}, categories: [], faq: [] }; });
+            .catch(function () { return { cards: {}, categories: [], faq: [], card_buy: null }; });
     }
     function cardPriceOf(plan, cfg) {
         var unit = (cfg && cfg.price && cfg.price.unit) || '';
@@ -2583,6 +2833,17 @@
         card.setAttribute('data-kc-plan-name', String(title));
         card.setAttribute('data-kc-price-fen', String(Number(plan.month_price || plan.quarter_price || 0)));
         card.setAttribute('data-kc-price-label', String(price.num || '') + String(price.unit || ''));
+        card.setAttribute('data-kc-period', buyPeriodKey(plan));
+        // P1「购买卡密」次级入口：仅代充类目 & 在售态渲染；后台关闭时 cardBuyCfg() 为空、不渲染
+        var buyCfg = cardBuyCfg();
+        if (buyCfg && state === 'onsale' && (c.category || 'recharge') === 'recharge' && !card.querySelector('.kc-cb-buy')) {
+            var buy = document.createElement('div');
+            buy.className = 'kc-cb-buy';
+            buy.setAttribute('data-kc-buy', '1');
+            buy.innerHTML = '<a href="javascript:;" data-kc-buy="1"><b>' + esc(buyCfg.label) + '</b>' +
+                (buyCfg.hint ? '<em>' + esc(buyCfg.hint) + '</em>' : '') + '<span>→</span></a>';
+            card.appendChild(buy);
+        }
     }
     // 【FEAT-014】代充卡片按钮文案守卫
     // Vue 重建按钮节点会覆盖我们设的 textContent（applyCardNode 对已改造卡片会短路，

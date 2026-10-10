@@ -128,11 +128,33 @@ class PlanCardController extends PluginController
                 $faq = [];
             }
 
+            // 「购买卡密」入口配置（P1）：直读 DB（绕过插件配置的 1 小时 Cache::remember，
+            // 保证后台保存后「立即生效」，开关可随时关闭）
+            try {
+                $rawCfg = DB::table('v2_plugins')->where('code', $this->getPluginCode())->value('config');
+                $pluginCfg = $rawCfg ? (json_decode((string) $rawCfg, true) ?: []) : [];
+            } catch (\Throwable $e) {
+                $pluginCfg = [];
+            }
+            $rawEnabled = array_key_exists('card_buy_enabled', $pluginCfg) ? $pluginCfg['card_buy_enabled'] : true;
+            $cardBuyEnabled = filter_var($rawEnabled, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($cardBuyEnabled === null) { $cardBuyEnabled = true; }
+            $cardBuyLabel = array_key_exists('card_buy_label', $pluginCfg) ? trim((string) $pluginCfg['card_buy_label']) : '';
+            $cardBuyHint = array_key_exists('card_buy_hint', $pluginCfg) ? trim((string) $pluginCfg['card_buy_hint']) : '';
+            $cardBuyNotice = array_key_exists('card_buy_notice', $pluginCfg) ? (string) $pluginCfg['card_buy_notice'] : '';
+            $cardBuy = [
+                'enabled' => $cardBuyEnabled,
+                'label' => mb_substr($cardBuyLabel !== '' ? $cardBuyLabel : '购买卡密', 0, 20),
+                'hint' => mb_substr($cardBuyHint !== '' ? $cardBuyHint : '送朋友 / 先买后用', 0, 30),
+                'notice' => mb_substr($cardBuyNotice !== '' ? $cardBuyNotice : "卡密 180 天有效 · 随时兑换 · 支持转赠\n兑换需提交目标账号的 Session · 卡密售出后不支持退款", 0, 300),
+            ];
+
             return $this->success([
                 'cards' => $cards,
                 'sellable' => $sellable,
                 'availability' => $availability,
                 'supplier_health' => $healthResult['health'],
+                'card_buy' => $cardBuy,
                 'categories' => array_values($categories),
                 'faq' => array_values($faq),
             ]);
