@@ -36,7 +36,8 @@
 - 支付：渠道 `v2_payment`；EPay=plugins-core 定制插件（尾数/KC 台账）；回调 `/api/v1/guest/payment/notify/{method}/{uuid}`；「订单不存在」误回 success（不动）。
 - 红线（SP-2026-10-10）：只许 ①保命补丁 ②插件 API ③壳层菜单；`admin/kc/*` 12 接口（403=存活）。
 - 坑：period 键错配；`plan/save` 不收 show/sell/renew/sort；余额=抵扣池（纯余额单 `OrderService->paid('BALANCE-..')`）；分销快照 `order.open.after`（20/10/5）；`/invite/save` 是 GET；插件 PascalCase 目录/snake code、`listen()`、路由无 `/api` 前缀、新增后 `octane:reload`、`order.open.after` 超时 5s→HTTP 2~3s 全吞。
+- 插件配置读取有 **1h `Cache::remember`**（`HasPluginConfig`；PluginManager 属 Octane warm 单例，`octane:reload` 不清 Laravel cache）→ 要即时生效的配置键**直读 DB**（如 `card_buy_*`）或 `cache:clear`。
 
 ## 前端注入 & 业务闭环
-- 三源 `tools/kc_{theme,panel,activate}_inject.html`（含防中间态三件套；方法论→技能 `spa-inject-without-rebuild`）；充值主路径 `payment.notify.verified`→加余额+COMPLETED；下限三处同改（panel `MIN_USD`+theme+`TopupController`，现 $1）；用户 API 头用 `auth_data`。
+- 三源 `tools/kc_{theme,panel,activate}_inject.html`（含防中间态三件套；方法论→技能 `spa-inject-without-rebuild`）；充值主路径 `payment.notify.verified`→加余额+COMPLETED；下限三处同改（panel `MIN_USD`+theme+`TopupController`，现 $1）；用户 API 头用 `auth_data`；「购买卡密」P1：card_buy 4 配置（插件设置、**直读 DB 即时生效**）→ 主题 `.kc-cb-buy` 入口 + `#kc-buy` 弹窗 → `order/save`+`checkout` → 收银台 → 自动发卡。
 - 独立轨道 Mock 冻结；迁移用 `biz_` 前缀；红线：`REQUIRE_ZOVOCARD_MOCK=1`/`ZOVOCARD_MOCK=1` 未批准不得解除；Session/Token/Cookie/密码/卡号不落库。
