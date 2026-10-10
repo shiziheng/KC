@@ -1,8 +1,8 @@
 {
-  "version": "1.11.3",
-  "version_tag": "v1.11.3",
+  "version": "1.12.0",
+  "version_tag": "v1.12.0",
   "date": "2026-10-10",
-  "title": "补回 S8 供应商健康摘要并完成履约链路模拟验证",
+  "title": "「购买卡密」前台入口（P1）与后台可配开关",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -63,27 +63,29 @@
   },
   "latest": {
     "added": [
-      "补回 S8 供应商健康摘要（KC 侧）：`supplier-health.js` 状态机（healthy / degraded / soldout + 人工恢复 + 余额安全线），字段兼容 10-07 版持久化数据",
-      "`/api/integration/health` 恢复输出 `data.supplier_health`；启动 + 每 5 分钟刷新（仅 Mock）、`supplier_health_history` 快照（48 条上限）、联调接口 `POST /api/integration/health/refresh`（需集成密钥）"
+      "「购买卡密」前台入口（P1）：商品卡次级入口 + 确认弹窗，走经典「下单 → USDT 收银台 → 发卡」链路（后端全复用，零改造）",
+      "后台可配 4 项：card_buy_enabled（总开关）/ card_buy_label / card_buy_hint / card_buy_notice；Xboard 插件设置页即改即生效，可随时关闭",
+      "设计文档 docs/方案/卡密购买模式-前台设计-v1.0.0.md（P1 已实现 + P2/P3 详细设计）"
     ],
     "changed": [
-      "商城「ChatGPT Plus 一个月」由「当前代充服务暂不可售」恢复可售：`/plan/kc-cards` sellable=true、availability=onsale（此前 KC 健康状态不可达，前端展示与下单前置双双 fail-closed）"
+      "/plan/kc-cards 的 card_buy 配置直读数据库（绕过 Xboard 插件配置的 1 小时 Cache::remember），保存后下一次请求立即生效；未改动任何 Xboard 内核",
+      "插件 PlanCardController 增加 card_buy 输出；config.json 声明 4 个配置项（插件版本 1.0.1 → 1.1.0）；仓库快照同步"
     ],
     "verified": [
-      "S8 状态机自测全绿（`tools/test-supplier-health.js`：healthy → degraded → soldout → 人工恢复 → 余额过低）",
-      "履约链路模拟验证（零真实扣款）：真实 ¥15 订单 2026101022104201309630610 → 注入模拟到账回调（BEpusdt 同款签名，HTTP 200）→ 自动发卡 KC-UEQQHXST39SBBQG → 订单详情页展示卡密与「去开通 →」；KC 兑卡页打开正常",
-      "幂等复验：重复回调 + 重复发卡请求均无二次发卡（reused=true，发放记录数不变）；订单详情页/兑卡页截图见 `debug_screenshots/fulfill-*.png`"
+      "E2E（零真实扣款）：入口渲染 → 弹窗 → 下单（2026101023100091803551100，¥15.00）→ USDT 收银台 URL → 模拟到账 → 自动发卡 KC-8YL6L6HQNB8UKY6（attempts=1）→ 订单详情页卡密可见",
+      "开关（整页加载口径）：关闭 → 接口立即 enabled=false、刷新后入口消失；恢复 → 立即回来；零缓存操作、零重启",
+      "部署零漂移：本地注入源 === 线上 custom_html 逐字节一致（md5=7321e9049c83086abb750fa9161ca598）"
     ],
     "risks": [
-      "supplier_health 刷新当前仅 Mock 模式执行；真实模式「上游只读验通」需用户批准后开启（安全锁未动）",
-      "测试痕迹保留：测试用户 1 个、测试订单 1 笔（¥15 模拟支付）、测试卡密 1 张（未兑换）",
-      "商品卡「立即办理」按 FEAT-014 打开「代充开通向导」（登录 ChatGPT → Session → 选号 → 余额支付）；经典「下单 → 收银台 → 发卡」路径并行可用，本次模拟走经典路径"
+      "卡密为可转让凭证（转卖灰产/套利风险需限购与风控兜底；P1 仅开放单张，P2/P3 设计稿已含对策）",
+      "「立即办理」向导与「购买卡密」双入口并存，需观察用户选择与认知成本",
+      "测试痕迹：新增测试用户 2 个、测试订单若干、未兑换卡密 2 张（保留供查看）"
     ]
   },
   "next": [
-    "用户批准后执行「上游只读验通」（真实凭据只读校验）与「小额真实首单」；真实模式开启 supplier_health 实体检并接入人工恢复入口",
+    "评审《卡密购买模式-前台设计》P2（我的卡密/提醒/分享/兑换联动）与 P3（数量与批量）设计稿",
+    "用户批准后执行「上游只读验通」（真实凭据只读校验）与「小额真实首单」",
     "用户执行一笔 $1 真实小额充值测试（付款 → 回传 → 余额到账）并完成收款链路最终验收",
-    "待用户确认《系统低耦合重整与上线路线》D1–D6 与《后台形态选型》方案稿",
     "上线前：收银台地址与回调域名从内网地址切换为可访问域名；集成密钥轮换"
   ],
   "immutable_constraints": {
