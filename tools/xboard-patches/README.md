@@ -2,6 +2,19 @@
 
 容器内改动**不进镜像**，`docker compose up -d --build` 或重建 xboard 容器后会全部丢失。重建后按本文档重打。
 
+## ⚠️ 重建后核查（2026-10-10 新增，防静默丢失）
+
+先核查三处补丁是否在位（实测曾整体丢失 1/3/4：表现为充值面板下单被「该订阅已售罄」拦截、充值订单误发佣金）：
+
+```bash
+docker exec xboard sh -c "grep -c kc_is_topup /www/app/Services/PlanService.php; grep -c kc_is_topup /www/app/Services/OrderService.php; grep -c kcHasCardTable /www/app/Console/Commands/CheckCommission.php"
+# 期望输出：1 / 2 / 2 ；缺任一即按对应章节重打
+```
+
+全链路体检（建 1 笔未支付测试单，不涉及真实资金）：从仓库根运行 `node tools/test-topup-panel-flow.js`，期望 save=200 且收银台=200。
+
+> 2026-10-10 已按本文档重打 1/3/4 并复测通过（详情见 CHANGELOG v1.11.2）；备份：`/www/PlanService.php.orig.bak`、`/www/app/Services/OrderService.php.pre-kcrepatch.bak`、`/www/app/Console/Commands/CheckCommission.php.pre-kcrepatch.bak`。
+
 ## 补丁 1：PlanService::validatePlanAvailability —— kc_is_topup 豁免 show 校验
 
 - **文件**：容器内 `/www/app/Services/PlanService.php`

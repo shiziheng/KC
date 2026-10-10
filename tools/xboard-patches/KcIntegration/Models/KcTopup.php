@@ -19,6 +19,15 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $status
  * @property string $error_msg
  * @property int    $attempts
+ * @property string|null $payment_reference
+ * @property int $expected_amount
+ * @property int $received_amount
+ * @property string|null $chain
+ * @property string|null $wallet_address
+ * @property string|null $tx_hash
+ * @property int $confirmations
+ * @property string $match_status
+ * @property string $payment_source
  */
 class KcTopup extends Model
 {
@@ -37,5 +46,8 @@ class KcTopup extends Model
         'balance_before' => 'integer',
         'balance_after'  => 'integer',
         'attempts'       => 'integer',
+        'expected_amount' => 'integer',
+        'received_amount' => 'integer',
+        'confirmations' => 'integer',
     ];
 }

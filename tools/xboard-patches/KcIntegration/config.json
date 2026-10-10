@@ -1,10 +1,19 @@
 {
     "name": "KC 代充集成",
     "code": "kc_integration",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "订单履约完成后，自动向 KC 平台申领对应的 ChatGPT 代充卡密，并在订单页展示。",
     "author": "KC",
     "type": "feature",
+    "admin_menus": [
+        { "id": "kc-operations", "title": "代充运营菜单", "label": "商品、订单、USDT 补单", "path": "ops", "icon": "shopping-bag" }
+    ],
+    "admin_crud": {
+        "hidden_menu_keys": [
+            "server", "machine", "route", "traffic", "coupon", "theme", "mail", "plugin_install", "plugin", "referral", "gift-card", "knowledge"
+        ],
+        "technical_menu_keys": ["server", "machine", "route", "traffic", "theme", "mail", "plugin"]
+    },
     "require": {
         "xboard": ">=1.0.0"
     },

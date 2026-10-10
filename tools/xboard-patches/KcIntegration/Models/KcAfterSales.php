@@ -8,13 +8,20 @@ use Illuminate\Database\Eloquent\Model;
 class KcAfterSales extends Model
 {
     protected $table = 'v2_plugin_kc_after_sales';
+
     protected $guarded = ['id'];
-    protected $casts = ['order_id' => 'integer', 'user_id' => 'integer', 'processed_at' => 'datetime'];
+
+    protected $casts = [
+        'order_id' => 'integer',
+        'user_id' => 'integer',
+        'processed_at' => 'datetime',
+    ];
 
     public const TYPE_FAILED = 'failed';
     public const TYPE_TIMEOUT = 'timeout';
     public const TYPE_REFUND = 'refund';
     public const TYPE_OTHER = 'other';
+
     public const STATUS_PENDING = 'pending';
     public const STATUS_REVIEWING = 'reviewing';
     public const STATUS_APPROVED = 'approved';
@@ -23,25 +30,40 @@ class KcAfterSales extends Model
     public const STATUS_CANCELLED = 'cancelled';
 
     public static array $typeMap = [
-        self::TYPE_FAILED => '代充失败', self::TYPE_TIMEOUT => '长时间未完成',
-        self::TYPE_REFUND => '退款申请', self::TYPE_OTHER => '其他订单问题',
+        self::TYPE_FAILED => '代充失败',
+        self::TYPE_TIMEOUT => '长时间未完成',
+        self::TYPE_REFUND => '退款申请',
+        self::TYPE_OTHER => '其他订单问题',
     ];
+
     public static array $statusMap = [
-        self::STATUS_PENDING => '待处理', self::STATUS_REVIEWING => '处理中',
-        self::STATUS_APPROVED => '已受理', self::STATUS_REJECTED => '已驳回',
-        self::STATUS_RESOLVED => '已完成', self::STATUS_CANCELLED => '已取消',
+        self::STATUS_PENDING => '待处理',
+        self::STATUS_REVIEWING => '处理中',
+        self::STATUS_APPROVED => '已受理',
+        self::STATUS_REJECTED => '已驳回',
+        self::STATUS_RESOLVED => '已完成',
+        self::STATUS_CANCELLED => '已取消',
     ];
 
     public function isOpen(): bool
     {
-        return in_array((string) $this->status, [self::STATUS_PENDING, self::STATUS_REVIEWING, self::STATUS_APPROVED], true);
+        return in_array((string) $this->status, [
+            self::STATUS_PENDING,
+            self::STATUS_REVIEWING,
+            self::STATUS_APPROVED,
+        ], true);
     }
 
     public function isFinal(): bool
     {
-        return in_array((string) $this->status, [self::STATUS_REJECTED, self::STATUS_RESOLVED, self::STATUS_CANCELLED], true);
+        return in_array((string) $this->status, [
+            self::STATUS_REJECTED,
+            self::STATUS_RESOLVED,
+            self::STATUS_CANCELLED,
+        ], true);
     }
 
+    /** 用户可见字段，不返回操作人或后台内部备注。 */
     public function toPublicPayload(array $messages = []): array
     {
         $payload = [
@@ -57,7 +79,9 @@ class KcAfterSales extends Model
             'updated_at' => $this->updated_at?->timestamp,
             'processed_at' => $this->processed_at?->timestamp,
         ];
-        if ($messages) $payload['messages'] = $messages;
+        if ($messages) {
+            $payload['messages'] = $messages;
+        }
         return $payload;
     }
 }

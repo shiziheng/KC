@@ -49,5 +49,3 @@ class RiskController extends PluginController
         return $this->success(['released' => $released]);
     }
 }
-
-

@@ -45,5 +45,3 @@ class KcRiskEvent extends Model
         ];
     }
 }
-
-

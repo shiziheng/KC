@@ -47,3 +47,4 @@ class KcLedger extends Model
         ];
     }
 }
+

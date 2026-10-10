@@ -78,9 +78,6 @@ class CompensationService
         }
     }
 
-    /**
-     * 补偿台账核心事务：先锁补偿行，再锁订单和用户。
-     */
     protected function complete(string $tradeNo): array
     {
         try {
@@ -99,7 +96,6 @@ class CompensationService
                     throw new \RuntimeException('原订单不存在');
                 }
 
-                // 待支付/已取消订单不能因为状态查询而再次加余额；保留人工确认痕迹。
                 if (in_array((int) $order->status, [Order::STATUS_PENDING, Order::STATUS_CANCELLED], true)) {
                     $row->status = KcCompensation::STATUS_REVIEW_PENDING;
                     $row->note = '原订单未处于已支付履约状态，需人工核对';
@@ -164,10 +160,6 @@ class CompensationService
             });
 
             $row = $result['row'];
-            if (!$result['skipped'] && $row->status === KcCompensation::STATUS_FAILED) {
-                return ['ok' => false, 'skipped' => false, 'error' => '补偿处理失败', 'compensation' => $row];
-            }
-
             return ['ok' => true, 'skipped' => (bool) $result['skipped'], 'error' => '', 'compensation' => $row];
         } catch (\Throwable $e) {
             KcCompensation::where('trade_no', $tradeNo)
@@ -190,9 +182,6 @@ class CompensationService
         }
     }
 
-    /**
-     * 管理员确认外部退款已经完成。该动作只更新台账，不调用未知的支付渠道 API。
-     */
     public function markManualDone(string $tradeNo, string $operatorRef, string $note = ''): array
     {
         try {

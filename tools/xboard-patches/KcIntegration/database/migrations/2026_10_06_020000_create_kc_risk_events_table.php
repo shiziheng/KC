@@ -45,5 +45,3 @@ return new class extends Migration
         Schema::dropIfExists('v2_plugin_kc_risk_events');
     }
 };
-
-

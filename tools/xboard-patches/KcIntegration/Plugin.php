@@ -257,6 +257,18 @@ class Plugin extends AbstractPlugin
 
             $userRef = $this->resolveUserRef($order);
 
+            // ── FEAT-009：非代充类商品（成品号 / 建站服务等）走人工交付，不自动发卡
+            //    判断依据是套餐的卡片配置分类（kc_card.category），非 recharge 即人工交付。
+            $manualCat = $this->manualDeliveryCategory((int) $order->plan_id);
+            if ($manualCat !== null) {
+                $this->record($tradeNo, $order, '', KcCard::STATUS_SKIPPED, '人工交付（分类：' . $manualCat . '），未自动发卡', $userRef);
+                Log::channel('daily')->info('[KcIntegration] 人工交付订单，跳过自动发卡', [
+                    'trade_no' => $tradeNo,
+                    'category' => $manualCat,
+                ]);
+                return;
+            }
+
             $planType = $this->resolvePlanType((int) $order->plan_id);
             if ($planType === null) {
                 $this->record($tradeNo, $order, '', KcCard::STATUS_SKIPPED, '未配置套餐映射(plan_id=' . (int) $order->plan_id . ')', $userRef);
@@ -275,13 +287,7 @@ class Plugin extends AbstractPlugin
             }
 
             $this->record($tradeNo, $order, $planType, KcCard::STATUS_FAILED, $result['error'], $userRef);
-            // 卡密发放失败已经是确定性履约失败：余额部分自动退回，外部支付进入人工队列。
-            // 只保存脱敏原因，不把供应商原始响应暴露给用户。
-            (new CompensationService())->handleTerminalFailure(
-                $order,
-                'cdk_issue_failed',
-                '代充卡密发放失败'
-            );
+            (new CompensationService())->handleTerminalFailure($order, 'cdk_issue_failed', '代充卡密发放失败');
             Log::channel('daily')->warning('[KcIntegration] 卡密发放失败', [
                 'trade_no'  => $tradeNo,
                 'plan_type' => $planType,
@@ -297,11 +303,7 @@ class Plugin extends AbstractPlugin
             try {
                 $this->record($tradeNo, null, '', KcCard::STATUS_FAILED, '插件内部异常: ' . $e->getMessage());
                 if ($order instanceof Order) {
-                    (new CompensationService())->handleTerminalFailure(
-                        $order,
-                        'plugin_internal_failed',
-                        '代充履约插件异常'
-                    );
+                    (new CompensationService())->handleTerminalFailure($order, 'plugin_internal_failed', '代充履约插件异常');
                 }
             } catch (\Throwable $ignored) {
                 // 连记录都失败时静默 —— 已经无路可退，不能影响履约
@@ -348,12 +350,7 @@ class Plugin extends AbstractPlugin
                     'trade_no' => $tradeNo,
                     'error'    => $result['error'],
                 ]);
-                // 充值本身未到账时也要进入统一补偿台账；支付渠道未知时不自动伪造退款。
-                (new CompensationService())->handleTerminalFailure(
-                    $order,
-                    'topup_credit_failed',
-                    '余额充值到账失败'
-                );
+                (new CompensationService())->handleTerminalFailure($order, 'topup_credit_failed', '余额充值到账失败');
             }
 
             return true;
@@ -372,15 +369,20 @@ class Plugin extends AbstractPlugin
      * 把 Xboard 的 plan_id 映射为 KC 档位名。
      * 未配置或配置了非法档位时返回 null（调用方记为 skipped）。
      */
-    /** 非代充分类走人工交付，不进入自动代充流程。 */
+    /**
+     * FEAT-009：返回该套餐的人工交付分类名；null 表示自动交付（代充）。
+     * 异常一律按自动交付处理，绝不影响既有发卡流程。
+     */
     protected function manualDeliveryCategory(int $planId): ?string
     {
         try {
             $raw = DB::table('v2_plan')->where('id', $planId)->value('kc_card');
-            $card = is_string($raw) ? json_decode($raw, true) : null;
-            if (!is_array($card)) return null;
-            $category = trim((string) ($card['category'] ?? 'recharge'));
-            return $category === '' || $category === 'recharge' ? null : $category;
+            if (empty($raw)) { return null; }
+            $card = json_decode((string) $raw, true);
+            if (!is_array($card)) { return null; }
+            $cat = isset($card['category']) ? (string) $card['category'] : 'recharge';
+            if ($cat === '' || $cat === 'recharge') { return null; }
+            return $cat;
         } catch (\Throwable $e) {
             return null;
         }

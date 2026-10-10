@@ -7,7 +7,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Plugin\KcIntegration\Support\SupplierHealthClient;
 
-/** 商品页卡片、分类、FAQ 与供应商可售摘要（公开展示，敏感字段已脱敏）。 */
+/**
+ * 商品页配置（公开接口 · FEAT-006 卡片 / FEAT-009 分类 + 常见问题）
+ *
+ * 供前台商品页一次读取：
+ *   - cards      每个在售套餐的卡片展示配置（未配置为 null，前台走默认模板）
+ *   - categories 服务分类列表（代充/成品号/建站服务…，后台可配）
+ *   - faq        商品页常见问题（问答对，后台可配）
+ *
+ * 免登录：属营销展示信息，不含敏感数据。
+ * 路由：GET /plan/kc-cards（插件路由无 /api 前缀）
+ */
 class PlanCardController extends PluginController
 {
     /** 前台统一四态；featured/recommend 仅作为旧版角标语义，按在售处理。 */
@@ -62,7 +72,9 @@ class PlanCardController extends PluginController
             $sellable = [];
             $availability = [];
             $packages = $this->getConfig('packages', []);
-            if (is_string($packages)) $packages = json_decode($packages, true) ?: [];
+            if (is_string($packages)) {
+                $packages = json_decode($packages, true) ?: [];
+            }
             $healthClient = new SupplierHealthClient(
                 (string) $this->getConfig('kc_base_url', ''),
                 (string) $this->getConfig('integration_key', ''),
@@ -70,21 +82,21 @@ class PlanCardController extends PluginController
                 1
             );
             $healthResult = $healthClient->fetch();
-
             foreach ($rows as $r) {
                 $card = null;
                 if (!empty($r->kc_card)) {
                     $decoded = json_decode((string) $r->kc_card, true);
-                    if (is_array($decoded)) $card = $decoded;
+                    if (is_array($decoded)) {
+                        $card = $decoded;
+                    }
                 }
-                $id = (string) $r->id;
                 $cardState = $this->normalizeState(is_array($card) ? ($card['state'] ?? null) : null);
                 if (is_array($card)) {
                     $card['state'] = $cardState;
                     $card['rules'] = $this->normalizeRules($card['rules'] ?? null);
                 }
-                $cards[$id] = $card;
-                $planType = is_array($packages) ? ($packages[$id] ?? $packages[$r->id] ?? '') : '';
+                $cards[(string) $r->id] = $card;
+                $planType = is_array($packages) ? ($packages[(string) $r->id] ?? $packages[$r->id] ?? '') : '';
                 // 未映射套餐属于其它商品/人工交付，不被代充供应商状态隐藏。
                 $healthSellable = $planType === ''
                     ? true
@@ -92,14 +104,15 @@ class PlanCardController extends PluginController
                 $displayState = $cardState === 'onsale' && !$healthSellable ? 'soldout' : $cardState;
                 $isSellable = $healthSellable && $displayState === 'onsale';
                 $reason = $this->stateReason($displayState, $healthSellable ? '' : (string) ($healthResult['health']['reason'] ?? ''));
-                $sellable[$id] = $isSellable;
-                $availability[$id] = [
+                $sellable[(string) $r->id] = $isSellable;
+                $availability[(string) $r->id] = [
                     'state' => $displayState,
                     'sellable' => $isSellable,
                     'reason' => $reason,
                 ];
             }
 
+            // 分类列表（后台可配；缺省给三类默认值）
             $categories = json_decode((string) DB::table('v2_settings')->where('name', 'kc_plan_categories')->value('value'), true);
             if (!is_array($categories) || !count($categories)) {
                 $categories = [
@@ -108,8 +121,12 @@ class PlanCardController extends PluginController
                     ['key' => 'website', 'name' => '建站服务', 'nav' => true],
                 ];
             }
+
+            // 商品页常见问题（后台可配）
             $faq = json_decode((string) DB::table('v2_settings')->where('name', 'kc_plan_faq')->value('value'), true);
-            if (!is_array($faq)) $faq = [];
+            if (!is_array($faq)) {
+                $faq = [];
+            }
 
             return $this->success([
                 'cards' => $cards,

@@ -60,7 +60,6 @@ class KcCard extends Model
     /** KC 侧开通失败 */
     public const KC_FAILED = 'failed';
 
-    // FEAT-018 S5：对外统一履约状态。旧 kc_status 字段继续保留兼容。
     public const STATE_PENDING = 'pending';
     public const STATE_VALIDATING = 'validating';
     public const STATE_RUNNING = 'running';
@@ -101,30 +100,15 @@ class KcCard extends Model
         return in_array($this->kc_status, [self::KC_COMPLETED, self::KC_FAILED], true);
     }
 
-    /**
-     * 把发卡状态、KC 任务状态和补偿状态收敛成一个前台状态。
-     */
     public function canonicalState(?string $compensationStatus = null): string
     {
         if ($compensationStatus !== null && $compensationStatus !== '') {
-            if (in_array($compensationStatus, ['manual_pending', 'partial_refunded_manual_pending', 'manual_done', 'review_pending'], true)) {
-                return self::STATE_MANUAL;
-            }
-            if (in_array($compensationStatus, ['processing', 'balance_refunded', 'failed'], true)) {
-                return self::STATE_COMPENSATING;
-            }
+            if (in_array($compensationStatus, ['manual_pending', 'partial_refunded_manual_pending', 'manual_done', 'review_pending'], true)) return self::STATE_MANUAL;
+            if (in_array($compensationStatus, ['processing', 'balance_refunded', 'failed'], true)) return self::STATE_COMPENSATING;
         }
-
-        if ($this->status === self::STATUS_FAILED) {
-            return self::STATE_FAILED;
-        }
-        if ($this->status === self::STATUS_SKIPPED) {
-            return self::STATE_MANUAL;
-        }
-        if (!$this->isIssued()) {
-            return self::STATE_PENDING;
-        }
-
+        if ($this->status === self::STATUS_FAILED) return self::STATE_FAILED;
+        if ($this->status === self::STATUS_SKIPPED) return self::STATE_MANUAL;
+        if (!$this->isIssued()) return self::STATE_PENDING;
         return match ($this->kc_status) {
             self::KC_RUNNING => self::STATE_RUNNING,
             self::KC_COMPLETED => self::STATE_COMPLETED,
@@ -136,23 +120,15 @@ class KcCard extends Model
     public static function stateLabel(string $state): string
     {
         return [
-            self::STATE_PENDING => '待处理',
-            self::STATE_VALIDATING => '校验中',
-            self::STATE_RUNNING => '开通中',
-            self::STATE_COMPLETED => '开通完成',
-            self::STATE_FAILED => '开通失败',
-            self::STATE_COMPENSATING => '补偿处理中',
+            self::STATE_PENDING => '待处理', self::STATE_VALIDATING => '校验中',
+            self::STATE_RUNNING => '开通中', self::STATE_COMPLETED => '开通完成',
+            self::STATE_FAILED => '开通失败', self::STATE_COMPENSATING => '补偿处理中',
             self::STATE_MANUAL => '待人工处理',
         ][$state] ?? '处理中';
     }
 
     public static function stateIsTerminal(string $state): bool
     {
-        return in_array($state, [
-            self::STATE_COMPLETED,
-            self::STATE_FAILED,
-            self::STATE_COMPENSATING,
-            self::STATE_MANUAL,
-        ], true);
+        return in_array($state, [self::STATE_COMPLETED, self::STATE_FAILED, self::STATE_COMPENSATING, self::STATE_MANUAL], true);
     }
 }

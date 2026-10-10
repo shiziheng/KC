@@ -5,11 +5,13 @@ use Plugin\KcIntegration\Controllers\CardController;
 use Plugin\KcIntegration\Controllers\RedeemController;
 use Plugin\KcIntegration\Controllers\StatusController;
 use Plugin\KcIntegration\Controllers\TopupController;
+use Plugin\KcIntegration\Controllers\PlanCardController;
+use Plugin\KcIntegration\Controllers\AfterSalesController;
+use Plugin\KcIntegration\Controllers\OrderPayController;
 use Plugin\KcIntegration\Controllers\CompensationController;
 use Plugin\KcIntegration\Controllers\LedgerController;
 use Plugin\KcIntegration\Controllers\RiskController;
-use Plugin\KcIntegration\Controllers\PlanCardController;
-use Plugin\KcIntegration\Controllers\AfterSalesController;
+use Plugin\KcIntegration\Controllers\AdminMenuController;
 
 /*
 |--------------------------------------------------------------------------
@@ -49,6 +51,8 @@ Route::prefix('user/kc')->middleware('user')->group(function () {
     Route::post('/topup/prepare', [TopupController::class, 'prepare'])->middleware('throttle:10,1');
     // 按订单号查充值记录（订单页展示「已充值 ¥X 到余额」）
     Route::get('/topup/info', [TopupController::class, 'info']);
+    // FEAT-014：充值订单台账（按 pending/overdue/done/failed 分组）
+    Route::get('/topup/orders', [TopupController::class, 'orders'])->middleware('throttle:30,1');
     // FEAT-018 S4：用户查看代充失败补偿状态（只返回脱敏状态）
     Route::get('/compensations', [CompensationController::class, 'mine']);
     // FEAT-018 S6：用户只读余额流水与复算结果
@@ -112,5 +116,20 @@ Route::prefix('admin/kc/after-sales')->middleware(['user', 'admin'])->group(func
     Route::post('/{requestNo}/process', [AfterSalesController::class, 'process']);
 });
 
-// 商品卡片、供应商可售状态与 FAQ（公开）
+// USDT 充值异常与余额补单：只允许 Xboard 管理员使用，KC 不代管 Xboard 密码。
+Route::prefix('admin/kc/topups')->middleware(['user', 'admin'])->group(function () {
+    Route::get('/', [TopupController::class, 'adminList']);
+    Route::post('/credit', [TopupController::class, 'adminCredit']);
+    Route::post('/mark-review', [TopupController::class, 'adminMarkReview']);
+});
+
+// Xboard 非代充菜单清理策略（只读，可供统一入口或管理端壳读取）。
+Route::get('/admin/kc/menu-policy', [AdminMenuController::class, 'index'])->middleware(['user', 'admin']);
+
+// FEAT-006：商品卡片配置（公开 · 免登录，供前台商品页读取卡片展示内容）
 Route::get('/plan/kc-cards', [PlanCardController::class, 'index']);
+
+// FEAT-010：余额结算（余额已全额抵扣的订单 → 推进履约与发卡）
+Route::prefix('kc/order')->middleware('user')->group(function () {
+    Route::post('/pay-balance', [OrderPayController::class, 'payBalance']);
+});
