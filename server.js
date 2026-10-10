@@ -27,6 +27,7 @@ const { querySubscriptionBySession, validateSessionTokenForQuery, cancelAutoRene
 // 第三方 GPT 代充 API 客户端：默认对接 ZovoCard / SpaceXCard OpenAPI（/openapi/v1）。
 // 旧 broker（kc.vpss.eu.cc）实现保留在 gpt-api-client.js，需要时改回 require 即可。
 const gptApi = require('./zovocard-client');
+const supplierHealth = require('./supplier-health');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -4069,15 +4070,110 @@ app.get('/api/integration/cdk/issue', requireIntegrationAuth, async (req, res) =
     }
 });
 
+// ─── S8 供应商健康摘要（履约前置门槛：商城按此判定可售）─────────────────────
+const SUPPLIER_HEALTH_KEY = 'supplier_health_state';
+
+async function readSupplierHealthState() {
+    try {
+        const raw = await store.getAppConfigValue(SUPPLIER_HEALTH_KEY, '');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * 刷新供应商健康摘要并持久化。
+ *
+ * 安全约束：仅 Mock 模式执行 —— 用本地模拟的套餐/余额结果评估，
+ * 不产生任何真实上游调用。真实模式的「上游只读验通」需用户批准后另行开启，
+ * 当前非 Mock 直接跳过（保持 fail-closed，商城侧不可售）。
+ */
+async function refreshSupplierHealth() {
+    await ensureStoreReady();
+    const cfg = await store.getGptApiConfig();
+    if (!gptApi.isMockMode(cfg)) {
+        return null;
+    }
+    const [plansResult, balanceResult] = await Promise.all([
+        gptApi.fetchPlans(cfg),
+        gptApi.queryBalance(cfg)
+    ]);
+    const previous = (await readSupplierHealthState()) || supplierHealth.baseState();
+    const next = supplierHealth.evaluateSupplierHealth({
+        previous,
+        plansResult,
+        balanceResult,
+        now: new Date().toISOString(),
+        mock: true
+    });
+    await store.setAppConfigValue(SUPPLIER_HEALTH_KEY, JSON.stringify(next));
+    await appendSupplierHealthHistory(next);
+    return next;
+}
+
+/** 追加一条健康快照历史（运维参考；截断保留最近 48 条） */
+async function appendSupplierHealthHistory(state) {
+    try {
+        const raw = await store.getAppConfigValue(SUPPLIER_HEALTH_HISTORY_KEY, '');
+        let list = [];
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) list = parsed;
+            } catch (_) { /* 历史解析失败则重建 */ }
+        }
+        list.push({
+            status: state.status,
+            sellable: state.sellable === true,
+            reason_code: state.reason_code,
+            checked_at: state.checked_at,
+            last_probe_status: state.last_probe_status || null,
+            last_probe_reason_code: state.last_probe_reason_code || null,
+            recovery_ready: state.recovery_ready === true,
+            failure_count: Number(state.failure_count) || 0,
+            balance: state.balance,
+            plans: (Array.isArray(state.plans) ? state.plans : []).map((p) => ({ key: p.key, available: p.available === true })),
+            mock: state.mock === true
+        });
+        if (list.length > SUPPLIER_HEALTH_HISTORY_MAX) {
+            list = list.slice(list.length - SUPPLIER_HEALTH_HISTORY_MAX);
+        }
+        await store.setAppConfigValue(SUPPLIER_HEALTH_HISTORY_KEY, JSON.stringify(list));
+    } catch (_) {
+        // 历史仅作运维参考，失败绝不影响主流程
+    }
+}
+
 app.get('/api/integration/health', async (req, res) => {
     try {
         await ensureStoreReady();
         const cfg = await store.getIntegrationConfig();
+        const state = (await readSupplierHealthState()) || supplierHealth.baseState();
         return res.json({
             success: true,
             data: {
                 enabled: cfg.enabled,
-                key_configured: Boolean(cfg.integration_key)
+                key_configured: Boolean(cfg.integration_key),
+                supplier_health: supplierHealth.toPublic(state)
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 手动触发一次健康摘要刷新（联调/运维用；刷新逻辑内部仅 Mock 模式做实事）
+app.post('/api/integration/health/refresh', requireIntegrationAuth, async (req, res) => {
+    try {
+        const next = await refreshSupplierHealth();
+        const state = next || (await readSupplierHealthState()) || supplierHealth.baseState();
+        return res.json({
+            success: true,
+            data: {
+                supplier_health: supplierHealth.toPublic(state)
             }
         });
     } catch (error) {
@@ -4525,6 +4621,16 @@ async function start() {
             }
         } catch (error) {
             console.warn(`⚠️ [兑卡提醒] 周期检查失败: ${error.message}`);
+        }
+    }, 60 * 1000).unref();
+
+    // ── S8：供应商健康摘要 —— 启动即刷新一次，此后每 60 秒一次（仅 Mock 模式做实事）──
+    refreshSupplierHealth().catch((error) => console.warn(`⚠️ [健康摘要] 启动刷新失败: ${error.message}`));
+    setInterval(async () => {
+        try {
+            await refreshSupplierHealth();
+        } catch (error) {
+            console.warn(`⚠️ [健康摘要] 周期刷新失败: ${error.message}`);
         }
     }, 60 * 1000).unref();
 
