@@ -55,9 +55,23 @@ function mockMeta() {
 }
 
 const MOCK_PLANS = [
-    { key: 'plus', name: 'ChatGPT Plus', enabled: true, purchasable: true, raw: { key: 'plus', label: 'ChatGPT Plus' } },
-    { key: 'pro_5x', name: 'ChatGPT Pro (5x)', enabled: true, purchasable: true, raw: { key: 'pro_5x', label: 'ChatGPT Pro (5x)' } },
-    { key: 'pro_20x', name: 'ChatGPT Pro (20x)', enabled: true, purchasable: true, raw: { key: 'pro_20x', label: 'ChatGPT Pro (20x)' } }
+    { key: 'go', name: 'ChatGPT Go', product: 'gpt', accPlanKey: 'go', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: false, serviceFeeUsdMinor: 15 },
+    { key: 'plus', name: 'ChatGPT Plus', product: 'gpt', accPlanKey: 'plus', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: false, serviceFeeUsdMinor: 15 },
+    { key: 'pro_5x', name: 'ChatGPT Pro (5x)', product: 'gpt', accPlanKey: 'pro_5x', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: false, serviceFeeUsdMinor: 15 },
+    { key: 'pro_20x', name: 'ChatGPT Pro (20x)', product: 'gpt', accPlanKey: 'pro_20x', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: false, serviceFeeUsdMinor: 15 },
+    { key: 'pro_50x', name: 'ChatGPT Pro (50x)', product: 'gpt', accPlanKey: 'pro_50x', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: false, serviceFeeUsdMinor: 15 },
+    { key: 'pro_20x_renew', name: 'Pro 20x Renewal (card-attach)', product: 'gpt', accPlanKey: 'pro_20x_renew', enabled: true, purchasable: true, isCredit: false, requiresActiveSubscription: true, serviceFeeUsdMinor: 15 },
+    ...[250, 500, 1000, 2500, 5000, 25000].map((credits) => ({
+        key: `credit${credits}`,
+        name: `Codex Credits ${credits.toLocaleString('en-US')}`,
+        product: 'gpt',
+        accPlanKey: `credit${credits}`,
+        enabled: true,
+        purchasable: true,
+        isCredit: true,
+        requiresActiveSubscription: true,
+        serviceFeeUsdMinor: 15
+    }))
 ];
 
 // 模拟订单状态机：每个 orderId 第一次查询返回 processing，之后返回 completed（并清理）
@@ -167,31 +181,55 @@ async function request(method, path, cfg, { body, headers: extraHeaders, timeout
  */
 async function fetchPlans(cfg) {
     if (isMockMode(cfg)) {
+        const plans = MOCK_PLANS.map((row) => ({ ...row }));
         return {
             success: true, status: 200,
-            plans: MOCK_PLANS, gptPlans: MOCK_PLANS, creditPlans: [],
-            raw: { registry: MOCK_PLANS }, ...mockMeta()
+            plans,
+            gptPlans: plans.filter((row) => !row.isCredit),
+            creditPlans: plans.filter((row) => row.isCredit),
+            raw: { registry: plans, payment_regions: [] },
+            ...mockMeta(),
+            catalogVersion: null,
+            catalogFixture: 'zovocard-openapi-en-2026-10-08'
         };
     }
     const res = await request('GET', '/gpt-direct/plans?product=gpt', cfg);
     if (!res.success) return { success: false, error: res.error, status: res.status };
     const inner = res.data || {};
     const registry = Array.isArray(inner.registry) ? inner.registry : [];
-    const gpt = registry
-        .filter((r) => (r.product || 'gpt') === 'gpt')
-        .map((r) => ({
-            key: r.key,
-            name: r.label || r.key,
-            enabled: true,
-            purchasable: r.purchasable !== false,
+    const planConfigs = inner.plans && typeof inner.plans === 'object' ? inner.plans : {};
+    const normalizePlan = (r) => {
+        const key = String(r?.key || '').trim();
+        if (!key) return null;
+        const accPlanKey = String(r.acc_plan_key || key).trim();
+        const config = planConfigs[accPlanKey] || planConfigs[key] || {};
+        const fee = Number(r.service_fee_usd_minor ?? config.service_fee_usd_minor ?? config.serviceFeeUsdMinor);
+        return {
+            key,
+            name: String(r.label || r.name || key).trim(),
+            product: String(r.product || 'gpt').trim().toLowerCase(),
+            accPlanKey,
+            enabled: config.enabled === true,
+            purchasable: r.purchasable === true,
+            isCredit: r.is_credit === true,
+            requiresActiveSubscription: r.requires_active_subscription === true,
+            serviceFeeUsdMinor: Number.isSafeInteger(fee) && fee >= 0 ? fee : null,
+            paymentRegions: Array.isArray(inner.payment_regions)
+                ? inner.payment_regions.map((region) => String(region?.country || '').trim().toUpperCase()).filter(Boolean).slice(0, 32)
+                : [],
             raw: r
-        }));
+        };
+    };
+    const catalog = registry.map(normalizePlan).filter(Boolean);
+    const gpt = catalog.filter((r) => r.product === 'gpt' && !r.isCredit);
+    const credit = catalog.filter((r) => r.product === 'gpt' && r.isCredit);
     return {
         success: true,
         status: res.status,
-        plans: gpt,
+        plans: [...gpt, ...credit],
         gptPlans: gpt,
-        creditPlans: [],
+        creditPlans: credit,
+        catalogVersion: inner.version ?? null,
         raw: inner
     };
 }

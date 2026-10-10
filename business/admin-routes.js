@@ -4,6 +4,7 @@ const express = require('express');
 const repository = require('./repository');
 const { BusinessError } = require('./validation');
 const { assertSchemaReady, businessDbInfo } = require('../business-infra/business-db');
+const { readZovoCatalog } = require('./zovo-catalog');
 
 function createBusinessAdminRouter(requireAdmin) {
     const router = express.Router();
@@ -20,9 +21,15 @@ function createBusinessAdminRouter(requireAdmin) {
 
     router.get('/summary', async (_req, res) => run(res, () => repository.dashboardSummary()));
     router.get('/products', async (_req, res) => run(res, () => repository.listProducts()));
+    router.get('/upstream-catalog', async (_req, res) => run(res, readZovoCatalog));
     router.post('/products', async (req, res) => run(res, () => repository.createProduct(req.body, actor(req))));
     router.put('/products/:id', async (req, res) => run(res, () => repository.updateProduct(req.params.id, req.body, actor(req))));
     router.get('/orders', async (req, res) => run(res, () => repository.listOrders(req.query.q)));
+    router.post('/orders/:orderRef/after-sales', async (req, res) => run(res, () => repository.updateAfterSalesStatus(
+        req.params.orderRef,
+        req.body,
+        actor(req)
+    )));
     router.post('/orders/mock', async (req, res) => run(res, () => repository.createMockOrder(
         req.body,
         req.get('Idempotency-Key'),
@@ -41,6 +48,14 @@ function createBusinessAdminRouter(requireAdmin) {
     )));
     router.get('/wallets', async (req, res) => run(res, () => repository.listWallets(req.query.q)));
     router.get('/ledger', async (req, res) => run(res, () => repository.listLedger(req.query.q)));
+    router.get('/exceptions', async (_req, res) => run(res, () => repository.listExceptions()));
+    router.get('/reconciliation', async (req, res) => run(res, () => repository.readOnlyReconciliation(req.query)));
+    router.post('/exceptions/:resourceType/:resourceRef/review', async (req, res) => run(res, () => repository.recordExceptionReview(
+        req.params.resourceType,
+        req.params.resourceRef,
+        req.body,
+        actor(req)
+    )));
 
     return router;
 }

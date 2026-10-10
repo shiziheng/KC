@@ -19,8 +19,10 @@
         <button class="active" data-page="home">工作台</button>
         <button data-page="products">代充商品</button>
         <button data-page="orders">订单管理</button>
+        <button data-page="exceptions">异常与售后</button>
         <button data-page="topups">USDT 充值与补单</button>
         <button data-page="wallets">余额与流水账户</button>
+        <button data-page="reconciliation">只读对账</button>
       </nav>
       <div class="side-foot">这是独立业务菜单，不改 KC 技术后台菜单。<br>充值和补单当前均为本地模拟。</div>
     </aside>
@@ -38,7 +40,7 @@
   const TOKEN_KEY = 'plus_admin_token';
   const $ = (selector, root = document) => root.querySelector(selector);
   const content = $('#content');
-  const titles = { home: '工作台', products: '代充商品', orders: '订单管理', topups: 'USDT 充值与补单', wallets: '余额与流水账户' };
+  const titles = { home: '工作台', products: '代充商品', orders: '订单管理', exceptions: '异常与售后', topups: 'USDT 充值与补单', wallets: '余额与流水账户', reconciliation: '只读对账' };
   let currentPage = 'home';
   let products = [];
   let topups = [];
@@ -68,7 +70,7 @@
     return payload.data;
   }
   function statusLabel(value) {
-    const labels = { paid: '已入账', unpaid: '待支付', pending: '待核验', manual_review: '待人工核验', completed: '已完成', failed: '失败', onsale: '销售中', off_sale: '已下架', not_required: '无需履约', none: '—' };
+    const labels = { paid: '模拟已支付', unpaid: '待模拟支付', pending: '待处理', manual_review: '待人工核验', completed: '已完成', failed: '失败', onsale: '销售中', off_sale: '已下架', not_required: '无需履约', none: '—', reviewing: '处理中', approved: '已同意（未退款）', rejected: '已拒绝' };
     return labels[value] || value || '—';
   }
   function statusClass(value) { return ['paid', 'unpaid', 'pending', 'manual_review', 'completed', 'onsale', 'off_sale'].includes(value) ? value : ''; }
@@ -84,29 +86,32 @@
       if (currentPage === 'home') await renderHome();
       else if (currentPage === 'products') await renderProducts();
       else if (currentPage === 'orders') await renderOrders();
+      else if (currentPage === 'exceptions') await renderExceptions();
       else if (currentPage === 'topups') await renderTopups();
-      else await renderWallets();
+      else if (currentPage === 'wallets') await renderWallets();
+      else await renderReconciliation();
     } catch (error) { content.innerHTML = `<div class="panel"><div class="notice">${escapeHtml(error.message)}<br><span class="subtle">未修改 KC/Xboard 数据。若业务库状态异常，请先检查 kc_business 与迁移记录。</span></div><button class="btn secondary" onclick="location.reload()">重试</button></div>`; }
   }
 
   async function renderHome() {
-    const data = await api('/summary');
+    const [data, exceptions] = await Promise.all([api('/summary'), api('/exceptions')]);
     content.innerHTML = `${pageHeading('运营首页。这里的数字来自独立业务库，Mock 流水不会影响 KC/Xboard 的真实余额。')}
       <div class="cards">
         <div class="card"><div class="label">销售中商品</div><div class="value">${Number(data.onSaleProducts)}</div></div>
         <div class="card"><div class="label">待处理订单</div><div class="value">${Number(data.ordersNeedAttention)}</div></div>
         <div class="card"><div class="label">待核验充值</div><div class="value">${Number(data.topupsNeedAttention)}</div></div>
         <div class="card"><div class="label">模拟余额流水</div><div class="value">${Number(data.mockLedgerEntries)}</div></div>
+        <div class="card"><div class="label">异常 / 售后待办</div><div class="value">${exceptions.length}</div></div>
       </div>
-      <section class="panel"><h2>本期范围</h2><div class="muted">配置商品、查看业务订单、演练 USDT 随机尾数识别与补单。不会连接链上钱包，不会调用 ZovoCard，也不会保存 Session、Token 或 Cookie。</div></section>`;
+      <section class="panel"><h2>本期范围</h2><div class="muted">配置代充商品、查看用户 Mock 订单、记录异常核查和售后决定、演练 USDT 随机尾数识别与补单。不会连接链上钱包、调用 ZovoCard 或真实退款；不会保存用户授权凭据。</div></section>`;
   }
 
   async function renderProducts() {
     products = await api('/products');
     content.innerHTML = `${pageHeading('只管理代充商品；价格按商品币种保存（USD 两位小数，USDT 六位小数）。')}
       <section class="panel"><div class="toolbar"><h2>商品列表</h2><button class="btn" id="addProduct">新增商品</button></div>
-      <div class="table-wrap"><table><thead><tr><th>编号</th><th>商品名称</th><th>套餐</th><th>面值</th><th>售价</th><th>成本参考</th><th>状态</th><th>版本</th><th></th></tr></thead>
-      <tbody>${products.length ? products.map((p) => `<tr><td class="mono">${escapeHtml(p.productCode)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.planCode)}</td><td>${escapeHtml(p.faceAmount)} ${escapeHtml(p.currency)}</td><td>${escapeHtml(p.sellingAmount)} ${escapeHtml(p.currency)}</td><td>${p.costAmount ? `${escapeHtml(p.costAmount)} ${escapeHtml(p.currency)}` : '—'}</td><td>${cellStatus(p.availability)}</td><td>${p.version}</td><td><button class="btn secondary small" data-edit-product="${p.id}">编辑</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">暂无商品，请新增代充商品</td></tr>'}</tbody></table></div></section>
+      <div class="table-wrap"><table><thead><tr><th>编号</th><th>商品名称</th><th>套餐</th><th>上游映射</th><th>面值</th><th>售价</th><th>成本参考</th><th>状态</th><th>版本</th><th></th></tr></thead>
+      <tbody>${products.length ? products.map((p) => `<tr><td class="mono">${escapeHtml(p.productCode)}</td><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.planCode)}</td><td class="mono">${escapeHtml(p.providerId)} → ${escapeHtml(p.providerProductRef)}</td><td>${escapeHtml(p.faceAmount)} ${escapeHtml(p.currency)}</td><td>${escapeHtml(p.sellingAmount)} ${escapeHtml(p.currency)}</td><td>${p.costAmount ? `${escapeHtml(p.costAmount)} ${escapeHtml(p.currency)}` : '—'}</td><td>${cellStatus(p.availability)}</td><td>${p.version}</td><td><button class="btn secondary small" data-edit-product="${p.id}">编辑</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">暂无商品，请新增代充商品</td></tr>'}</tbody></table></div></section>
       <section class="panel"><div class="toolbar"><h2>快速创建模拟订单</h2></div><form id="mockOrderForm" class="form-grid">
         <div class="field"><label>商品</label><select name="productId" required>${products.filter((p) => p.availability === 'onsale').map((p) => `<option value="${p.id}">${escapeHtml(p.name)} · ${escapeHtml(p.sellingAmount)} ${escapeHtml(p.currency)}</option>`).join('')}</select></div>
         <div class="field"><label>账号邮箱（只保存脱敏值与哈希）</label><input name="accountEmail" type="email" maxlength="254" required autocomplete="off"></div>
@@ -119,20 +124,61 @@
 
   function openProductForm(product = null) {
     const p = product || { productCode: '', name: '', planCode: 'plus', currency: 'USD', faceAmount: '', sellingAmount: '', costAmount: '', availability: 'onsale' };
+    const initialPlans = [['plus','Plus'],['pro_5x','Pro 5x'],['pro_20x','Pro 20x']];
+    if (!initialPlans.some(([key]) => key === p.planCode)) initialPlans.push([p.planCode, p.upstreamProductName || p.planCode]);
+    let catalogPlans = [];
     $('#dialog').innerHTML = `<h2>${product ? '编辑商品' : '新增代充商品'}</h2><form id="productForm" class="form-grid">
       <div class="field"><label>商品编号</label><input name="productCode" value="${escapeHtml(p.productCode)}" maxlength="64" required></div>
       <div class="field"><label>商品名称</label><input name="name" value="${escapeHtml(p.name)}" maxlength="160" required></div>
-      <div class="field"><label>套餐类型</label><select name="planCode">${[['plus','Plus'],['pro_5x','Pro 5x'],['pro_20x','Pro 20x']].map(([v,l]) => `<option value="${v}" ${p.planCode === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>Zovo 套餐</label><select name="planCode">${initialPlans.map(([v,l]) => `<option value="${escapeHtml(v)}" ${p.planCode === v ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select></div>
       <div class="field"><label>币种</label><select name="currency"><option value="USD" ${p.currency === 'USD' ? 'selected' : ''}>USD</option><option value="USDT" ${p.currency === 'USDT' ? 'selected' : ''}>USDT</option></select></div>
       <div class="field"><label>商品面值</label><input name="faceAmount" inputmode="decimal" value="${escapeHtml(p.faceAmount)}" required></div>
       <div class="field"><label>售价</label><input name="sellingAmount" inputmode="decimal" value="${escapeHtml(p.sellingAmount)}" required></div>
       <div class="field"><label>成本参考（可空）</label><input name="costAmount" inputmode="decimal" value="${escapeHtml(p.costAmount)}"></div>
       <div class="field"><label>销售状态</label><select name="availability"><option value="onsale" ${p.availability === 'onsale' ? 'selected' : ''}>销售中</option><option value="off_sale" ${p.availability === 'off_sale' ? 'selected' : ''}>下架</option></select></div>
-      <div class="field full"><div class="notice">套餐履约目前强制 Mock；商品配置不会触发真实供应商请求。</div></div>
+      <div class="field full"><div class="inline"><button type="button" class="btn secondary" id="loadZovoPlans">读取 Zovo 套餐目录</button><span class="subtle" id="zovoCatalogSummary">读取上游套餐键、名称、可售状态和商品类型。</span></div></div>
+      <div class="field full"><div class="notice">面向用户的商品名称、售价和成本参考由运营维护；Zovo 的动态报价不作为固定售价，上游服务费也不等于售价或商品成本。点数加购要求目标账号已有有效 Plus / Pro 订阅；Pro 20x 续费绑卡需专用流程，不作为普通商品销售。当前目录为文档样例，支付和履约仍是 Mock，不会创建 Zovo 订单。</div></div>
       <div class="field full form-actions"><button type="button" class="btn secondary" id="cancelProduct">取消</button><button class="btn" type="submit">保存</button></div>
     </form>`;
     $('#modal').hidden = false;
     $('#cancelProduct').onclick = closeModal;
+    $('#loadZovoPlans').onclick = async () => {
+      const button = $('#loadZovoPlans'); const summary = $('#zovoCatalogSummary');
+      button.disabled = true; button.textContent = '读取中…';
+      try {
+        const result = await api('/upstream-catalog');
+        catalogPlans = result.plans || [];
+        const select = $('#productForm select[name="planCode"]');
+        const selected = select.value;
+        select.innerHTML = catalogPlans.map((plan) => {
+          const special = plan.renewalOnly;
+          const unavailable = !plan.enabled || !plan.purchasable || special;
+          const feeLabel = Number.isSafeInteger(plan.serviceFeeUsdMinor) ? ` · 上游服务费 $${(plan.serviceFeeUsdMinor / 100).toFixed(2)}` : '';
+          const label = `${plan.name} · ${plan.key}${plan.isCredit ? ' · 点数加购 · 需已有有效订阅' : ''}${feeLabel}${special ? ' · 专用续费流程' : ''}${!plan.enabled || !plan.purchasable ? ' · 当前不可售' : ''}`;
+          return `<option value="${escapeHtml(plan.key)}" ${selected === plan.key ? 'selected' : ''} ${unavailable ? 'disabled' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        const selectedPlan = catalogPlans.find((plan) => plan.key === select.value);
+        if (selectedPlan && !product) {
+          $('#productForm input[name="name"]').value = selectedPlan.name;
+          const code = $('#productForm input[name="productCode"]');
+          if (!code.value) code.value = `zovo-${selectedPlan.key}`;
+        }
+        const modeNote = result.mode === 'MOCK'
+          ? '当前展示的是 Mock 文档目录，不代表 Zovo 账号的实时开售状态。'
+          : `已读取实时目录 ${result.fetchedAt || ''}；仅 enabled 且 purchasable 的套餐可新增。`;
+        summary.textContent = `${modeNote} 支付区域：${(result.paymentRegions || []).map((region) => `${region.country}/${region.currency}`).join('、') || '未提供'}`;
+        select.onchange = () => {
+          const plan = catalogPlans.find((item) => item.key === select.value);
+          if (!plan) return;
+          if (!product) {
+            $('#productForm input[name="name"]').value = plan.name;
+            const code = $('#productForm input[name="productCode"]');
+            if (!code.value || code.value.startsWith('zovo-')) code.value = `zovo-${plan.key}`;
+          }
+        };
+      } catch (error) { showError(error); }
+      finally { button.disabled = false; button.textContent = '读取 Zovo 套餐目录'; }
+    };
     $('#productForm').onsubmit = async (event) => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       const body = Object.fromEntries(form.entries());
@@ -156,11 +202,53 @@
     const rows = await api(`/orders?q=${encodeURIComponent(search)}`);
     content.innerHTML = `${pageHeading('支付状态和履约状态分开显示。模拟订单只保留脱敏账号信息，不保存任何授权凭据。')}
       <section class="panel"><div class="toolbar"><h2>订单</h2><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="订单号 / 脱敏邮箱 / 商品" value="${escapeHtml(search)}"><button class="btn secondary" id="searchOrders">查询</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>订单号</th><th>商品</th><th>账号</th><th>金额</th><th>支付</th><th>履约</th><th>售后</th><th>创建时间</th></tr></thead><tbody>
-      ${rows.length ? rows.map((r) => `<tr><td class="mono">${escapeHtml(r.orderRef)}</td><td>${escapeHtml(r.productName)}</td><td>${escapeHtml(r.account || '—')}</td><td>${escapeHtml(r.amount)} ${escapeHtml(r.currency)}</td><td>${cellStatus(r.paymentStatus)}</td><td>${cellStatus(r.fulfillmentStatus)}</td><td>${cellStatus(r.afterSalesStatus)}</td><td>${escapeHtml(r.createdAt || '')}</td></tr>`).join('') : '<tr><td colspan="8" class="empty">暂无订单</td></tr>'}
+      <div class="table-wrap"><table><thead><tr><th>订单号</th><th>商品</th><th>账号</th><th>金额</th><th>上游订单映射</th><th>支付</th><th>履约</th><th>售后</th><th>创建时间</th><th>售后处理</th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td class="mono">${escapeHtml(r.orderRef)}</td><td>${escapeHtml(r.productName)}</td><td>${escapeHtml(r.account || '—')}</td><td>${escapeHtml(r.amount)} ${escapeHtml(r.currency)}</td><td><span class="mono">${escapeHtml(r.upstreamProvider)} / ${escapeHtml(r.upstreamProductRef || '—')}</span><br><span class="subtle">${escapeHtml(r.upstreamProductName || '')} · ${r.upstreamOrderRef ? `上游订单 ${escapeHtml(r.upstreamOrderRef)}` : `${escapeHtml(r.executionMode || 'MOCK')} · 未提交上游订单`}</span></td><td>${cellStatus(r.paymentStatus)}</td><td>${cellStatus(r.fulfillmentStatus)}</td><td>${cellStatus(r.afterSalesStatus)}</td><td>${escapeHtml(r.createdAt || '')}</td><td>${['pending','reviewing','approved'].includes(r.afterSalesStatus) ? `<button class="btn secondary small" data-after-sales="${escapeHtml(r.orderRef)}" data-status="${escapeHtml(r.afterSalesStatus)}">更新进度</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="10" class="empty">暂无订单</td></tr>'}
       </tbody></table></div></section>`;
     $('#searchOrders').onclick = () => renderOrders($('#orderSearch').value);
     $('#orderSearch').onkeydown = (event) => { if (event.key === 'Enter') renderOrders(event.currentTarget.value); };
+    content.querySelectorAll('[data-after-sales]').forEach((button) => button.onclick = () => openAfterSales(button.dataset.afterSales, button.dataset.status));
+  }
+
+  async function renderExceptions() {
+    const rows = await api('/exceptions');
+    content.innerHTML = `${pageHeading('只列出支付、履约和售后异常。记录核查只写审计，不会自动改账、退款或改变异常状态。')}
+      <section class="panel"><div class="toolbar"><h2>异常与售后待办</h2><button class="btn secondary" id="refreshExceptions">刷新</button></div>
+      <div class="table-wrap"><table><thead><tr><th>类型</th><th>编号</th><th>商品 / 账号</th><th>金额</th><th>当前状态</th><th>异常原因</th><th>用户留言</th><th>最近核查</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.map((r) => `<tr><td>${r.resourceType === 'payment' ? '充值' : '订单'}</td><td class="mono">${escapeHtml(r.resourceRef)}</td><td>${escapeHtml(r.title || '—')}<br><span class="subtle">${escapeHtml(r.account || '—')}</span></td><td>${escapeHtml(r.amount || '—')}</td><td>${escapeHtml(r.statuses)}</td><td>${escapeHtml(r.reason)}</td><td>${escapeHtml(r.afterSalesMessage || '—')}</td><td>${escapeHtml(r.lastReviewedAt || '—')}</td><td><button class="btn secondary small" data-review-type="${escapeHtml(r.resourceType)}" data-review-ref="${escapeHtml(r.resourceRef)}">记录核查</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">当前没有待处理异常</td></tr>'}
+      </tbody></table></div></section>`;
+    $('#refreshExceptions').onclick = () => renderExceptions();
+    content.querySelectorAll('[data-review-ref]').forEach((button) => button.onclick = async () => {
+      const reason = window.prompt('记录本次核查情况（至少 6 个字符）。不要填写账号授权凭据。');
+      if (reason == null) return;
+      try {
+        await api(`/exceptions/${encodeURIComponent(button.dataset.reviewType)}/${encodeURIComponent(button.dataset.reviewRef)}/review`, { method: 'POST', body: { reason } });
+        toast('核查记录已写入审计；异常状态未自动变更'); await renderExceptions();
+      } catch (error) { showError(error); }
+    });
+  }
+
+  function openAfterSales(orderRef, currentStatus) {
+    const choices = {
+      pending: [['reviewing', '受理并处理中'], ['rejected', '拒绝申请']],
+      reviewing: [['approved', '同意售后决定'], ['rejected', '拒绝申请']],
+      approved: [['completed', '售后工单结案']],
+    }[currentStatus] || [];
+    if (!choices.length) return;
+    $('#dialog').innerHTML = `<h2>处理售后申请</h2><div class="notice">这里只记录客服决定，不执行退款、补偿或余额变更。“同意售后”不等于退款完成。</div>
+      <form id="afterSalesForm" class="form-grid"><div class="field full"><label>订单号</label><input value="${escapeHtml(orderRef)}" readonly></div>
+      <div class="field full"><label>处理结果</label><select name="status">${choices.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
+      <div class="field full"><label>处理说明</label><textarea name="reason" minlength="6" maxlength="300" required placeholder="记录判定依据或后续动作；不要填写账号授权凭据"></textarea></div>
+      <div class="field full form-actions"><button type="button" class="btn secondary" id="cancelAfterSales">取消</button><button class="btn" type="submit">保存处理决定</button></div></form>`;
+    $('#modal').hidden = false;
+    $('#cancelAfterSales').onclick = closeModal;
+    $('#afterSalesForm').onsubmit = async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget);
+      try {
+        await api(`/orders/${encodeURIComponent(orderRef)}/after-sales`, { method: 'POST', body: Object.fromEntries(form.entries()) });
+        closeModal(); toast('售后处理决定已记录；未发生退款'); await renderOrders();
+      } catch (error) { showError(error); }
+    };
   }
 
   async function renderTopups(search = '') {
@@ -228,6 +316,74 @@
     $('#searchWallets').onclick = () => renderWallets($('#walletSearch').value);
   }
 
+  function formatUsdMinor(value) {
+    try {
+      const minor = BigInt(String(value || '0'));
+      const sign = minor < 0n ? '-' : '';
+      const absolute = minor < 0n ? -minor : minor;
+      return `${sign}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
+    } catch (_) { return '0.00'; }
+  }
+
+  function csvField(value) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
+
+  async function renderReconciliation(requestedRange = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultFrom = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const from = requestedRange.from || defaultFrom;
+    const to = requestedRange.to || today;
+    const report = await api(`/reconciliation?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    content.innerHTML = `${pageHeading('只读核对新旧系统的订单和余额映射，不修改任一系统。订单只按明确引用匹配；无法匹配不直接判为丢单。')}
+      <section class="panel"><div class="toolbar"><h2>查询范围</h2><div class="toolbar-actions"><label class="inline">开始 <input type="date" id="reconFrom" value="${escapeHtml(report.period.from)}"></label><label class="inline">结束 <input type="date" id="reconTo" value="${escapeHtml(report.period.to)}"></label><button class="btn" id="runReconciliation">生成只读报告</button></div></div>
+      <div class="subtle">订单按所选日期查询（最多 31 天）；余额为当前时点快照。报告只返回汇总，不导出邮箱、用户编号或订单明细。</div></section>
+      <section class="panel"><div class="toolbar"><h2>订单核对（USD）</h2><button class="btn secondary" id="exportReconciliation">导出汇总 CSV</button></div>
+      <div class="cards">
+        <div class="card"><div class="label">Xboard 旧订单总数（背景值）</div><div class="value">${Number(report.orders.legacyCount)}</div><div class="subtle">合计 USD ${formatUsdMinor(report.orders.legacyUsdMinorTotal)}</div></div>
+        <div class="card"><div class="label">新前台订单总数</div><div class="value">${Number(report.orders.storefrontCount)}</div><div class="subtle">USD ${formatUsdMinor(report.orders.storefrontUsdMinorTotal)}；USDT ${formatUsdMinor(report.orders.storefrontUsdtMinorTotal)}</div></div>
+        <div class="card"><div class="label">明确编号匹配</div><div class="value">${Number(report.orders.explicitLinkedCount)}</div><div class="subtle">无引用新订单 ${Number(report.orders.storefrontWithoutLegacyRef)}</div></div>
+        <div class="card"><div class="label">金额不一致 / 重复引用</div><div class="value">${Number(report.orders.amountMismatchCount)} / ${Number(report.orders.ambiguousLinkCount)}</div><div class="subtle">明确匹配差额 USD ${formatUsdMinor(report.orders.absoluteAmountDifferenceUsdMinor)}</div></div>
+      </div></section>
+      <section class="panel"><h2>余额核对（USD）</h2><div class="cards">
+        <div class="card"><div class="label">存在旧账号映射</div><div class="value">${Number(report.balances.mappedUserCount)}</div></div>
+        <div class="card"><div class="label">可比较的唯一钱包</div><div class="value">${Number(report.balances.comparableWalletCount)}</div></div>
+        <div class="card"><div class="label">缺失钱包 / 重复映射</div><div class="value">${Number(report.balances.missingWalletCount)} / ${Number(report.balances.ambiguousMappingCount + report.balances.ambiguousWalletCount)}</div></div>
+        <div class="card"><div class="label">余额不一致</div><div class="value">${Number(report.balances.mismatchCount)}</div><div class="subtle">绝对差额 USD ${formatUsdMinor(report.balances.absoluteDifferenceUsdMinor)}</div></div>
+      </div><div class="subtle">旧系统映射账号合计 USD ${formatUsdMinor(report.balances.xboardUsdMinorTotal)}；新业务唯一钱包合计 USD ${formatUsdMinor(report.balances.businessUsdMinorTotal)}。</div></section>
+      <section class="panel"><h2>匹配规则与边界</h2><ul><li>${escapeHtml(report.matchingRules.order)}</li><li>${escapeHtml(report.matchingRules.balance)}</li><li>${escapeHtml(report.matchingRules.scope)}</li><li>${escapeHtml(report.matchingRules.action)}</li></ul></section>`;
+    $('#runReconciliation').onclick = () => renderReconciliation({ from: $('#reconFrom').value, to: $('#reconTo').value }).catch(showError);
+    $('#exportReconciliation').onclick = () => {
+      const rows = [
+        ['类别', '指标', '数值'],
+        ['期间', '开始', report.period.from], ['期间', '结束', report.period.to],
+        ['订单', 'Xboard旧订单数（背景值）', report.orders.legacyCount],
+        ['订单', 'Xboard旧订单金额（USD minor）', report.orders.legacyUsdMinorTotal],
+        ['订单', '新前台订单数', report.orders.storefrontCount],
+        ['订单', '新前台USD金额（minor）', report.orders.storefrontUsdMinorTotal],
+        ['订单', '新前台USDT金额（minor）', report.orders.storefrontUsdtMinorTotal],
+        ['订单', '明确匹配数', report.orders.explicitLinkedCount],
+        ['订单', '金额不一致数', report.orders.amountMismatchCount],
+        ['订单', '重复引用数', report.orders.ambiguousLinkCount],
+        ['余额', '映射账号数', report.balances.mappedUserCount],
+        ['余额', '可比较唯一钱包数', report.balances.comparableWalletCount],
+        ['余额', '缺失钱包数', report.balances.missingWalletCount],
+        ['余额', '重复映射/钱包数', Number(report.balances.ambiguousMappingCount + report.balances.ambiguousWalletCount)],
+        ['余额', '不一致账号数', report.balances.mismatchCount],
+        ['余额', '旧系统合计（USD minor）', report.balances.xboardUsdMinorTotal],
+        ['余额', '新业务合计（USD minor）', report.balances.businessUsdMinorTotal],
+        ['余额', '绝对差额（USD minor）', report.balances.absoluteDifferenceUsdMinor],
+        ['说明', '自动同步', '关闭；只读汇总']
+      ];
+      const csv = '\uFEFF' + rows.map((row) => row.map(csvField).join(',')).join('\r\n');
+      const link = document.createElement('a');
+      const downloadUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      link.href = downloadUrl;
+      link.download = `business-reconciliation-${report.period.from}-${report.period.to}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    };
+  }
+
+
   function closeModal() { $('#modal').hidden = true; $('#dialog').innerHTML = ''; }
   $('#modal').addEventListener('click', (event) => { if (event.target === $('#modal')) closeModal(); });
   $('#nav').addEventListener('click', (event) => { const button = event.target.closest('button[data-page]'); if (!button) return; currentPage = button.dataset.page; render(); });
@@ -236,6 +392,7 @@
     if (!localStorage.getItem(TOKEN_KEY)) {
       let loginUrl = '/admin-login';
       try { const paths = await fetch('/api/public/admin-paths').then((r) => r.json()); loginUrl = paths.loginUrl || loginUrl; } catch (_) {}
+      sessionStorage.setItem('plus_admin_return_path', '/business-admin');
       window.location.href = loginUrl; return;
     }
     await render();

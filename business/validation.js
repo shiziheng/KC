@@ -2,7 +2,10 @@
 
 const crypto = require('crypto');
 
-const PLAN_CODES = new Set(['plus', 'pro_5x', 'pro_20x']);
+const PLAN_CODES = new Set([
+    'go', 'plus', 'pro_5x', 'pro_20x', 'pro_50x',
+    'credit250', 'credit500', 'credit1000', 'credit2500', 'credit5000', 'credit25000'
+]);
 const FORBIDDEN_KEYS = new Set([
     'session', 'sessionpayload', 'token', 'accesstoken', 'refreshtoken',
     'cookie', 'cookieheader', 'credential', 'credentialdata', 'password',
@@ -67,7 +70,7 @@ function formatMoney(minor, currency = 'USD') {
     return `${Math.floor(value / scale)}.${String(value % scale).padStart(places, '0')}`;
 }
 
-function normalizeProduct(input) {
+function normalizeProduct(input, { allowedPlanCodes = PLAN_CODES } = {}) {
     assertPlainObject(input);
     const productCode = String(input.productCode || '').trim().toLowerCase();
     const name = String(input.name || '').trim();
@@ -81,7 +84,8 @@ function normalizeProduct(input) {
     if (!name || name.length > 160) {
         throw new BusinessError(400, 'INVALID_PRODUCT_NAME', '商品名称不能为空且不能超过 160 个字符');
     }
-    if (!PLAN_CODES.has(planCode)) {
+    const acceptedPlanCodes = allowedPlanCodes instanceof Set ? allowedPlanCodes : PLAN_CODES;
+    if (!acceptedPlanCodes.has(planCode)) {
         throw new BusinessError(400, 'INVALID_PLAN_CODE', '请选择有效的代充套餐');
     }
     if (!['USD', 'USDT'].includes(currency)) {

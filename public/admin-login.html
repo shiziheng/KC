@@ -155,6 +155,7 @@
     <script>
         const TOKEN_KEY = 'plus_admin_token';
         const SECONDARY_TOKEN_KEY = 'plus_admin_secondary_token';
+        const RETURN_PATH_KEY = 'plus_admin_return_path';
         const METHOD_LABELS = {
             totp: 'Google Authenticator',
             telegram: 'Telegram 验证码'
@@ -177,7 +178,9 @@
         }
 
         function goToAdminPanel() {
-            location.href = adminPanelPath;
+            const returnPath = sessionStorage.getItem(RETURN_PATH_KEY);
+            sessionStorage.removeItem(RETURN_PATH_KEY);
+            location.href = returnPath === '/business-admin' ? returnPath : adminPanelPath;
         }
 
         function getBrowserFingerprint() {
@@ -271,7 +274,7 @@
                 if (data.refreshed && data.token) {
                     localStorage.setItem(TOKEN_KEY, data.token);
                 }
-                location.href = adminPanelPath;
+                goToAdminPanel();
             } catch (_) {
                 localStorage.removeItem(TOKEN_KEY);
                 localStorage.removeItem(SECONDARY_TOKEN_KEY);

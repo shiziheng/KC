@@ -38,6 +38,10 @@ describe('business validation', () => {
             availability: 'onsale'
         });
         expect(product).toMatchObject({ productCode: 'plus-monthly', planCode: 'plus', currency: 'USD', sellingAmountMinor: 1999 });
+        expect(normalizeProduct({
+            productCode: 'pro-100x', name: 'Upstream plan', planCode: 'pro_100x', currency: 'USD',
+            faceAmount: '1', sellingAmount: '1'
+        }, { allowedPlanCodes: new Set(['pro_100x']) })).toMatchObject({ planCode: 'pro_100x' });
         expect(() => normalizeProduct({
             productCode: 'invalid-plan', name: 'Unknown', planCode: 'airtime', currency: 'USD',
             faceAmount: '1', sellingAmount: '1'

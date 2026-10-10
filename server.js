@@ -8,6 +8,8 @@ const WebSocket = require('ws');
 const axios = require('axios');
 const store = require('./mysql-store');
 const { createBusinessAdminRouter } = require('./business/admin-routes');
+const { createBusinessStorefrontRouter } = require('./business/storefront-routes');
+const { createRequireStorefrontUser } = require('./business/user-auth');
 const runtimeLog = require('./runtime-log');
 const { REGION_CONFIG, isSupportedRegion, getPlanTypeLabel } = require('./region-config');
 const taxFreeAddress = require('./tax-free-address');
@@ -1599,6 +1601,7 @@ app.post('/api/public/subscription/check', async (req, res) => {
     }
 });
 
+app.use('/api/public/business', createBusinessStorefrontRouter(createRequireStorefrontUser()));
 app.use('/api/admin/business', createBusinessAdminRouter(authenticateAdmin));
 app.use('/api/admin', authenticateAdmin);
 

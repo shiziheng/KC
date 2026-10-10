@@ -14,22 +14,40 @@ const {
     formatMoney
 } = require('./validation');
 const { getBusinessPool, assertSchemaReady, withBusinessTransaction } = require('../business-infra/business-db');
+const { createReadOnlyReconciliation } = require('./reconciliation');
+const { assertPurchasableZovoPlan, buildMockUpstreamOrderMapping } = require('./zovo-catalog');
 
 const USDT_RANDOM_CODE_LOCK = 'kc-business:mock-usdt-random-code:v1';
 const USDT_BASE_LIMIT = 50_000_000_000; // 50,000 USDT，USDT 按 6 位小数保存
 const USD_CREDIT_LIMIT = 5_000_000_000; // 50,000 USD，USD 按 2 位小数保存
+const readOnlyReconciliation = createReadOnlyReconciliation();
 
 function parseJson(value) {
     if (value && typeof value === 'object') return value;
     try { return JSON.parse(String(value || '{}')); } catch (_) { return {}; }
 }
 
+function safeMinorOrNull(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const minor = Number(value);
+    return Number.isSafeInteger(minor) && minor >= 0 ? minor : null;
+}
+
 function publicProduct(row) {
+    const config = parseJson(row.config);
     return {
         id: Number(row.id),
         productCode: row.product_code,
         name: row.name,
         planCode: row.plan_code,
+        providerId: row.provider_id || 'mock',
+        providerProductRef: row.provider_product_ref || row.plan_code,
+        upstreamProductName: config.upstream_product_name || row.plan_code,
+        upstreamCatalogSource: config.catalog_source || 'legacy_mapping',
+        upstreamCatalogVersion: config.catalog_version ?? null,
+        upstreamServiceFeeUsdMinor: safeMinorOrNull(config.upstream_service_fee_usd_minor),
+        isCredit: config.is_credit === true,
+        requiresActiveSubscription: config.requires_active_subscription === true,
         currency: row.currency,
         faceAmount: formatMoney(row.face_amount_minor, row.currency),
         sellingAmount: formatMoney(row.selling_amount_minor, row.currency),
@@ -41,9 +59,11 @@ function publicProduct(row) {
 }
 
 function publicOrder(row) {
+    const snapshot = parseJson(row.product_snapshot);
+    const upstream = snapshot.upstream && typeof snapshot.upstream === 'object' ? snapshot.upstream : {};
     return {
         orderRef: row.order_ref,
-        productName: row.product_name || parseJson(row.product_snapshot).name || '余额充值',
+        productName: snapshot.name || row.product_name || '余额充值',
         productCode: row.product_code || '',
         amount: formatMoney(row.amount_minor, row.currency),
         currency: row.currency,
@@ -51,6 +71,13 @@ function publicOrder(row) {
         fulfillmentStatus: row.fulfillment_status,
         afterSalesStatus: row.after_sales_status,
         account: row.account_email_masked || '',
+        executionMode: snapshot.execution_mode || 'mock',
+        upstreamProvider: upstream.provider || 'zovocard',
+        upstreamProductRef: upstream.product_ref || snapshot.plan_code || '',
+        upstreamProductName: upstream.product_name || '',
+        upstreamCatalogVersion: upstream.catalog_version ?? null,
+        upstreamServiceFeeUsdMinor: safeMinorOrNull(upstream.service_fee_usd_minor),
+        upstreamOrderRef: upstream.order_ref || '',
         createdAt: row.created_at,
         completedAt: row.completed_at
     };
@@ -77,7 +104,8 @@ async function listProducts() {
     await assertSchemaReady();
     const [rows] = await getBusinessPool().query(
         `SELECT id, product_code, name, plan_code, currency, face_amount_minor,
-                selling_amount_minor, cost_amount_minor, availability, version_no, updated_at
+                selling_amount_minor, cost_amount_minor, availability, version_no, updated_at,
+                provider_id, provider_product_ref, config
            FROM biz_products
           ORDER BY updated_at DESC, id DESC
           LIMIT 200`
@@ -85,9 +113,236 @@ async function listProducts() {
     return rows.map(publicProduct);
 }
 
+async function listStorefrontProducts() {
+    await assertSchemaReady();
+    const [rows] = await getBusinessPool().query(
+        `SELECT id, product_code, name, plan_code, currency, face_amount_minor,
+                selling_amount_minor, availability, updated_at, provider_product_ref, config
+           FROM biz_products
+          WHERE availability = 'onsale'
+          ORDER BY updated_at DESC, id DESC
+          LIMIT 100`
+    );
+    return rows.map((row) => {
+        const config = parseJson(row.config);
+        return {
+            id: Number(row.id),
+            productCode: row.product_code,
+            name: row.name,
+            planCode: row.plan_code,
+            upstreamProductName: config.upstream_product_name || row.plan_code,
+            isCredit: config.is_credit === true,
+            requiresActiveSubscription: config.requires_active_subscription === true,
+            currency: row.currency,
+            faceAmount: formatMoney(row.face_amount_minor, row.currency),
+            sellingAmount: formatMoney(row.selling_amount_minor, row.currency),
+            availability: row.availability,
+            updatedAt: row.updated_at
+        };
+    });
+}
+
+async function getOrCreateStorefrontUser(connection, user) {
+    const userId = String(user.id || '').trim();
+    if (!/^\d{1,20}$/.test(userId)) throw new BusinessError(401, 'USER_AUTH_INVALID', '登录状态无效，请重新登录');
+    const email = normalizeEmail(user.email);
+    const emailFingerprint = accountFingerprint(email);
+    const businessUserRef = `usr_${accountFingerprint(`xboard:${userId}`).slice(0, 48)}`;
+    await connection.execute(
+        `INSERT IGNORE INTO biz_user_mappings
+            (business_user_ref, legacy_system, legacy_user_ref, account_email_masked,
+             account_fingerprint, status, source_channel)
+         VALUES (?, 'xboard', ?, ?, ?, 'active', 'storefront_mock')`,
+        [businessUserRef, userId, maskEmail(email), emailFingerprint]
+    );
+    const [rows] = await connection.execute(
+        `SELECT id, business_user_ref, status FROM biz_user_mappings
+          WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1 FOR UPDATE`,
+        [userId]
+    );
+    const mapped = rows[0];
+    if (!mapped || mapped.status !== 'active') throw new BusinessError(403, 'USER_MAPPING_INACTIVE', '当前账号暂不可下单');
+    return { id: Number(mapped.id), businessUserRef: mapped.business_user_ref, email, emailFingerprint };
+}
+
+async function createStorefrontMockOrder(input, idempotencyRaw, user) {
+    await assertSchemaReady();
+    const { assertPlainObject } = require('./validation');
+    assertPlainObject(input);
+    const productId = Number(input.productId);
+    if (!Number.isSafeInteger(productId) || productId < 1) throw new BusinessError(400, 'INVALID_PRODUCT_ID', '商品编号无效');
+    const idempotencyKey = normalizeIdempotencyKey(idempotencyRaw);
+    const orderRef = makeRef('ORD');
+    const userId = String(user?.id || '').trim();
+
+    const result = await withBusinessTransaction(async (connection) => {
+        const mappedUser = await getOrCreateStorefrontUser(connection, user);
+        const [existing] = await connection.execute(
+            `SELECT order_ref, user_mapping_id, product_id
+               FROM biz_recharge_orders
+              WHERE source_channel = 'storefront_mock' AND idempotency_key = ? LIMIT 1 FOR UPDATE`,
+            [idempotencyKey]
+        );
+        if (existing.length) {
+            if (Number(existing[0].user_mapping_id) !== mappedUser.id || Number(existing[0].product_id) !== productId) {
+                throw new BusinessError(409, 'IDEMPOTENCY_CONFLICT', '请求编号已用于其他订单');
+            }
+            return { orderRef: existing[0].order_ref, reused: true };
+        }
+
+        const [products] = await connection.execute(
+            `SELECT id, product_code, name, plan_code, currency, selling_amount_minor, availability,
+                    provider_id, provider_product_ref, config
+               FROM biz_products WHERE id = ? FOR UPDATE`,
+            [productId]
+        );
+        const product = products[0];
+        if (!product) throw new BusinessError(404, 'PRODUCT_NOT_FOUND', '商品不存在');
+        if (product.availability !== 'onsale') throw new BusinessError(409, 'PRODUCT_NOT_ONSALE', '商品当前未上架');
+        const productConfig = parseJson(product.config);
+        const snapshot = {
+            kind: 'mock_recharge',
+            product_code: product.product_code,
+            name: product.name,
+            plan_code: product.plan_code,
+            upstream: buildMockUpstreamOrderMapping({
+                orderRef,
+                productRef: product.provider_product_ref || product.plan_code,
+                productName: productConfig.upstream_product_name || product.provider_product_ref || product.plan_code,
+                catalogSource: productConfig.catalog_source,
+                catalogVersion: productConfig.catalog_version,
+                serviceFeeUsdMinor: safeMinorOrNull(productConfig.upstream_service_fee_usd_minor),
+                isCredit: productConfig.is_credit,
+                requiresActiveSubscription: productConfig.requires_active_subscription
+            }),
+            currency: product.currency,
+            amount_minor: Number(product.selling_amount_minor),
+            execution_mode: 'mock'
+        };
+        await connection.execute(
+            `INSERT INTO biz_recharge_orders
+                (order_ref, idempotency_key, user_mapping_id, product_id, product_snapshot,
+                 currency, amount_minor, payment_status, fulfillment_status, compensation_status,
+                 after_sales_status, account_email_masked, account_fingerprint, source_channel)
+             VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, 'unpaid', 'pending', 'none',
+                     'none', ?, ?, 'storefront_mock')`,
+            [orderRef, idempotencyKey, mappedUser.id, product.id, JSON.stringify(snapshot), product.currency,
+                product.selling_amount_minor, maskEmail(mappedUser.email), mappedUser.emailFingerprint]
+        );
+        await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_created',
+            'order', orderRef, 'MOCK_ORDER_CREATED', { product_id: productId, execution_mode: 'mock' });
+        return { orderRef, reused: false };
+    });
+    return result;
+}
+
+async function listStorefrontOrders(user) {
+    await assertSchemaReady();
+    const userId = String(user?.id || '').trim();
+    if (!/^\d{1,20}$/.test(userId)) throw new BusinessError(401, 'USER_AUTH_INVALID', '登录状态无效，请重新登录');
+    const [mappings] = await getBusinessPool().execute(
+        `SELECT id FROM biz_user_mappings WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1`,
+        [userId]
+    );
+    if (!mappings.length) return [];
+    const [rows] = await getBusinessPool().execute(
+        `SELECT o.order_ref, o.product_snapshot, o.currency, o.amount_minor,
+                o.payment_status, o.fulfillment_status, o.after_sales_status,
+                o.created_at, o.completed_at, p.name AS product_name
+           FROM biz_recharge_orders o
+           LEFT JOIN biz_products p ON p.id = o.product_id
+          WHERE o.user_mapping_id = ? AND o.source_channel = 'storefront_mock'
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT 100`,
+        [mappings[0].id]
+    );
+    return rows.map((row) => ({
+        orderRef: row.order_ref,
+        productName: row.product_name || parseJson(row.product_snapshot).name || '代充商品',
+        amount: formatMoney(row.amount_minor, row.currency),
+        currency: row.currency,
+        paymentStatus: row.payment_status,
+        fulfillmentStatus: row.fulfillment_status,
+        afterSalesStatus: row.after_sales_status,
+        createdAt: row.created_at,
+        completedAt: row.completed_at,
+        receiptKind: 'mock_transaction_receipt'
+    }));
+}
+
+async function updateStorefrontMockOrder(orderRefRaw, action, user) {
+    await assertSchemaReady();
+    const orderRef = String(orderRefRaw || '').trim();
+    const userId = String(user?.id || '').trim();
+    if (!/^ORD-[A-F0-9]{24}$/.test(orderRef) || !/^\d{1,20}$/.test(userId)) {
+        throw new BusinessError(404, 'ORDER_NOT_FOUND', '订单不存在');
+    }
+    return withBusinessTransaction(async (connection) => {
+        const [mappings] = await connection.execute(
+            `SELECT id FROM biz_user_mappings WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1`,
+            [userId]
+        );
+        if (!mappings.length) throw new BusinessError(404, 'ORDER_NOT_FOUND', '订单不存在');
+        const [rows] = await connection.execute(
+            `SELECT order_ref, user_mapping_id, payment_status, fulfillment_status, after_sales_status
+               FROM biz_recharge_orders
+              WHERE order_ref = ? AND source_channel = 'storefront_mock' LIMIT 1 FOR UPDATE`,
+            [orderRef]
+        );
+        const order = rows[0];
+        if (!order || Number(order.user_mapping_id) !== Number(mappings[0].id)) {
+            throw new BusinessError(404, 'ORDER_NOT_FOUND', '订单不存在');
+        }
+
+        if (action.type === 'payment') {
+            if (order.payment_status === 'paid') return { orderRef, reused: true, message: '该模拟订单已标记为已支付' };
+            if (order.payment_status !== 'unpaid') throw new BusinessError(409, 'ORDER_STATE_CONFLICT', '当前订单状态不能模拟支付');
+            await connection.execute(
+                `UPDATE biz_recharge_orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
+                [orderRef]
+            );
+            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_paid', 'order', orderRef,
+                'MOCK_PAYMENT_CONFIRMED', { execution_mode: 'mock', no_money_moved: true });
+            return { orderRef, reused: false, message: '模拟支付已确认；没有收款或余额变动' };
+        }
+
+        if (action.type === 'fulfillment') {
+            if (order.fulfillment_status === 'completed') return { orderRef, reused: true, message: '模拟履约已完成' };
+            if (order.payment_status !== 'paid' || !['pending', 'running'].includes(order.fulfillment_status)) {
+                throw new BusinessError(409, 'ORDER_STATE_CONFLICT', '请先完成模拟支付');
+            }
+            await connection.execute(
+                `UPDATE biz_recharge_orders SET fulfillment_status = 'completed', completed_at = CURRENT_TIMESTAMP(3),
+                    updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
+                [orderRef]
+            );
+            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_fulfilled', 'order', orderRef,
+                'MOCK_FULFILLMENT_COMPLETED', { execution_mode: 'mock', external_call: false });
+            return { orderRef, reused: false, message: '模拟履约已完成；没有调用 ZovoCard 或其他上游' };
+        }
+
+        if (action.type === 'after-sales') {
+            if (order.after_sales_status !== 'none') throw new BusinessError(409, 'AFTER_SALES_EXISTS', '该订单已有售后申请');
+            if (!['unpaid', 'paid'].includes(order.payment_status)) throw new BusinessError(409, 'ORDER_STATE_CONFLICT', '当前订单不能申请售后');
+            const reason = normalizeReason(action.reason);
+            await connection.execute(
+                `UPDATE biz_recharge_orders SET after_sales_status = 'pending', updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
+                [orderRef]
+            );
+            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'after_sales.requested', 'order', orderRef,
+                'AFTER_SALES_REQUESTED', { reason, refund_executed: false });
+            return { orderRef, reused: false, message: '售后申请已提交，等待运营处理；不会自动退款' };
+        }
+        throw new BusinessError(400, 'INVALID_ORDER_ACTION', '模拟订单操作无效');
+    });
+}
+
 async function createProduct(input, actorRef) {
     await assertSchemaReady();
-    const product = normalizeProduct(input);
+    const { catalog, plan } = await assertPurchasableZovoPlan(String(input?.planCode || '').trim().toLowerCase());
+    const product = normalizeProduct(input, {
+        allowedPlanCodes: new Set(catalog.plans.filter((item) => item.enabled && item.purchasable && !item.renewalOnly).map((item) => item.key))
+    });
     const productId = await withBusinessTransaction(async (connection) => {
         const [result] = await connection.execute(
             `INSERT INTO biz_products
@@ -105,7 +360,17 @@ async function createProduct(input, actorRef) {
                 product.costAmountMinor,
                 product.availability,
                 product.planCode,
-                JSON.stringify({ execution_mode: 'mock' })
+                JSON.stringify({
+                    execution_mode: 'mock',
+                    catalog_source: catalog.mode === 'MOCK' ? 'zovocard_mock_catalog' : 'zovocard_registry',
+                    upstream_product_name: plan.name,
+                    upstream_product_ref: plan.key,
+                    acc_plan_key: plan.accPlanKey,
+                    catalog_version: catalog.catalogVersion,
+                    upstream_service_fee_usd_minor: plan.serviceFeeUsdMinor,
+                    is_credit: plan.isCredit,
+                    requires_active_subscription: plan.requiresActiveSubscription
+                })
             ]
         );
         await insertAudit(connection, actorRef, 'product.created', 'product', String(result.insertId), 'PRODUCT_CREATED');
@@ -120,17 +385,32 @@ async function updateProduct(id, input, actorRef) {
     if (!Number.isSafeInteger(productId) || productId < 1) {
         throw new BusinessError(400, 'INVALID_PRODUCT_ID', '商品编号无效');
     }
-    const product = normalizeProduct(input);
+    const { catalog, plan } = await assertPurchasableZovoPlan(String(input?.planCode || '').trim().toLowerCase());
+    const product = normalizeProduct(input, {
+        allowedPlanCodes: new Set(catalog.plans.filter((item) => item.enabled && item.purchasable && !item.renewalOnly).map((item) => item.key))
+    });
     await withBusinessTransaction(async (connection) => {
-        const [rows] = await connection.execute('SELECT id FROM biz_products WHERE id = ? FOR UPDATE', [productId]);
+        const [rows] = await connection.execute('SELECT id, config FROM biz_products WHERE id = ? FOR UPDATE', [productId]);
         if (!rows.length) throw new BusinessError(404, 'PRODUCT_NOT_FOUND', '商品不存在');
+        const nextConfig = {
+            ...parseJson(rows[0].config),
+            execution_mode: 'mock',
+            catalog_source: catalog.mode === 'MOCK' ? 'zovocard_mock_catalog' : 'zovocard_registry',
+            upstream_product_name: plan.name,
+            upstream_product_ref: plan.key,
+            acc_plan_key: plan.accPlanKey,
+            catalog_version: catalog.catalogVersion,
+            upstream_service_fee_usd_minor: plan.serviceFeeUsdMinor,
+            is_credit: plan.isCredit,
+            requires_active_subscription: plan.requiresActiveSubscription
+        };
         await connection.execute(
             `UPDATE biz_products
                 SET product_code = ?, name = ?, plan_code = ?, currency = ?,
                     face_amount_minor = ?, selling_amount_minor = ?, cost_amount_minor = ?,
                     availability = ?, provider_id = 'mock', provider_product_ref = ?,
                     source_channel = 'admin', version_no = version_no + 1,
-                    config = JSON_SET(COALESCE(config, JSON_OBJECT()), '$.execution_mode', 'mock'),
+                    config = CAST(? AS JSON),
                     updated_at = CURRENT_TIMESTAMP(3)
               WHERE id = ?`,
             [
@@ -143,6 +423,7 @@ async function updateProduct(id, input, actorRef) {
                 product.costAmountMinor,
                 product.availability,
                 product.planCode,
+                JSON.stringify(nextConfig),
                 productId
             ]
         );
@@ -154,7 +435,8 @@ async function updateProduct(id, input, actorRef) {
 async function getProduct(id) {
     const [rows] = await getBusinessPool().execute(
         `SELECT id, product_code, name, plan_code, currency, face_amount_minor,
-                selling_amount_minor, cost_amount_minor, availability, version_no, updated_at
+                selling_amount_minor, cost_amount_minor, availability, version_no, updated_at,
+                provider_id, provider_product_ref, config
            FROM biz_products WHERE id = ? LIMIT 1`,
         [Number(id)]
     );
@@ -188,18 +470,30 @@ async function createMockOrder(input, idempotencyRaw, actorRef) {
         }
 
         const [products] = await connection.execute(
-            `SELECT id, product_code, name, plan_code, currency, selling_amount_minor, availability
+            `SELECT id, product_code, name, plan_code, currency, selling_amount_minor, availability,
+                    provider_id, provider_product_ref, config
                FROM biz_products WHERE id = ? FOR UPDATE`,
             [productId]
         );
         const product = products[0];
         if (!product) throw new BusinessError(404, 'PRODUCT_NOT_FOUND', '商品不存在');
         if (product.availability !== 'onsale') throw new BusinessError(409, 'PRODUCT_NOT_ONSALE', '商品当前未上架');
+        const productConfig = parseJson(product.config);
         const snapshot = {
             kind: 'mock_recharge',
             product_code: product.product_code,
             name: product.name,
             plan_code: product.plan_code,
+            upstream: buildMockUpstreamOrderMapping({
+                orderRef,
+                productRef: product.provider_product_ref || product.plan_code,
+                productName: productConfig.upstream_product_name || product.provider_product_ref || product.plan_code,
+                catalogSource: productConfig.catalog_source,
+                catalogVersion: productConfig.catalog_version,
+                serviceFeeUsdMinor: safeMinorOrNull(productConfig.upstream_service_fee_usd_minor),
+                isCredit: productConfig.is_credit,
+                requiresActiveSubscription: productConfig.requires_active_subscription
+            }),
             currency: product.currency,
             amount_minor: Number(product.selling_amount_minor),
             execution_mode: 'mock'
@@ -660,6 +954,114 @@ async function listLedger(search = '') {
     }));
 }
 
+async function listExceptions() {
+    const [orders, topups] = await Promise.all([listOrders(), listTopups()]);
+    const exceptions = [];
+    for (const order of orders) {
+        const reasons = [];
+        if (['manual_review', 'failed'].includes(order.paymentStatus)) reasons.push('支付异常');
+        if (['failed', 'manual'].includes(order.fulfillmentStatus)) reasons.push('履约异常');
+        if (['pending', 'reviewing', 'approved'].includes(order.afterSalesStatus)) reasons.push('售后待处理');
+        if (reasons.length) exceptions.push({
+            resourceType: 'order', resourceRef: order.orderRef, orderRef: order.orderRef,
+            title: order.productName, account: order.account, amount: `${order.amount} ${order.currency}`,
+            statuses: `${order.paymentStatus} / ${order.fulfillmentStatus} / ${order.afterSalesStatus}`,
+            reason: reasons.join('、'), createdAt: order.createdAt
+        });
+    }
+    for (const topup of topups) {
+        if (!['manual_review', 'failed'].includes(topup.status)) continue;
+        exceptions.push({
+            resourceType: 'payment', resourceRef: topup.paymentRef, orderRef: topup.orderRef,
+            title: '模拟 USDT 充值', account: topup.account, amount: `${topup.receivedUsdt} / ${topup.expectedUsdt} USDT`,
+            statuses: topup.status, reason: topup.status === 'manual_review' ? '到账金额待人工核验' : '充值处理失败',
+            createdAt: topup.createdAt
+        });
+    }
+    exceptions.sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+    const [reviewRows] = await getBusinessPool().execute(
+        `SELECT resource_type, resource_ref, action, metadata, created_at
+           FROM biz_audit_logs
+          WHERE action IN ('exception.reviewed', 'after_sales.requested', 'after_sales.status_changed')
+          ORDER BY created_at DESC, id DESC LIMIT 200`
+    );
+    const reviewed = new Map();
+    const afterSalesMessages = new Map();
+    for (const row of reviewRows) {
+        const key = `${row.resource_type}:${row.resource_ref}`;
+        if (row.action === 'exception.reviewed' && !reviewed.has(key)) reviewed.set(key, row.created_at);
+        if (row.action === 'after_sales.requested' && !afterSalesMessages.has(key)) {
+            afterSalesMessages.set(key, parseJson(row.metadata).reason || '用户已提交售后留言');
+        }
+    }
+    return exceptions.slice(0, 200).map((entry) => ({
+        ...entry,
+        lastReviewedAt: reviewed.get(`${entry.resourceType}:${entry.resourceRef}`) || null,
+        afterSalesMessage: afterSalesMessages.get(`${entry.resourceType}:${entry.resourceRef}`) || ''
+    }));
+}
+
+async function recordExceptionReview(resourceTypeRaw, resourceRefRaw, input, actorRef) {
+    await assertSchemaReady();
+    const { assertPlainObject } = require('./validation');
+    assertPlainObject(input);
+    const resourceType = String(resourceTypeRaw || '').trim();
+    const resourceRef = String(resourceRefRaw || '').trim();
+    if (!['order', 'payment'].includes(resourceType) || !/^[A-Z0-9-]{8,64}$/.test(resourceRef)) {
+        throw new BusinessError(400, 'INVALID_EXCEPTION_REF', '异常编号无效');
+    }
+    const table = resourceType === 'order' ? 'biz_recharge_orders' : 'biz_payment_transactions';
+    const column = resourceType === 'order' ? 'order_ref' : 'payment_ref';
+    const [rows] = await getBusinessPool().execute(
+        `SELECT ${column} AS resource_ref FROM ${table} WHERE ${column} = ? LIMIT 1`,
+        [resourceRef]
+    );
+    if (!rows.length) throw new BusinessError(404, 'EXCEPTION_NOT_FOUND', '异常记录不存在');
+    const reason = normalizeReason(input.reason);
+    await withBusinessTransaction(async (connection) => {
+        await insertAudit(connection, actorRef, 'exception.reviewed', resourceType, resourceRef,
+            'EXCEPTION_REVIEWED', { reason, status_changed: false });
+    });
+    return { resourceType, resourceRef, recorded: true };
+}
+
+async function updateAfterSalesStatus(orderRefRaw, input, actorRef) {
+    await assertSchemaReady();
+    const { assertPlainObject } = require('./validation');
+    assertPlainObject(input);
+    const orderRef = String(orderRefRaw || '').trim();
+    const nextStatus = String(input.status || '').trim().toLowerCase();
+    if (!/^ORD-[A-F0-9]{24}$/.test(orderRef)) throw new BusinessError(400, 'INVALID_ORDER_REF', '订单编号无效');
+    if (!['reviewing', 'approved', 'rejected', 'completed'].includes(nextStatus)) {
+        throw new BusinessError(400, 'INVALID_AFTER_SALES_STATUS', '售后状态无效');
+    }
+    const reason = normalizeReason(input.reason);
+    const transitions = {
+        pending: new Set(['reviewing', 'rejected']),
+        reviewing: new Set(['approved', 'rejected']),
+        approved: new Set(['completed']),
+        rejected: new Set(),
+        completed: new Set()
+    };
+    return withBusinessTransaction(async (connection) => {
+        const [rows] = await connection.execute(
+            `SELECT after_sales_status FROM biz_recharge_orders WHERE order_ref = ? LIMIT 1 FOR UPDATE`,
+            [orderRef]
+        );
+        if (!rows.length) throw new BusinessError(404, 'ORDER_NOT_FOUND', '订单不存在');
+        const current = String(rows[0].after_sales_status || 'none');
+        if (current === nextStatus) return { orderRef, status: current, reused: true };
+        if (!transitions[current]?.has(nextStatus)) throw new BusinessError(409, 'AFTER_SALES_STATE_CONFLICT', '该售后状态不能按此步骤变更');
+        await connection.execute(
+            `UPDATE biz_recharge_orders SET after_sales_status = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
+            [nextStatus, orderRef]
+        );
+        await insertAudit(connection, actorRef, 'after_sales.status_changed', 'order', orderRef,
+            'AFTER_SALES_STATUS_CHANGED', { from: current, to: nextStatus, reason, refund_executed: false });
+        return { orderRef, status: nextStatus, reused: false, refundExecuted: false };
+    });
+}
+
 async function dashboardSummary() {
     await assertSchemaReady();
     const [rows] = await getBusinessPool().query(
@@ -680,26 +1082,38 @@ async function dashboardSummary() {
 }
 
 async function insertAudit(connection, actorRef, action, resourceType, resourceRef, reasonCode, metadata = {}) {
+    return insertAuditAs(connection, 'admin', actorRef, 'admin', action, resourceType, resourceRef, reasonCode, metadata);
+}
+
+async function insertAuditAs(connection, actorType, actorRef, actorRole, action, resourceType, resourceRef, reasonCode, metadata = {}) {
     await connection.execute(
         `INSERT INTO biz_audit_logs
             (event_ref, actor_type, actor_ref, actor_role, action, resource_type,
              resource_ref, result, reason_code, metadata)
-         VALUES (?, 'admin', ?, 'admin', ?, ?, ?, 'success', ?, CAST(? AS JSON))`,
-        [makeRef('AUD'), String(actorRef || 'admin').slice(0, 128), action, resourceType,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'success', ?, CAST(? AS JSON))`,
+        [makeRef('AUD'), actorType, String(actorRef || actorType).slice(0, 128), actorRole, action, resourceType,
             String(resourceRef || '').slice(0, 128), reasonCode, JSON.stringify(metadata)]
     );
 }
 
 module.exports = {
     listProducts,
+    listStorefrontProducts,
     createProduct,
     updateProduct,
     createMockOrder,
+    createStorefrontMockOrder,
+    listStorefrontOrders,
+    updateStorefrontMockOrder,
     listOrders,
     createMockTopup,
     listTopups,
     reconcileMockTopup,
     listWallets,
     listLedger,
-    dashboardSummary
+    listExceptions,
+    recordExceptionReview,
+    updateAfterSalesStatus,
+    dashboardSummary,
+    readOnlyReconciliation
 };
