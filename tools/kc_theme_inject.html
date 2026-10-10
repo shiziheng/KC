@@ -1512,7 +1512,7 @@
             html += '<button class="kc-rc-amt" type="button" data-amt="' + RC_PRESETS[i] + '">$' + RC_PRESETS[i] + '</button>';
         }
         html += '</div>' +
-            '<div class="kc-rc-custom"><span>$</span><input id="kc-rc-input" type="number" min="2" max="500" placeholder="自定义金额（整数美元，2~500）"/></div>' +
+            '<div class="kc-rc-custom"><span>$</span><input id="kc-rc-input" type="number" min="1" max="500" placeholder="自定义金额（整数美元，1~500）"/></div>' +
             '<button class="kc-rc-next" type="button" data-action="recharge-next">下一步</button>' +
             '<div class="kc-rc-note">充值到账后可用于购买本站商品与订阅；余额支付余额不足时先充值再下单。</div>';
         card.innerHTML = html;
@@ -1528,7 +1528,7 @@
     function rechargeNext() {
         var input = document.getElementById('kc-rc-input');
         var yuan = input ? parseInt(input.value, 10) : NaN;
-        if (!yuan || yuan < 10 || yuan > 5000) { alert('请输入 2~500 之间的整数金额'); return; }
+        if (!yuan || yuan < 1 || yuan > 500) { alert('请输入 1~500 之间的整数金额'); return; }
         rcState.amountFen = yuan * 100;
         renderRechargeStep2();
     }
