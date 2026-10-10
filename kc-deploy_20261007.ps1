@@ -165,6 +165,34 @@ function Resolve-ComposePath {
   return $null
 }
 
+# ============ Xboard container patches: check + auto-repair (2026-10-11) ============
+# Container rebuilds wipe in-container patches (1/3/4 once lost silently: checkout blocked / wrong commission).
+# Delegates to the node tool (same impl as manual/CI): verify first, auto-repair per tools/xboard-patches/README.md.
+# NOTE: keep this block ASCII-only -- PowerShell 5.1 mis-decodes UTF-8 Chinese comments in no-BOM files.
+function Check-XboardPatches {
+  Step "Checking Xboard container patches (auto-repair when missing)"
+  $running = & $script:docker ps --filter "name=^xboard$" --format '{{.Names}}' 2>$null
+  if (-not $running) { Warn "xboard container not running; skip patch check"; return }
+
+  $nodeExe = $null
+  $cmd = Get-Command node -ErrorAction SilentlyContinue
+  if ($cmd) { $nodeExe = $cmd.Source }
+  if (-not $nodeExe) {
+    $guess = Join-Path $env:ProgramFiles 'nodejs\node.exe'
+    if (Test-Path $guess) { $nodeExe = $guess }
+  }
+  if (-not $nodeExe) {
+    Warn "node not found; skip patch check (manual: node tools/xboard-patch-check.js --fix)"
+    return
+  }
+  $tool = Join-Path $kcDir 'tools/xboard-patch-check.js'
+  if (-not (Test-Path $tool)) { Warn "missing $tool; skip patch check"; return }
+
+  & $nodeExe $tool --fix
+  if ($LASTEXITCODE -eq 0) { Ok "Xboard patches verified (auto-repaired if needed)" }
+  else { Err "Patch check failed - see output above or tools/xboard-patches/README.md" }
+}
+
 # ============ Xboard frontend injection (only for services with inject=true) ============
 function Apply-XboardInjection {
   Step "Applying Xboard frontend injection (custom_html + cache clear + octane reload)"
@@ -185,6 +213,7 @@ function Apply-XboardInjection {
   & $script:docker exec xboard php artisan optimize:clear
   & $script:docker exec xboard php artisan octane:reload
   Ok "Frontend injection applied"
+  Check-XboardPatches
 }
 
 # ============ generic service actions (driven by manifest) ============

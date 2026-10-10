@@ -56,18 +56,18 @@ detect_json_engine() {
   fi
 }
 
-# Print every service as one TAB-delimited row:
+# Print every service as one US-char delimited row (0x1f unit separator; NON-whitespace so `read` keeps empty fields):
 # id name type compose_path project containers ports health access inject image volume build
 mj_tsv() {
   case "$JSON_ENGINE" in
     jq)
-      jq -r '.services[] | [.id,(.name//""),(.type//""),(.compose_path//""),(.project//""),((.containers//[])|join(",")),((.ports//[])|join(",")),(.health_url//""),((.access_urls//[])|join(",")),(.inject|tostring|ascii_downcase),(.image//""),(.volume//""),(.build|tostring|ascii_downcase)] | @tsv' "$MANIFEST"
+      jq -r '.services[] | [.id,(.name//""),(.type//""),(.compose_path//""),(.project//""),((.containers//[])|join(",")),((.ports//[])|join(",")),(.health_url//""),((.access_urls//[])|join(",")),(.inject|tostring|ascii_downcase),(.image//""),(.volume//""),(.build|tostring|ascii_downcase)] | join("\u001f")' "$MANIFEST"
       ;;
     python3)
-      python3 -c "import json,sys;m=json.load(open(sys.argv[1]));[print('\t'.join([s.get('id',''),s.get('name',''),s.get('type',''),s.get('compose_path',''),s.get('project',''),','.join(s.get('containers',[])),','.join(s.get('ports',[])),s.get('health_url',''),','.join(s.get('access_urls',[])),str(s.get('inject',False)).lower(),s.get('image',''),s.get('volume',''),str(s.get('build',False)).lower()])) for s in m.get('services',[])]" "$MANIFEST"
+      python3 -c "import json,sys;m=json.load(open(sys.argv[1]));[print('\x1f'.join([s.get('id',''),s.get('name',''),s.get('type',''),s.get('compose_path',''),s.get('project',''),','.join(s.get('containers',[])),','.join(s.get('ports',[])),s.get('health_url',''),','.join(s.get('access_urls',[])),str(s.get('inject',False)).lower(),s.get('image',''),s.get('volume',''),str(s.get('build',False)).lower()])) for s in m.get('services',[])]" "$MANIFEST"
       ;;
     node)
-      node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));for(const s of m.services||[]){const r=[s.id,s.name,s.type,s.compose_path,s.project,(s.containers||[]).join(","),(s.ports||[]).join(","),s.health_url,(s.access_urls||[]).join(","),String(s.inject).toLowerCase(),s.image,s.volume,String(s.build).toLowerCase()];console.log(r.join("\t"));}' "$MANIFEST"
+      node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));for(const s of m.services||[]){const r=[s.id,s.name,s.type,s.compose_path,s.project,(s.containers||[]).join(","),(s.ports||[]).join(","),s.health_url,(s.access_urls||[]).join(","),String(s.inject).toLowerCase(),s.image,s.volume,String(s.build).toLowerCase()];console.log(r.join("\u001f"));}' "$MANIFEST"
       ;;
   esac
 }
@@ -165,6 +165,25 @@ wait_http() {
   return 1
 }
 
+# ---------- Xboard container patches: check + auto-repair (2026-10-11) ----------
+# 容器重建会冲掉内核补丁（曾静默丢失 1/3/4）。委托给 node 工具统一实现（自动重打）。
+check_xboard_patches() {
+  step "Checking Xboard container patches (auto-repair when missing)"
+  local running
+  running="$("$DOCKER_BIN" ps --filter "name=^xboard$" --format '{{.Names}}' 2>/dev/null)"
+  if [ -z "$running" ]; then warn "xboard container not running; skip patch check"; return 0; fi
+  if ! command -v node >/dev/null 2>&1; then
+    warn "node not found; skip patch check (manual: node tools/xboard-patch-check.js --fix)"
+    return 0
+  fi
+  if node "$KC_DIR/tools/xboard-patch-check.js" --fix; then
+    ok "Xboard patches verified (auto-repaired if needed)"
+  else
+    warn "Patch check reported issues -- see tools/xboard-patches/README.md"
+  fi
+  return 0
+}
+
 # ---------- Xboard frontend injection (only for services with inject=true) ----------
 apply_injection() {
   step "Applying Xboard frontend injection (custom_html + cache clear + octane reload)"
@@ -188,6 +207,7 @@ apply_injection() {
   "$DOCKER_BIN" exec xboard php artisan optimize:clear
   "$DOCKER_BIN" exec xboard php artisan octane:reload
   ok "Frontend injection applied"
+  check_xboard_patches || true
 }
 
 # ---------- generic service actions (driven by manifest) ----------
@@ -262,7 +282,7 @@ open_urls() {
   if command -v xdg-open >/dev/null 2>&1; then opener="xdg-open"
   elif command -v open >/dev/null 2>&1; then opener="open"; fi
   local id name type compose_path project containers ports health access inject image volume build u
-  while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+  while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     IFS=',' read -ra us <<< "$access"
     for u in "${us[@]}"; do
       if [ -n "$opener" ]; then
@@ -279,14 +299,14 @@ show_status() {
   step "Current container status"
   local filters=()
   local id name type compose_path project containers ports health access inject image volume build c u
-  while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+  while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     IFS=',' read -ra cs <<< "$containers"
     for c in "${cs[@]}"; do filters+=(--filter "name=$c"); done
   done < <(mj_tsv)
   "$DOCKER_BIN" ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' "${filters[@]}"
   echo
   echo "Access URLs:"
-  while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+  while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     IFS=',' read -ra us <<< "$access"
     for u in "${us[@]}"; do echo "  $name: $u"; done
   done < <(mj_tsv)
@@ -297,7 +317,7 @@ verify_deploy() {
   step "Verifying running containers against deploy-manifest.json"
   local expected=()
   local id name type compose_path project containers ports health access inject image volume build c
-  while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+  while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     IFS=',' read -ra cs <<< "$containers"
     for c in "${cs[@]}"; do expected+=("$c"); done
   done < <(mj_tsv)
@@ -333,7 +353,7 @@ list_services() {
   step "Service list from deploy-manifest.json (manifest_version $(mj_version))"
   echo
   local id name type compose_path project containers ports health access inject image volume build
-  while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+  while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     echo "  [$id] $name <$type>"
     echo "      containers: $containers"
     echo "      ports: $ports"
@@ -390,21 +410,21 @@ if [ "$ACTION" != "list" ]; then ensure_docker; fi
 case "$ACTION" in
   start)
     DO_BUILD=0
-    while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+    while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
       svc_start "$id" "$name" "$type" "$compose_path" "$project" "$containers" "$ports" "$health" "$access" "$inject" "$image" "$volume" "$build" "$DO_BUILD"
     done < <(mj_tsv)
     show_status
     open_urls
     ;;
   stop)
-    while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+    while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
       svc_stop "$id" "$name" "$type" "$compose_path" "$project" "$containers" "$ports" "$health" "$access" "$inject" "$image" "$volume" "$build"
     done < <(mj_tsv)
     show_status
     ;;
   deploy)
     DO_BUILD=1
-    while IFS=$'\t' read -r id name type compose_path project containers ports health access inject image volume build; do
+    while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
       svc_deploy "$id" "$name" "$type" "$compose_path" "$project" "$containers" "$ports" "$health" "$access" "$inject" "$image" "$volume" "$build"
     done < <(mj_tsv)
     show_status
