@@ -24,7 +24,9 @@ const { testCaptchaPlatformConnectivity, normalizeCaptchaPlatformApiUrl, resolve
 const browserPool = require('./browser-pool');
 const { buildWorkerRuntimeEnv } = require('./browser-runtime');
 const { querySubscriptionBySession, validateSessionTokenForQuery, cancelAutoRenew, resumeAutoRenew } = require('./subscription-check');
-const gptApi = require('./gpt-api-client');
+// 第三方 GPT 代充 API 客户端：默认对接 ZovoCard / SpaceXCard OpenAPI（/openapi/v1）。
+// 旧 broker（kc.vpss.eu.cc）实现保留在 gpt-api-client.js，需要时改回 require 即可。
+const gptApi = require('./zovocard-client');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -2413,7 +2415,8 @@ app.get('/api/admin/gpt-api', async (req, res) => {
                 api_key_preview: masked,
                 plan_key: cfg.plan_key,
                 country: cfg.country,
-                currency: cfg.currency
+                currency: cfg.currency,
+                mock: cfg.mock
             }
         });
     } catch (error) {
@@ -2427,6 +2430,7 @@ app.post('/api/admin/gpt-api', async (req, res) => {
         const body = req.body || {};
         await store.saveGptApiConfig({
             enabled: Boolean(body.enabled),
+            mock: Boolean(body.mock),
             base_url: body.base_url,
             api_key: body.api_key,
             plan_key: body.plan_key,
@@ -3204,7 +3208,9 @@ function spawnCheckoutDebugWorker({ task, token, sessionRaw, planType, region, p
  * 4. 轮询订单/任务状态，直到终态（success / failed）
  * 5. 将结果写回 task_logs（含 gpt_api_order_id / gpt_api_task_id / gpt_api_raw）
  */
-const GPT_API_PLAN_MAP = Object.freeze({ plus: 'plus', pro_5x: 'pro5x', pro_20x: 'pro20x' });
+// 第三方代充 plan 映射：ZovoCard GPT 计划 key 为 plus / pro_5x / pro_20x（带下划线）。
+// 旧 broker 用 pro5x / pro20x（无下划线），切换时注意区分。
+const GPT_API_PLAN_MAP = Object.freeze({ plus: 'plus', pro_5x: 'pro_5x', pro_20x: 'pro_20x' });
 
 function mapGptApiPlanKey(planType) {
     return GPT_API_PLAN_MAP[String(planType || '').trim()] || 'plus';
@@ -3243,8 +3249,11 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
         if (!cfg.enabled) {
             throw new Error('第三方代充 API 未启用，请在后台「系统配置」中开启并填写 API 地址与 Key');
         }
-        if (!cfg.api_key) {
+        if (!cfg.api_key && !cfg.mock) {
             throw new Error('第三方代充 API Key 未配置');
+        }
+        if (cfg.mock) {
+            logTask(jobKey, 'MOCK 模式：本次代充为模拟执行，不会真实调用 ZovoCard，不会产生任何扣费');
         }
 
         const apiPlanKey = mapGptApiPlanKey(planType);
@@ -3266,21 +3275,28 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
             : '第三方 API 使用平台启用代理池');
 
         // 本機检查通过后才从卡池预留一张卡，避免无效 Session 占用资产。
+        // ZovoCard / SpaceXCard 模式：卡由平台提供，不依赖本地银行卡池，跳过取卡。
+        const useZovocard = /zovocard|openapi\/v1/i.test(cfg.base_url || '');
         let newCard = null;
-        reservedCard = await store.reserveCard(`gptapi_${jobKey}`);
-        if (!reservedCard) {
-            throw new Error('银行卡池暂无可用卡片，请在后台「银行卡池」导入银行卡后再试');
+        reservedCard = null;
+        if (!useZovocard) {
+            reservedCard = await store.reserveCard(`gptapi_${jobKey}`);
+            if (!reservedCard) {
+                throw new Error('银行卡池暂无可用卡片，请在后台「银行卡池」导入银行卡后再试');
+            }
+            const expiry = parseCardExpiry(reservedCard.card_expiry);
+            newCard = {
+                number: reservedCard.card_number,
+                exp_month: expiry.month,
+                exp_year: expiry.year,
+                cvc: reservedCard.card_cvc,
+                name: reservedCard.card_holder || 'API User',
+                country: cfg.country || 'PH'
+            };
+            logTask(jobKey, `第三方 API 使用卡池预留卡 ...${String(reservedCard.card_number || '').slice(-4)}`);
+        } else {
+            logTask(jobKey, 'ZovoCard 模式：使用平台托管卡片，跳过本地银行卡池');
         }
-        const expiry = parseCardExpiry(reservedCard.card_expiry);
-        newCard = {
-            number: reservedCard.card_number,
-            exp_month: expiry.month,
-            exp_year: expiry.year,
-            cvc: reservedCard.card_cvc,
-            name: reservedCard.card_holder || 'API User',
-            country: cfg.country || 'PH'
-        };
-        logTask(jobKey, `第三方 API 使用卡池预留卡 ...${String(reservedCard.card_number || '').slice(-4)}`);
 
         // 套餐从 CDK 的 plan_type 同步；国家币种使用协议默认值（PH / PHP）
         await setProgress('running', 20, '正在提交代充订单...');
@@ -3699,6 +3715,16 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
     })();
 }
 
+// KC-PATCH（阶段二 · 卡密有效期）：发卡后 180 天内有效（可按业务调整此常量）
+const CDK_VALID_DAYS = 180;
+
+function isCdkExpired(cdkDetails) {
+    if (!cdkDetails || !cdkDetails.created_at) return false;
+    const created = new Date(cdkDetails.created_at).getTime();
+    if (!isFinite(created)) return false;
+    return Date.now() > created + CDK_VALID_DAYS * 86400 * 1000;
+}
+
 async function handleActivationRequest(req, res) {
     const rawSession = String(req.body?.session || req.body?.token || '').trim();
     const sessionJson = parseSessionJson(rawSession);
@@ -3739,6 +3765,13 @@ async function handleActivationRequest(req, res) {
         }
         if (!cdkDetails || cdkDetails.used_at || cdkDetails.type !== '自助') {
             return res.status(403).json({ success: false, message: 'CDK 无效、已使用或非自助激活码' });
+        }
+        // KC-PATCH（阶段二 · 卡密有效期）：发卡后 180 天内有效，超期拒绝兑换
+        if (isCdkExpired(cdkDetails)) {
+            return res.status(403).json({
+                success: false,
+                message: '该卡密已超过有效期（发放后 180 天内有效）。如需帮助请联系客服'
+            });
         }
 
         const cdkCooldownMinutes = getRemainingCooldownMinutes(cdkDetails.cooldown_until);
@@ -3846,6 +3879,13 @@ app.post('/api/verify-cdk', async (req, res) => {
                 }
             });
         }
+        // KC-PATCH（阶段二 · 卡密有效期）：verify 同样拒绝超期卡密
+        if (cdkData && isCdkExpired(cdkData)) {
+            return res.status(403).json({
+                success: false,
+                message: '该卡密已超过有效期（发放后 180 天内有效）。如需帮助请联系客服'
+            });
+        }
         if (cdkData && !cdkData.used_at) {
             if (cdkData.type === '自助') {
                 const cdkCooldownMinutes = getRemainingCooldownMinutes(cdkData.cooldown_until);
@@ -3921,6 +3961,499 @@ app.get('/api/cdk/download', async (req, res) => {
     return res.status(410).send('成品号下载功能已移除，仅支持自助开通');
 });
 
+// ─── 对外集成接口（供 Xboard 等前台商城调用）─────────────────────────────────
+
+function timingSafeEqualString(a, b) {
+    const bufA = Buffer.from(String(a || ''), 'utf8');
+    const bufB = Buffer.from(String(b || ''), 'utf8');
+    if (bufA.length !== bufB.length || bufA.length === 0) {
+        return false;
+    }
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+async function requireIntegrationAuth(req, res, next) {
+    try {
+        await ensureStoreReady();
+        const cfg = await store.getIntegrationConfig();
+        if (!cfg.enabled) {
+            return res.status(403).json({ success: false, message: '集成接口未启用' });
+        }
+        if (!cfg.integration_key) {
+            return res.status(403).json({ success: false, message: '集成接口未配置密钥' });
+        }
+
+        const provided = String(
+            req.headers['x-integration-key']
+            || req.headers['x-api-key']
+            || req.body?.integration_key
+            || ''
+        ).trim();
+
+        if (!provided || !timingSafeEqualString(provided, cfg.integration_key)) {
+            return res.status(401).json({ success: false, message: '集成密钥校验失败' });
+        }
+        return next();
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+app.post('/api/integration/cdk/issue', requireIntegrationAuth, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const ref = String(body.ref || body.trade_no || '').trim();
+        if (!ref) {
+            return res.status(400).json({ success: false, message: '缺少 ref（幂等键）' });
+        }
+        if (ref.length > 64) {
+            return res.status(400).json({ success: false, message: 'ref 长度不能超过 64' });
+        }
+
+        const planType = String(body.plan_type || 'plus').trim();
+        if (!GPT_API_PLAN_MAP[planType]) {
+            return res.status(400).json({
+                success: false,
+                message: `不支持的 plan_type：${planType}，可选 ${Object.keys(GPT_API_PLAN_MAP).join(' / ')}`
+            });
+        }
+
+        const result = await store.issueCdkByRef(ref, {
+            planType,
+            source: String(body.source || 'xboard').trim() || 'xboard',
+            orderId: body.order_id,
+            userRef: body.user_ref,
+            createCdks
+        });
+
+        return res.json({
+            success: true,
+            message: result.reused ? '该订单已发放过 CDK' : 'CDK 发放成功',
+            data: {
+                ref: result.ref,
+                cdk: result.cdk,
+                plan_type: result.planType,
+                reused: result.reused
+            }
+        });
+    } catch (error) {
+        console.error('[集成] 发放 CDK 失败:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/integration/cdk/issue', requireIntegrationAuth, async (req, res) => {
+    try {
+        const ref = String(req.query.ref || '').trim();
+        if (!ref) {
+            return res.status(400).json({ success: false, message: '缺少 ref' });
+        }
+        const record = await store.getIntegrationIssueByRef(ref);
+        if (!record) {
+            return res.status(404).json({ success: false, message: '未找到该 ref 的发放记录' });
+        }
+        return res.json({
+            success: true,
+            data: {
+                ref: record.ref,
+                cdk: record.cdk_code,
+                plan_type: record.plan_type,
+                source: record.source,
+                order_id: record.order_id,
+                user_ref: record.user_ref,
+                created_at: record.created_at
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/integration/health', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const cfg = await store.getIntegrationConfig();
+        return res.json({
+            success: true,
+            data: {
+                enabled: cfg.enabled,
+                key_configured: Boolean(cfg.integration_key)
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 段C5：精确任务状态（真实进度百分比 + 失败原因）
+//
+// 为什么单独开一个接口，而不是扩展 /api/cdk/query：
+//   /api/cdk/query 是**公开无鉴权**接口（KC 前台兑卡页依赖它），
+//   往里加 message 会把上游错误原文暴露给任何知道卡密的人 → 信息泄露。
+//   本接口带 X-Integration-Key，只有对接方服务端能调。
+//
+// ⚠️ 语义差异（务必注意）：失败时 KC 会回滚卡密状态，
+//   因此 /api/cdk/query 会显示「未使用」，而本接口以**任务记录**为准
+//   返回 taskStatus='failed'。前台要显示失败态必须走本接口。
+
+/** 敏感词过滤：命中即替换为通用文案，避免泄露内部细节 */
+const TASK_MESSAGE_REDACT = /(access_token|refresh_token|session|password|passwd|bearer|sk-|卡号|card\s*last)/i;
+
+function sanitizeTaskMessage(message, status) {
+    const text = String(message || '').trim();
+    if (!text) {
+        return String(status) === 'success' ? '开通成功' : '正在开通中';
+    }
+    if (TASK_MESSAGE_REDACT.test(text)) {
+        return '开通遇到问题，详情请联系客服';
+    }
+    return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+}
+
+app.get('/api/integration/task/status', requireIntegrationAuth, async (req, res) => {
+    try {
+        const cdk = String(req.query.cdk || '').trim();
+        if (!cdk) {
+            return res.status(400).json({ success: false, message: '缺少 cdk' });
+        }
+
+        await ensureStoreReady();
+        const cdkData = await store.verifyCdkDetails(cdk);
+        if (!cdkData) {
+            return res.status(404).json({ success: false, message: '未找到该激活码记录' });
+        }
+
+        const task = await store.getLatestTaskByCdk(cdk);
+        if (!task) {
+            // 卡密存在但从未发起开通 → 与 /api/cdk/query 的「未使用」对齐
+            return res.json({
+                success: true,
+                data: {
+                    cdk,
+                    status: '未使用',
+                    taskStatus: null,
+                    progress: 0,
+                    message: '尚未发起开通',
+                    hasTask: false,
+                    updatedAt: null
+                }
+            });
+        }
+
+        // 任务态 → 三态中文（与 /api/cdk/query 的取值域保持一致）
+        const taskStatus = String(task.status || '');
+        const statusCn = taskStatus === 'running'
+            ? '开通中'
+            : (taskStatus === 'success' ? '已使用' : '未使用');
+
+        return res.json({
+            success: true,
+            data: {
+                cdk,
+                status: statusCn,
+                taskStatus,
+                progress: Number(task.progress || 0),
+                message: sanitizeTaskMessage(task.message, taskStatus),
+                hasTask: true,
+                updatedAt: task.updated_at || null
+            }
+        });
+    } catch (error) {
+        console.error('[集成] 查询任务状态失败:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ─── 后台：集成配置管理 ─────────────────────────────────────────────────────
+
+// ============================================================
+// FEAT-006：商品卡片配置（后台可配 · 读写 Xboard v2_plan.kc_card）
+// ============================================================
+const XBOARD_DB_NAME = process.env.XBOARD_DB_NAME || 'xboard';
+
+const CARD_STATES = ['onsale', 'featured', 'recommend', 'soon'];
+const CARD_BTN_STYLES = ['solid', 'outline', 'ghost'];
+
+function cardDefault() {
+    return {
+        state: 'onsale',
+        badge: { text: '', pos: 'left', color: 'brand' },
+        title: '',
+        subtitle: '',
+        price: { mode: 'auto', value: null, unit: '/月', tag: '' },
+        promo: { strike: '', text: '' },
+        features: [],
+        guarantees: [],
+        tip: '',
+        button: { text: '立即订阅', style: 'solid' }
+    };
+}
+
+function cardStr(v, max) {
+    return String(v == null ? '' : v).trim().slice(0, max);
+}
+
+function cardNorm(input) {
+    const d = cardDefault();
+    const c = (input && typeof input === 'object') ? input : {};
+    const badge = (c.badge && typeof c.badge === 'object') ? c.badge : {};
+    const price = (c.price && typeof c.price === 'object') ? c.price : {};
+    const promo = (c.promo && typeof c.promo === 'object') ? c.promo : {};
+    const button = (c.button && typeof c.button === 'object') ? c.button : {};
+    const arr = (v, max, len) => Array.isArray(v) ? v.map(x => cardStr(x, len)).filter(Boolean).slice(0, max) : [];
+    const mode = price.mode === 'manual' ? 'manual' : 'auto';
+    const valueNum = Number(price.value);
+    return {
+        category: categoryKeyNorm(c.category) || 'recharge',
+        state: CARD_STATES.includes(c.state) ? c.state : d.state,
+        badge: {
+            text: cardStr(badge.text, 12),
+            pos: badge.pos === 'right' ? 'right' : 'left',
+            color: ['brand', 'green', 'amber', 'gray'].includes(badge.color) ? badge.color : 'brand'
+        },
+        title: cardStr(c.title, 40),
+        subtitle: cardStr(c.subtitle, 60),
+        price: {
+            mode,
+            value: (mode === 'manual' && Number.isFinite(valueNum) && valueNum >= 0) ? Math.round(valueNum * 100) / 100 : null,
+            unit: cardStr(price.unit || d.price.unit, 8),
+            tag: cardStr(price.tag, 10)
+        },
+        promo: { strike: cardStr(promo.strike, 20), text: cardStr(promo.text, 40) },
+        features: arr(c.features, 8, 60),
+        guarantees: arr(c.guarantees, 4, 20),
+        tip: cardStr(c.tip, 60),
+        button: {
+            text: cardStr(button.text || d.button.text, 12),
+            style: CARD_BTN_STYLES.includes(button.style) ? button.style : 'solid'
+        }
+    };
+}
+
+function cardParse(raw) {
+    if (!raw) { return null; }
+    try { return cardNorm(JSON.parse(raw)); } catch (e) { return null; }
+}
+
+// ============================================================
+// FEAT-009：服务分类 + 商品页常见问题（存 xboard.v2_settings，key-value）
+// ============================================================
+const CARD_CATEGORIES_DEFAULT = [
+    { key: 'recharge', name: '代充', nav: true },
+    { key: 'account', name: '成品号', nav: true },
+    { key: 'website', name: '建站服务', nav: true }
+];
+const KC_SETTING_CATEGORIES = 'kc_plan_categories';
+const KC_SETTING_FAQ = 'kc_plan_faq';
+
+function categoryKeyNorm(v) {
+    return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+}
+
+function categoriesNorm(input) {
+    const arr = Array.isArray(input) ? input : [];
+    const seen = {};
+    const out = [];
+    arr.forEach(function (c) {
+        if (!c || typeof c !== 'object') { return; }
+        const key = categoryKeyNorm(c.key || c.name);
+        const name = cardStr(c.name, 12);
+        if (!key || !name || seen[key]) { return; }
+        seen[key] = 1;
+        out.push({ key: key, name: name, nav: c.nav !== false });
+    });
+    if (!out.length) { return CARD_CATEGORIES_DEFAULT.slice(); }
+    // 「代充」为主体业务：始终存在且排最前
+    if (!seen['recharge']) { out.unshift({ key: 'recharge', name: '代充', nav: true }); }
+    return out.slice(0, 8);
+}
+
+function faqNorm(input) {
+    const arr = Array.isArray(input) ? input : [];
+    return arr.map(function (it) {
+        if (!it || typeof it !== 'object') { return null; }
+        const q = cardStr(it.q, 60);
+        const a = cardStr(it.a, 500);
+        if (!q || !a) { return null; }
+        return { q: q, a: a };
+    }).filter(Boolean).slice(0, 12);
+}
+
+async function readKcSetting(name) {
+    try {
+        const rows = await store.runQuery(
+            'SELECT `value` FROM `' + XBOARD_DB_NAME + '`.v2_settings WHERE `name` = ? LIMIT 1', [name]
+        );
+        if (!rows.length) { return null; }
+        return JSON.parse(rows[0].value);
+    } catch (e) { return null; }
+}
+
+async function writeKcSetting(name, value) {
+    const json = JSON.stringify(value);
+    // 注意：v2_settings 的 created_at/updated_at 是 DATETIME 类型（不是 unix 时间戳），必须用 NOW()
+    const rows = await store.runQuery(
+        'SELECT id FROM `' + XBOARD_DB_NAME + '`.v2_settings WHERE `name` = ? LIMIT 1', [name]
+    );
+    if (rows.length) {
+        await store.runExecute(
+            'UPDATE `' + XBOARD_DB_NAME + '`.v2_settings SET `value` = ?, updated_at = NOW() WHERE id = ?',
+            [json, rows[0].id]
+        );
+    } else {
+        await store.runExecute(
+            'INSERT INTO `' + XBOARD_DB_NAME + '`.v2_settings (`group`, `type`, `name`, `value`, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
+            ['kc', 'string', name, json]
+        );
+    }
+}
+
+// 保存分类列表
+app.post('/api/admin/card-config/categories', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const list = categoriesNorm(req.body && req.body.categories);
+        await writeKcSetting(KC_SETTING_CATEGORIES, list);
+        res.json({ success: true, message: '分类已保存，前台刷新即生效', categories: list });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 保存商品页常见问题
+app.post('/api/admin/card-config/faq', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const list = faqNorm(req.body && req.body.faq);
+        await writeKcSetting(KC_SETTING_FAQ, list);
+        res.json({ success: true, message: '常见问题已保存，前台刷新即生效', faq: list });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 商品卡片配置：套餐列表（含充值套餐过滤）
+app.get('/api/admin/card-config/list', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rows = await store.runQuery(
+            'SELECT id, name, content, prices, kc_card, `show`, sell, sort FROM `' + XBOARD_DB_NAME + '`.v2_plan ' +
+            'WHERE (kc_is_topup IS NULL OR kc_is_topup = 0) ORDER BY sort ASC, id ASC'
+        );
+        const plans = rows.map((r) => {
+            let prices = {};
+            try { prices = JSON.parse(r.prices || '{}'); } catch (e) { prices = {}; }
+            return {
+                id: r.id,
+                name: r.name,
+                content: r.content || '',
+                show: Boolean(r.show),
+                sell: Boolean(r.sell),
+                prices,
+                configured: Boolean(r.kc_card),
+                card: cardParse(r.kc_card) || cardDefault()
+            };
+        });
+        res.json({
+            success: true,
+            plans,
+            categories: categoriesNorm(await readKcSetting(KC_SETTING_CATEGORIES)),
+            faq: faqNorm(await readKcSetting(KC_SETTING_FAQ))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 商品卡片配置：保存
+app.post('/api/admin/card-config/save', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const planId = Number(req.body && req.body.plan_id);
+        if (!planId) { return res.status(400).json({ success: false, message: '缺少 plan_id' }); }
+        const card = cardNorm(req.body && req.body.card);
+        await store.runExecute(
+            'UPDATE `' + XBOARD_DB_NAME + '`.v2_plan SET kc_card = ? WHERE id = ?',
+            [JSON.stringify(card), planId]
+        );
+        res.json({ success: true, message: '已保存，前台刷新即生效', card });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 商品卡片配置：重置为未配置（前台走兜底默认模板）
+app.post('/api/admin/card-config/reset', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const planId = Number(req.body && req.body.plan_id);
+        if (!planId) { return res.status(400).json({ success: false, message: '缺少 plan_id' }); }
+        await store.runExecute(
+            'UPDATE `' + XBOARD_DB_NAME + '`.v2_plan SET kc_card = NULL WHERE id = ?',
+            [planId]
+        );
+        res.json({ success: true, message: '已重置为未配置（前台使用默认模板）' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/integration', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const cfg = await store.getIntegrationConfig();
+        const issues = await store.listIntegrationIssues(20);
+        res.json({
+            success: true,
+            config: {
+                enabled: cfg.enabled,
+                key_saved: Boolean(cfg.integration_key),
+                key_preview: cfg.integration_key
+                    ? `${cfg.integration_key.slice(0, 4)}${'*'.repeat(Math.max(0, Math.min(12, cfg.integration_key.length - 8)))}${cfg.integration_key.slice(-4)}`
+                    : ''
+            },
+            recent_issues: issues.map((row) => ({
+                ref: row.ref,
+                cdk: row.cdk_code,
+                plan_type: row.plan_type,
+                source: row.source,
+                created_at: row.created_at
+            }))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/integration', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const body = req.body || {};
+        await store.saveIntegrationConfig({
+            enabled: Boolean(body.enabled),
+            integration_key: body.integration_key
+        });
+        res.json({ success: true, message: '集成配置已保存' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/integration/generate-key', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const newKey = `ik_${crypto.randomBytes(24).toString('hex')}`;
+        await store.saveIntegrationConfig({ enabled: true, integration_key: newKey });
+        res.json({
+            success: true,
+            message: '已生成新的集成密钥（原密钥立即失效）',
+            integration_key: newKey
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 async function start() {
     await ensureStoreReady();
 
@@ -3962,6 +4495,36 @@ async function start() {
             }
         } catch (error) {
             console.warn(`⚠️  [资产锁] 周期清理失败: ${error.message}`);
+        }
+    }, 60 * 1000).unref();
+
+    // ── KC-PATCH（阶段二 · 未兑卡提醒 / 阶段三 · 异常告警）──
+    // 每 6 小时检查一次：
+    //   ① 发卡超 24h 未兑换的自助卡密 → Telegram 提醒管理员（主动触达用户）
+    //   ② 超 30 分钟仍在 processing 的任务 → Telegram 告警（疑似卡住）
+    // 状态存在内存里，重启后重新计（首次运行如无新告警则静默）。
+    let lastUnredeemedAlertAt = 0;
+    const alertedStuckJobs = new Set();
+    setInterval(async () => {
+        try {
+            if (Date.now() - lastUnredeemedAlertAt < 6 * 3600 * 1000) return;
+            lastUnredeemedAlertAt = Date.now();
+
+            // ① 未兑卡提醒（发卡超 24 小时未兑换）
+            const unredeemed = await store.getUnredeemedCards(24 * 3600);
+            if (unredeemed && unredeemed.length > 0) {
+                fireTelegramNotification('unredeemed_cards', { cards: unredeemed });
+            }
+
+            // ② 卡住任务告警（超 30 分钟仍 processing）
+            const stuck = await store.getStuckTasks(30 * 60);
+            for (const t of stuck || []) {
+                if (alertedStuckJobs.has(t.job_key)) continue;
+                alertedStuckJobs.add(t.job_key);
+                fireTelegramNotification('task_stuck', { jobKey: t.job_key, cdk: t.cdk, message: `任务 ${t.job_key} 超过 30 分钟仍在处理中，请检查` });
+            }
+        } catch (error) {
+            console.warn(`⚠️ [兑卡提醒] 周期检查失败: ${error.message}`);
         }
     }, 60 * 1000).unref();
 

@@ -247,7 +247,8 @@ const GPT_API_CONFIG_KEYS = [
     'gpt_api_key',
     'gpt_api_plan_key',
     'gpt_api_country',
-    'gpt_api_currency'
+    'gpt_api_currency',
+    'gpt_api_mock'
 ];
 
 async function ensureGptApiColumns() {
@@ -263,7 +264,8 @@ async function ensureGptApiConfigDefaults() {
         ['gpt_api_key', ''],
         ['gpt_api_plan_key', 'plus'],
         ['gpt_api_country', 'PH'],
-        ['gpt_api_currency', 'PHP']
+        ['gpt_api_currency', 'PHP'],
+        ['gpt_api_mock', '0']
     ];
     for (const [key, value] of defaults) {
         await runExecute(
@@ -290,7 +292,8 @@ async function getGptApiConfig() {
         api_key: String(map.gpt_api_key || '').trim(),
         plan_key: String(map.gpt_api_plan_key || 'plus').trim() || 'plus',
         country: String(map.gpt_api_country || 'PH').trim().toUpperCase() || 'PH',
-        currency: String(map.gpt_api_currency || 'PHP').trim().toUpperCase() || 'PHP'
+        currency: String(map.gpt_api_currency || 'PHP').trim().toUpperCase() || 'PHP',
+        mock: String(map.gpt_api_mock || '0') === '1'
     };
 }
 
@@ -299,7 +302,7 @@ async function saveGptApiConfig(config = {}) {
     const apiKey = String(config.api_key || '').trim() || existing.api_key || '';
     await runExecute(
         `INSERT INTO app_config (config_key, config_value)
-         VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
+         VALUES (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?), (?, ?)
          ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
         [
             'gpt_api_enabled', config.enabled ? '1' : '0',
@@ -308,7 +311,77 @@ async function saveGptApiConfig(config = {}) {
             'gpt_api_key', apiKey,
             'gpt_api_plan_key', String(config.plan_key || existing.plan_key || 'plus').trim() || 'plus',
             'gpt_api_country', String(config.country || existing.country || 'PH').trim().toUpperCase() || 'PH',
-            'gpt_api_currency', String(config.currency || existing.currency || 'PHP').trim().toUpperCase() || 'PHP'
+            'gpt_api_currency', String(config.currency || existing.currency || 'PHP').trim().toUpperCase() || 'PHP',
+            'gpt_api_mock', config.mock ? '1' : '0'
+        ]
+    );
+}
+
+// ─── 对外集成（Xboard 等）────────────────────────────────────────────────────
+
+const INTEGRATION_CONFIG_KEYS = [
+    'integration_enabled',
+    'integration_key'
+];
+
+const INTEGRATION_TABLE_SQL = `CREATE TABLE IF NOT EXISTS integration_cdk_issue (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    ref VARCHAR(64) NOT NULL COMMENT '对接方幂等键，如 Xboard trade_no',
+    source VARCHAR(32) NOT NULL DEFAULT 'xboard' COMMENT '来源系统',
+    cdk_code VARCHAR(32) NOT NULL COMMENT '已发放的 CDK',
+    plan_type VARCHAR(16) NOT NULL DEFAULT 'plus' COMMENT 'plus/pro_5x/pro_20x',
+    order_id BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '对接方订单号（可选）',
+    user_ref VARCHAR(128) NOT NULL DEFAULT '' COMMENT '对接方用户标识（可选）',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_integration_ref (ref),
+    KEY idx_integration_cdk (cdk_code),
+    KEY idx_integration_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+async function ensureIntegrationTable() {
+    await ensureTable('integration_cdk_issue', INTEGRATION_TABLE_SQL);
+}
+
+async function ensureIntegrationConfigDefaults() {
+    const defaults = [
+        ['integration_enabled', '0'],
+        ['integration_key', '']
+    ];
+    for (const [key, value] of defaults) {
+        await runExecute(
+            `INSERT INTO app_config (config_key, config_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE config_value = config_value`,
+            [key, value]
+        );
+    }
+}
+
+async function getIntegrationConfig() {
+    const rows = await runQuery(
+        `SELECT config_key, config_value
+         FROM app_config
+         WHERE config_key IN (${INTEGRATION_CONFIG_KEYS.map(() => '?').join(', ')})`,
+        INTEGRATION_CONFIG_KEYS
+    );
+    const map = Object.fromEntries(rows.map((row) => [row.config_key, row.config_value]));
+    return {
+        enabled: String(map.integration_enabled || '0') === '1',
+        integration_key: String(map.integration_key || '').trim()
+    };
+}
+
+async function saveIntegrationConfig(config = {}) {
+    const existing = await getIntegrationConfig();
+    const key = String(config.integration_key || '').trim() || existing.integration_key || '';
+    await runExecute(
+        `INSERT INTO app_config (config_key, config_value)
+         VALUES (?, ?), (?, ?)
+         ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)`,
+        [
+            'integration_enabled', config.enabled ? '1' : '0',
+            'integration_key', key
         ]
     );
 }
@@ -332,6 +405,23 @@ async function ensureColumn(tableName, columnName, columnDefinition) {
     }
 
     await runQuery(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDefinition}`);
+}
+
+async function ensureTable(tableName, createSql) {
+    const rows = await runQuery(
+        `SELECT COUNT(*) AS count
+         FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = ?`,
+        [DB_NAME, tableName]
+    );
+
+    if (Number(rows[0]?.count || 0) > 0) {
+        return;
+    }
+
+    await runQuery(createSql);
+    console.log(`🧱 已创建数据表 ${tableName}`);
 }
 
 async function ensureLegacyColumns() {
@@ -494,10 +584,12 @@ async function ensureReady() {
     await runQuery(schemaSql);
     await ensureLegacyColumns();
     await ensureGptApiColumns();
+    await ensureIntegrationTable();
     await initializeBaseData();
     await ensureAdminSecurityDefaults();
     await ensureHcaptchaConfigDefaults();
     await ensureGptApiConfigDefaults();
+    await ensureIntegrationConfigDefaults();
     await syncHcaptchaConfigPersistence();
     await migrateLegacyProxyConfig();
     await seedTaxFreeAddresses();
@@ -1250,6 +1342,183 @@ async function insertCdks(cdks, options = {}) {
     };
 }
 
+/**
+ * 按对接方幂等键发放 CDK。
+ * 同一 ref（如 Xboard trade_no）重复调用返回同一张 CDK，绝不重复发放。
+ *
+ * @param {string} ref        对接方幂等键，建议传 Xboard 的 trade_no
+ * @param {object} options    { planType, source, orderId, userRef, createCdks }
+ * @returns {Promise<object>} { cdk, planType, reused, ref }
+ */
+async function issueCdkByRef(ref, options = {}) {
+    const normalizedRef = String(ref || '').trim();
+    if (!normalizedRef) {
+        throw new Error('ref 不能为空');
+    }
+    if (normalizedRef.length > 64) {
+        throw new Error('ref 长度不能超过 64');
+    }
+
+    const source = String(options.source || 'xboard').trim() || 'xboard';
+    const planType = VALID_PLAN_TYPES.has(options.planType) ? options.planType : 'plus';
+    const orderId = Number.isFinite(Number(options.orderId)) && Number(options.orderId) > 0
+        ? Number(options.orderId)
+        : null;
+    const userRef = String(options.userRef || '').trim().slice(0, 128);
+    const cdkFactory = typeof options.createCdks === 'function' ? options.createCdks : null;
+
+    // 1) 先查是否已发放（幂等快路径）
+    const existingRows = await runQuery(
+        `SELECT ref, source, cdk_code, plan_type
+         FROM integration_cdk_issue
+         WHERE ref = ?
+         LIMIT 1`,
+        [normalizedRef]
+    );
+    if (existingRows.length > 0 && existingRows[0].cdk_code) {
+        return {
+            cdk: existingRows[0].cdk_code,
+            planType: existingRows[0].plan_type,
+            source: existingRows[0].source,
+            ref: normalizedRef,
+            reused: true
+        };
+    }
+
+    if (!cdkFactory) {
+        throw new Error('缺少 CDK 生成器');
+    }
+
+    // 2) 抢占幂等键：先占位再发卡，避免并发重复发放
+    //    ⚠️ 必须用 INSERT IGNORE 而非 ON DUPLICATE KEY UPDATE：
+    //    mysql2 驱动下 ODKU 在冲突时 affectedRows 仍返回 1，会导致并发下所有请求都判定"抢到"。
+    //    INSERT IGNORE 冲突时返回 0，真并发下只有一个赢家（已实测）。
+    //    抢不到时不直接失败：等待赢家回填；若赢家失败已释放占位，则自己重试抢占。
+    const MAX_CLAIM_ATTEMPTS = 3;
+    for (let claimAttempt = 0; claimAttempt < MAX_CLAIM_ATTEMPTS; claimAttempt += 1) {
+        const claimed = await runExecute(
+            `INSERT IGNORE INTO integration_cdk_issue (ref, source, cdk_code, plan_type, order_id, user_ref)
+             VALUES (?, ?, '', ?, ?, ?)`,
+            [normalizedRef, source, planType, orderId, userRef]
+        );
+
+        if (Number(claimed?.affectedRows || 0) > 0) {
+            // 抢占成功 → 由本请求负责生成并回填
+            return await generateAndFillCdk(normalizedRef, planType, source, cdkFactory);
+        }
+
+        // 抢占失败：等待赢家回填 cdk_code
+        let placeholderGone = false;
+        let winnerCdk = '';
+        for (let wait = 0; wait < 20; wait += 1) {
+            const rows = await runQuery(
+                `SELECT ref, source, cdk_code, plan_type
+                 FROM integration_cdk_issue
+                 WHERE ref = ?
+                 LIMIT 1`,
+                [normalizedRef]
+            );
+            if (rows.length === 0) {
+                // 赢家失败并释放了占位 → 跳出等待，外层循环重试抢占
+                placeholderGone = true;
+                break;
+            }
+            if (rows[0].cdk_code) {
+                winnerCdk = rows[0].cdk_code;
+                return {
+                    cdk: rows[0].cdk_code,
+                    planType: rows[0].plan_type,
+                    source: rows[0].source,
+                    ref: normalizedRef,
+                    reused: true
+                };
+            }
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+
+        if (!winnerCdk && !placeholderGone) {
+            throw new Error('该订单正在发放中，请稍后重试');
+        }
+        // placeholderGone=true → 继续外层循环，重新尝试抢占
+    }
+
+    throw new Error('发放竞争激烈，请稍后重试');
+}
+
+/**
+ * 已抢占到占位后，生成 CDK 并回填；失败则释放占位。
+ */
+async function generateAndFillCdk(normalizedRef, planType, source, cdkFactory) {
+    let newCdk = '';
+    let filled = false;
+    try {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            const generated = cdkFactory(1);
+            const candidate = Array.isArray(generated) ? generated[0] : generated;
+            const summary = await insertCdks([candidate], { type: '自助', plan_type: planType });
+            if (summary.insertedCount > 0) {
+                newCdk = String(candidate);
+                break;
+            }
+        }
+
+        if (!newCdk) {
+            throw new Error('CDK 生成失败，请重试');
+        }
+
+        await runExecute(
+            `UPDATE integration_cdk_issue
+             SET cdk_code = ?, plan_type = ?
+             WHERE ref = ?`,
+            [newCdk, planType, normalizedRef]
+        );
+        filled = true;
+
+        console.log(`🎫 [集成] 已按 ref=${normalizedRef} 发放 CDK ${newCdk}（${planType}）`);
+        return {
+            cdk: newCdk,
+            planType,
+            source,
+            ref: normalizedRef,
+            reused: false
+        };
+    } catch (error) {
+        // 回填失败：作废已生成的 CDK，避免留下无人认领的孤儿卡
+        if (newCdk && !filled) {
+            try {
+                await runExecute(`DELETE FROM cdk_codes WHERE cdk_code = ? AND used_at IS NULL`, [newCdk]);
+                console.warn(`🧹 [集成] 回填失败，已作废孤儿 CDK ${newCdk}`);
+            } catch (cleanupError) {
+                console.error('🧹 [集成] 作废孤儿 CDK 失败:', cleanupError);
+            }
+        }
+        // 释放占位，允许下次重试
+        await runExecute(`DELETE FROM integration_cdk_issue WHERE ref = ? AND cdk_code = ''`, [normalizedRef]);
+        throw error;
+    }
+}
+
+async function getIntegrationIssueByRef(ref) {
+    const rows = await runQuery(
+        `SELECT ref, source, cdk_code, plan_type, order_id, user_ref, created_at, updated_at
+         FROM integration_cdk_issue
+         WHERE ref = ?
+         LIMIT 1`,
+        [String(ref || '').trim()]
+    );
+    return rows[0] || null;
+}
+
+async function listIntegrationIssues(limit = 50) {
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+    return runQuery(
+        `SELECT ref, source, cdk_code, plan_type, order_id, created_at
+         FROM integration_cdk_issue
+         ORDER BY id DESC
+         LIMIT ${safeLimit}`
+    );
+}
+
 async function deleteCdk(cdk) {
     await runExecute(`DELETE FROM cdk_codes WHERE cdk_code = ?`, [String(cdk)]);
 }
@@ -1374,6 +1643,36 @@ async function markCdkUnused(cdk) {
          WHERE cdk_code = ?
            AND is_active = 1`,
         [String(cdk)]
+    );
+}
+
+/**
+ * KC-PATCH（阶段二 · 未兑卡提醒）：
+ * 查询「发卡超过 minAgeSec 秒仍未兑换」的自助卡密，供周期提醒任务使用。
+ */
+async function getUnredeemedCards(minAgeSec) {
+    return runQuery(
+        `SELECT cdk_code, user_ref, created_at
+         FROM cdk_codes
+         WHERE used_at IS NULL
+           AND is_active = 1
+           AND type = '自助'
+           AND created_at <= DATE_SUB(NOW(), INTERVAL ? SECOND)`,
+        [Number(minAgeSec) || 0]
+    );
+}
+
+/**
+ * KC-PATCH（阶段三 · 异常告警）：
+ * 查询「创建超过 maxAgeSec 秒仍未到终态」的代充任务（疑似卡住）。
+ */
+async function getStuckTasks(maxAgeSec) {
+    return runQuery(
+        `SELECT job_key, cdk, status, created_at
+         FROM task_logs
+         WHERE status IN ('processing', 'pending')
+           AND created_at <= DATE_SUB(NOW(), INTERVAL ? SECOND)`,
+        [Number(maxAgeSec) || 0]
     );
 }
 
@@ -2644,6 +2943,21 @@ async function getRunningTaskByCdk(cdk) {
     return rows[0] || null;
 }
 
+// 段C5：取该卡密最近一条任务记录（含终态）
+// 与 getRunningTaskByCdk 的区别：不限定 status='running'，
+// 因此能拿到 success / failed 的终态与真实 progress、message。
+async function getLatestTaskByCdk(cdk) {
+    const rows = await runQuery(
+        `SELECT job_key, status, message, progress, updated_at
+         FROM task_logs
+         WHERE cdk_code = ?
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1`,
+        [String(cdk)]
+    );
+    return rows[0] || null;
+}
+
 async function deleteTaskLogByJobKey(jobKey) {
     const key = String(jobKey || '').trim();
     if (!key) {
@@ -3546,6 +3860,8 @@ module.exports = {
     verifyCdkDetails,
     markCdkUsed,
     markCdkUnused,
+    getUnredeemedCards,
+    getStuckTasks,
     recordCdkFailure,
     resetCdkFailure,
     getActivationAttemptLimit,
@@ -3581,6 +3897,11 @@ module.exports = {
     saveTelegramConfig,
     getGptApiConfig,
     saveGptApiConfig,
+    getIntegrationConfig,
+    saveIntegrationConfig,
+    issueCdkByRef,
+    getIntegrationIssueByRef,
+    listIntegrationIssues,
     getHcaptchaConfig,
     saveHcaptchaConfig,
     syncHcaptchaConfigPersistence,
@@ -3595,6 +3916,7 @@ module.exports = {
     getBillingOverviewStats,
     getTaskStatus,
     getRunningTaskByCdk,
+    getLatestTaskByCdk,
     updateTaskLog,
     listRecentGptApiOrders,
     listProducts,

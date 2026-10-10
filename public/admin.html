@@ -1998,6 +1998,13 @@
                         <span class="toggle-switch"></span>
                     </label>
                 </div>
+                <div class="toggle-field" style="margin-top: 18px;">
+                    <div class="toggle-label"><span>模拟模式（开启后不真实调用 ZovoCard，仅本地模拟代充流程，用于系统测试，不会扣费）</span></div>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="gpt_api_mock" class="toggle-input">
+                        <span class="toggle-switch"></span>
+                    </label>
+                </div>
                 <div class="form-group" style="margin-top: 18px;">
                     <label>API 基础地址（Base URL）</label>
                     <input type="text" id="gpt_api_base_url" class="asset-input" placeholder="https://kc.vpss.eu.cc/">
@@ -2034,6 +2041,105 @@
                         <i data-lucide="save"></i>
                         保存 API 配置
                     </button>
+                </div>
+            </div>
+
+            <!-- 对外集成（Xboard 商城对接） -->
+            <div class="panel">
+                <h2 class="panel-title">对外集成（前台商城对接）</h2>
+                <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
+                    開啟後，前台商城（如 Xboard）可透過本機對外接口，依訂單冪等鍵自動領取 CDK。
+                    接口：<code>POST /api/integration/cdk/issue</code>（請求頭需帶 <code>X-Integration-Key</code>）。
+                </p>
+                <div class="toggle-field" style="margin-top: 18px;">
+                    <div class="toggle-label"><span>啟用對外集成接口（關閉時所有集成請求一律 403）</span></div>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="integration_enabled" class="toggle-input">
+                        <span class="toggle-switch"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin-top: 18px;">
+                    <label>集成密鑰（X-Integration-Key）</label>
+                    <input type="password" id="integration_key" class="asset-input" placeholder="ik_..." autocomplete="off">
+                    <p id="integration_key_hint" style="font-size: 12px; color: var(--text-dim); margin-top: 6px;"></p>
+                </div>
+                <p style="font-size: 12px; color: var(--text-dim); margin-top: 12px;">
+                    冪等鍵 <code>ref</code> 建議直接傳商城訂單號（如 Xboard 的 <code>trade_no</code>），
+                    同一 <code>ref</code> 重複請求只會發放同一張 CDK，不會重複發卡。
+                </p>
+                <div id="integration_recent" style="margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary);">
+                    <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+                        <strong>最近發放的 CDK</strong>
+                        <button type="button" class="btn btn-secondary" onclick="refreshIntegrationPanel()"><i data-lucide="refresh-cw"></i>重新整理</button>
+                    </div>
+                    <div id="integration_recent_list" style="font-size:13px; margin-top:14px; overflow-x:auto">尚未查詢</div>
+                </div>
+                <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-secondary" onclick="generateIntegrationKey()">
+                        <i data-lucide="key-round"></i>
+                        產生新密鑰
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="saveIntegrationConfig()">
+                        <i data-lucide="save"></i>
+                        保存集成配置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 商品卡片配置（FEAT-006 · 商城商品页卡片内容） -->
+            <div class="panel">
+                <h2 class="panel-title">商品卡片配置（商城商品页）</h2>
+                <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
+                    配置商城商品页卡片的展示内容（副标题、券后价、权益清单、按钮等）。保存后前台商品页刷新即生效；未配置的套餐自动使用默认模板。
+                </p>
+
+                <!-- FEAT-009 服务分类管理 -->
+                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <div style="font-size: 14px; font-weight: 600;">服务分类管理</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-secondary" onclick="ccAddCategory()">+ 添加分类</button>
+                            <button type="button" class="btn btn-primary" onclick="saveCategories()"><i data-lucide="save"></i> 保存分类</button>
+                        </div>
+                    </div>
+                    <p style="font-size: 12.5px; color: var(--text-dim); margin-top: 8px;">
+                        分类决定商品页的筛选标签与顶部导航页签（勾选「顶部显示」的会出现在顶栏）。「代充」为主体业务始终保留；标识用小写字母，用于商品归类。
+                    </p>
+                    <div id="cc-categories" style="margin-top: 12px;"></div>
+                </div>
+
+                <!-- FEAT-009 商品页常见问题 -->
+                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <div style="font-size: 14px; font-weight: 600;">商品页常见问题</div>
+                        <div style="display: flex; gap: 8px;">
+                            <button type="button" class="btn btn-secondary" onclick="ccAddFaq()">+ 添加问答</button>
+                            <button type="button" class="btn btn-primary" onclick="saveFaq()"><i data-lucide="save"></i> 保存常见问题</button>
+                        </div>
+                    </div>
+                    <p style="font-size: 12.5px; color: var(--text-dim); margin-top: 8px;">
+                        显示在商品列表下方，前台折叠展开；建议 4~8 条。与首页的常见问题相互独立。
+                    </p>
+                    <div id="cc-faq" style="margin-top: 12px;"></div>
+                </div>
+
+                <div style="font-size: 13px; font-weight: 600; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">单个商品的卡片内容</div>
+                <div style="display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 16px; margin-top: 14px;">
+                    <div>
+                        <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;">套餐列表</div>
+                        <div id="cc-plans" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="font-size: 13px; color: var(--text-dim);">加载中…</div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;" id="cc-form-title">编辑卡片内容</div>
+                        <div id="cc-form"></div>
+                    </div>
+                    <div>
+                        <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 8px;">实时预览</div>
+                        <div id="cc-preview"></div>
+                        <div style="font-size: 12px; color: var(--text-dim); margin-top: 10px; line-height: 1.7;">改任意一项预览即时变化；保存后前台商品页刷新可见。</div>
+                    </div>
                 </div>
             </div>
 
@@ -7644,6 +7750,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 await loadData(true);
                 await loadRegionConfig();
                 await loadGptApiConfig();
+                await loadIntegrationConfig();
+                await loadCardConfig();
                 if (adminDataRefreshTimer) {
                     clearInterval(adminDataRefreshTimer);
                 }
@@ -8041,6 +8149,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const cfg = data.config || {};
                 const enabledEl = document.getElementById('gpt_api_enabled');
                 if (enabledEl) enabledEl.checked = Boolean(cfg.enabled);
+                const mockEl = document.getElementById('gpt_api_mock');
+                if (mockEl) mockEl.checked = Boolean(cfg.mock);
                 const baseUrlEl = document.getElementById('gpt_api_base_url');
                 if (baseUrlEl) baseUrlEl.value = cfg.base_url || '';
                 const keyEl = document.getElementById('gpt_api_key');
@@ -8061,6 +8171,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         function buildGptApiPayload() {
             return {
                 enabled: Boolean(document.getElementById('gpt_api_enabled')?.checked),
+                mock: Boolean(document.getElementById('gpt_api_mock')?.checked),
                 base_url: document.getElementById('gpt_api_base_url')?.value.trim() || '',
                 api_key: document.getElementById('gpt_api_key')?.value.trim() || ''
             };
@@ -8081,6 +8192,454 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 await loadGptApiConfig();
             } catch (error) {
                 showMessage(error.message || '第三方代充 API 配置保存失败', 'error');
+            }
+        }
+
+        // ─── 对外集成（前台商城对接）───────────────────────────────────────
+
+        // ===================== FEAT-006 商品卡片配置 =====================
+        let ccPlans = [];
+        let ccActiveId = null;
+        let ccCategories = [];
+        let ccFaq = [];
+        const CC_STATE_LABEL = { onsale: '在售', featured: '主推', recommend: '推荐', soon: '未开放' };
+
+        function ccCategoryOptions() {
+            const list = (ccCategories && ccCategories.length) ? ccCategories : [
+                { key: 'recharge', name: '代充' }, { key: 'account', name: '成品号' }, { key: 'website', name: '建站服务' }
+            ];
+            return list.map(function (c) { return [c.key, c.name]; });
+        }
+
+        function ccCategoryName(key) {
+            const hit = (ccCategories || []).find(function (c) { return c.key === key; });
+            return hit ? hit.name : '代充';
+        }
+
+        function renderCategoryEditor() {
+            const box = document.getElementById('cc-categories');
+            if (!box) return;
+            if (!ccCategories || !ccCategories.length) {
+                box.innerHTML = '<div style="font-size:13px;color:var(--text-dim);">暂无分类，点「+ 添加分类」开始</div>';
+                return;
+            }
+            box.innerHTML = ccCategories.map(function (c, i) {
+                const isRecharge = c.key === 'recharge';
+                return '<div style="display:grid;grid-template-columns:1fr 1fr 130px 80px;gap:8px;align-items:center;margin-bottom:8px;">' +
+                    '<input class="asset-input" value="' + escapeHtml(c.name || '') + '" placeholder="显示名（如 代充）" oninput="ccCategories[' + i + '].name=this.value" style="font-size:13px;">' +
+                    '<input class="asset-input" value="' + escapeHtml(c.key || '') + '" placeholder="标识（小写字母）" oninput="ccCategories[' + i + '].key=this.value"' + (isRecharge ? ' disabled' : '') + ' style="font-size:13px;">' +
+                    '<label style="font-size:12.5px;display:flex;align-items:center;gap:6px;color:var(--text-secondary);"><input type="checkbox" ' + (c.nav !== false ? 'checked' : '') + ' onchange="ccCategories[' + i + '].nav=this.checked"> 顶部显示</label>' +
+                    '<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="ccRemoveCategory(' + i + ')"' + (isRecharge ? ' disabled' : '') + '>删除</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function ccAddCategory() {
+            ccCategories = (ccCategories || []).concat([{ key: '', name: '', nav: true }]);
+            renderCategoryEditor();
+        }
+
+        function ccRemoveCategory(i) {
+            ccCategories.splice(i, 1);
+            renderCategoryEditor();
+        }
+
+        async function saveCategories() {
+            try {
+                const clean = (ccCategories || []).map(function (c) {
+                    return { key: String(c.key || '').trim(), name: String(c.name || '').trim(), nav: c.nav !== false };
+                }).filter(function (c) { return c.name; });
+                const res = await authFetch('/api/admin/card-config/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ categories: clean })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                showMessage(data.message || '分类已保存', 'success');
+                await loadCardConfig();
+            } catch (error) {
+                showMessage(error.message || '保存失败', 'error');
+            }
+        }
+
+        function renderFaqEditor() {
+            const box = document.getElementById('cc-faq');
+            if (!box) return;
+            if (!ccFaq || !ccFaq.length) {
+                box.innerHTML = '<div style="font-size:13px;color:var(--text-dim);">暂无问答，点「+ 添加问答」开始</div>';
+                return;
+            }
+            box.innerHTML = ccFaq.map(function (f, i) {
+                return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">' +
+                    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
+                      '<input class="asset-input" value="' + escapeHtml(f.q || '') + '" placeholder="问题（如：代充和成品号有什么区别？）" oninput="ccFaq[' + i + '].q=this.value" style="font-size:13px;">' +
+                      '<button type="button" class="btn btn-secondary" style="font-size:12px;padding:6px 10px;" onclick="ccRemoveFaq(' + i + ')">删除</button>' +
+                    '</div>' +
+                    '<textarea class="asset-input" rows="2" placeholder="答案" oninput="ccFaq[' + i + '].a=this.value" style="font-size:13px;line-height:1.7;">' + escapeHtml(f.a || '') + '</textarea>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function ccAddFaq() {
+            ccFaq = (ccFaq || []).concat([{ q: '', a: '' }]);
+            renderFaqEditor();
+        }
+
+        function ccRemoveFaq(i) {
+            ccFaq.splice(i, 1);
+            renderFaqEditor();
+        }
+
+        async function saveFaq() {
+            try {
+                const clean = (ccFaq || []).map(function (f) {
+                    return { q: String(f.q || '').trim(), a: String(f.a || '').trim() };
+                }).filter(function (f) { return f.q && f.a; });
+                const res = await authFetch('/api/admin/card-config/faq', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ faq: clean })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                showMessage(data.message || '常见问题已保存', 'success');
+                await loadCardConfig();
+            } catch (error) {
+                showMessage(error.message || '保存失败', 'error');
+            }
+        }
+
+        function ccDefaultCard() {
+            return {
+                state: 'onsale',
+                badge: { text: '', pos: 'left', color: 'brand' },
+                title: '', subtitle: '',
+                price: { mode: 'auto', value: null, unit: '/月', tag: '' },
+                promo: { strike: '', text: '' },
+                features: [], guarantees: [], tip: '',
+                button: { text: '立即订阅', style: 'solid' }
+            };
+        }
+
+        function ccPriceText(plan, card) {
+            if (card.price.mode === 'manual' && card.price.value != null) {
+                return '¥' + card.price.value + (card.price.unit || '');
+            }
+            const p = plan.prices || {};
+            const order = [['monthly', '/月'], ['quarterly', '/季'], ['half_yearly', '/半年'], ['yearly', '/年'], ['onetime', '']];
+            for (const pair of order) {
+                const key = pair[0];
+                if (p[key] != null && Number(p[key]) > 0) {
+                    return '¥' + Number(p[key]) + (card.price.unit || pair[1]);
+                }
+            }
+            return '价格待定';
+        }
+
+        function ccInput(id, label, value, ph) {
+            return '<div class="form-group" style="margin-bottom:10px;"><label style="font-size:12px;">' + label + '</label>' +
+                '<input class="asset-input" id="' + id + '" value="' + escapeHtml(value || '') + '" placeholder="' + escapeHtml(ph || '') + '" style="font-size:13px;"></div>';
+        }
+        function ccSelect(id, label, value, opts) {
+            return '<div class="form-group" style="margin-bottom:10px;"><label style="font-size:12px;">' + label + '</label>' +
+                '<select class="asset-input" id="' + id + '" style="font-size:13px;">' +
+                opts.map(function (o) { return '<option value="' + o[0] + '"' + (String(o[0]) === String(value) ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+                '</select></div>';
+        }
+        function ccTextarea(id, label, value, ph) {
+            const text = Array.isArray(value) ? value.join('\n') : (value || '');
+            return '<div class="form-group" style="margin-bottom:10px;"><label style="font-size:12px;">' + label + '</label>' +
+                '<textarea class="asset-input" id="' + id + '" rows="4" placeholder="' + escapeHtml(ph || '') + '" style="font-size:13px;line-height:1.7;">' + escapeHtml(text) + '</textarea></div>';
+        }
+
+        async function loadCardConfig() {
+            try {
+                const res = await authFetch('/api/admin/card-config/list');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '加载失败');
+                ccPlans = data.plans || [];
+                ccCategories = data.categories || [];
+                ccFaq = data.faq || [];
+                renderCategoryEditor();
+                renderFaqEditor();
+                renderCardPlans();
+                if (ccPlans.length) {
+                    const keep = ccPlans.find(function (p) { return p.id === ccActiveId; });
+                    selectCardPlan(keep ? keep.id : ccPlans[0].id);
+                } else {
+                    document.getElementById('cc-form').innerHTML = '<div style="font-size:13px;color:var(--text-dim);">商城暂无在售套餐</div>';
+                    document.getElementById('cc-preview').innerHTML = '';
+                }
+            } catch (error) {
+                const box = document.getElementById('cc-plans');
+                if (box) box.innerHTML = '<div style="font-size:13px;color:#e05252;">' + escapeHtml(error.message || '加载失败') + '</div>';
+            }
+        }
+
+        function renderCardPlans() {
+            const box = document.getElementById('cc-plans');
+            if (!box) return;
+            box.innerHTML = ccPlans.map(function (p) {
+                const active = p.id === ccActiveId;
+                const stateLabel = CC_STATE_LABEL[p.card.state] || '在售';
+                const tag = p.configured ? '' : ' · 未配置';
+                return '<div onclick="selectCardPlan(' + p.id + ')" style="cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid ' + (active ? 'var(--primary)' : 'rgba(128,128,128,.3)') + ';background:' + (active ? 'rgba(13,148,136,.10)' : 'transparent') + ';">' +
+                    '<div style="font-size:13px;font-weight:600;">' + escapeHtml(p.name) + '</div>' +
+                    '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">' + stateLabel + tag + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function selectCardPlan(id) {
+            ccActiveId = Number(id);
+            renderCardPlans();
+            const plan = ccPlans.find(function (p) { return p.id === ccActiveId; });
+            if (!plan) return;
+            renderCardForm(plan);
+        }
+
+        function renderCardForm(plan) {
+            const card = plan.card || ccDefaultCard();
+            const titleEl = document.getElementById('cc-form-title');
+            if (titleEl) {
+                titleEl.textContent = '编辑「' + plan.name + '」的卡片内容' + (plan.configured ? '' : '（当前未配置，使用默认模板）');
+            }
+            const html =
+                '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
+                    ccInput('cc_title', '标题（留空取套餐名）', card.title, plan.name) +
+                    ccInput('cc_subtitle', '副标题（一句话适用人群）', card.subtitle, '日常对话、写作与轻度编程') +
+                    ccSelect('cc_category', '服务分类', card.category || 'recharge', ccCategoryOptions()) +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
+                    ccSelect('cc_state', '卡片状态', card.state, [['onsale', '在售'], ['featured', '主推'], ['recommend', '推荐'], ['soon', '未开放']]) +
+                    ccInput('cc_badge_text', '角标文案（留空不显示）', card.badge.text, '主推') +
+                    ccSelect('cc_badge_pos', '角标位置', card.badge.pos, [['left', '左上'], ['right', '右上']]) +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
+                    ccSelect('cc_badge_color', '角标颜色', card.badge.color, [['brand', '品牌绿'], ['green', '绿'], ['amber', '橙'], ['gray', '灰']]) +
+                    ccSelect('cc_price_mode', '价格来源', card.price.mode, [['auto', '联动套餐价'], ['manual', '手动指定']]) +
+                    ccInput('cc_price_value', '手动价格（元）', card.price.value == null ? '' : card.price.value, '100') +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
+                    ccInput('cc_price_unit', '价格单位', card.price.unit, '/月') +
+                    ccInput('cc_price_tag', '价格标签', card.price.tag, '券后价') +
+                    ccInput('cc_promo_strike', '划线原价', card.promo.strike, '¥120') +
+                '</div>' +
+                ccInput('cc_promo_text', '促销文案', card.promo.text, '新客领券立减 ¥20') +
+                ccTextarea('cc_features', '权益清单（每行一条，最多 8 条）', card.features, 'GPT-5.5 全模型可用\n高级数据分析与绘图\nDALL·E 图像生成') +
+                ccTextarea('cc_guarantees', '保障行（每行一条，最多 4 条）', card.guarantees, '失败全额退款\n安全省心') +
+                ccInput('cc_tip', '提示行（ⓘ 后的文案）', card.tip, '充值时效以订单页提示为准') +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                    ccInput('cc_button_text', '按钮文案', card.button.text, '去支付') +
+                    ccSelect('cc_button_style', '按钮样式', card.button.style, [['solid', '实心'], ['outline', '描边'], ['ghost', '灰色（未开放）']]) +
+                '</div>' +
+                '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">' +
+                    '<button type="button" class="btn btn-primary" onclick="saveCardConfig()"><i data-lucide="save"></i> 保存并生效</button>' +
+                    '<button type="button" class="btn btn-secondary" onclick="applyCardDefaults()">填入默认模板</button>' +
+                    '<button type="button" class="btn btn-secondary" onclick="resetCardConfig()">重置为未配置</button>' +
+                '</div>';
+            document.getElementById('cc-form').innerHTML = html;
+            document.querySelectorAll('#cc-form input, #cc-form select, #cc-form textarea').forEach(function (el) {
+                el.addEventListener('input', renderCardPreview);
+                el.addEventListener('change', renderCardPreview);
+            });
+            if (window.lucide) { try { lucide.createIcons(); } catch (e) { } }
+            renderCardPreview();
+        }
+
+        function collectCardForm() {
+            const v = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+            const lines = function (id) { return v(id).split('\n').map(function (s) { return s.trim(); }).filter(Boolean); };
+            const priceVal = parseFloat(v('cc_price_value'));
+            return {
+                category: v('cc_category') || 'recharge',
+                state: v('cc_state') || 'onsale',
+                badge: { text: v('cc_badge_text'), pos: v('cc_badge_pos') || 'left', color: v('cc_badge_color') || 'brand' },
+                title: v('cc_title'),
+                subtitle: v('cc_subtitle'),
+                price: {
+                    mode: v('cc_price_mode') === 'manual' ? 'manual' : 'auto',
+                    value: Number.isFinite(priceVal) ? priceVal : null,
+                    unit: v('cc_price_unit') || '/月',
+                    tag: v('cc_price_tag')
+                },
+                promo: { strike: v('cc_promo_strike'), text: v('cc_promo_text') },
+                features: lines('cc_features'),
+                guarantees: lines('cc_guarantees'),
+                tip: v('cc_tip'),
+                button: { text: v('cc_button_text') || '立即订阅', style: v('cc_button_style') || 'solid' }
+            };
+        }
+
+        function renderCardPreview() {
+            const box = document.getElementById('cc-preview');
+            const plan = ccPlans.find(function (p) { return p.id === ccActiveId; });
+            if (!box || !plan || !document.getElementById('cc_state')) return;
+            const card = collectCardForm();
+            const isMain = card.state === 'featured';
+            const isSoon = card.state === 'soon';
+            const btnKind = isSoon ? 'ghost' : (card.button.style || 'solid');
+            const BADGE_COLOR = { brand: '#0F6E56', green: '#639922', amber: '#BA7517', gray: '#888780' };
+            const badge = card.badge.text
+                ? '<span style="position:absolute;top:-9px;' + (card.badge.pos === 'right' ? 'right' : 'left') + ':14px;background:' + (BADGE_COLOR[card.badge.color] || '#0F6E56') + ';color:#fff;font-size:10px;border-radius:999px;padding:2px 9px;">' + escapeHtml(card.badge.text) + '</span>'
+                : '';
+            const priceTag = card.price.tag
+                ? '<span style="background:#FAC775;color:#633806;font-size:10px;border-radius:4px;padding:1px 6px;">' + escapeHtml(card.price.tag) + '</span>'
+                : '';
+            const promo = (card.promo.strike || card.promo.text)
+                ? '<div style="font-size:10.5px;opacity:.72;margin-top:4px;">' +
+                    (card.promo.strike ? '<span style="text-decoration:line-through;">' + escapeHtml(card.promo.strike) + '</span> ' : '') +
+                    '<span style="color:#A32D2D;">' + escapeHtml(card.promo.text) + '</span></div>'
+                : '';
+            const feats = card.features.length
+                ? card.features.map(function (f) { return '<div>✓ ' + escapeHtml(f) + '</div>'; }).join('')
+                : '<div style="font-size:11px;opacity:.55;">（未配置权益清单）</div>';
+            const guars = card.guarantees.length
+                ? '<div style="font-size:10.5px;opacity:.75;margin-top:9px;display:flex;gap:12px;flex-wrap:wrap;">' +
+                    card.guarantees.map(function (g) { return '<span>◷ ' + escapeHtml(g) + '</span>'; }).join('') + '</div>'
+                : '';
+            const btnCss = btnKind === 'solid'
+                ? 'background:#1D9E75;color:#fff;'
+                : (btnKind === 'outline' ? 'background:#E1F5EE;color:#0F6E56;border:1px solid #1D9E75;' : 'background:transparent;color:#888780;border:1px solid #B4B2A9;');
+            box.innerHTML =
+                '<div style="position:relative;border:' + (isMain ? '2px solid #1D9E75' : '1px solid rgba(128,128,128,.35)') + ';border-radius:12px;padding:14px;background:' + (isMain ? '#E1F5EE' : 'transparent') + (isSoon ? ';opacity:.72' : '') + ';">' +
+                    badge +
+                    '<div style="font-size:15px;font-weight:600;">' + escapeHtml(card.title || plan.name) + '</div>' +
+                    (card.subtitle ? '<div style="font-size:11px;opacity:.7;margin:3px 0 8px;">' + escapeHtml(card.subtitle) + '</div>' : '<div style="height:8px;"></div>') +
+                    '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;"><span style="font-size:22px;font-weight:700;color:' + (isSoon ? '#888780' : '#0F6E56') + ';">' + escapeHtml(ccPriceText(plan, card)) + '</span>' + priceTag + '</div>' +
+                    promo +
+                    '<div style="border-top:1px solid rgba(128,128,128,.3);margin:10px 0;"></div>' +
+                    feats + guars +
+                    (card.tip ? '<div style="font-size:10.5px;opacity:.7;margin-top:7px;">ⓘ ' + escapeHtml(card.tip) + '</div>' : '') +
+                    '<div style="' + btnCss + 'text-align:center;border-radius:8px;padding:8px;font-size:12px;font-weight:600;margin-top:10px;">' + escapeHtml(card.button.text || '立即订阅') + ' →</div>' +
+                '</div>';
+        }
+
+        async function saveCardConfig() {
+            if (!ccActiveId) { showMessage('请先选择套餐', 'error'); return; }
+            try {
+                const res = await authFetch('/api/admin/card-config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plan_id: ccActiveId, card: collectCardForm() })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                showMessage(data.message || '已保存', 'success');
+                await loadCardConfig();
+            } catch (error) {
+                showMessage(error.message || '保存失败', 'error');
+            }
+        }
+
+        function applyCardDefaults() {
+            const plan = ccPlans.find(function (p) { return p.id === ccActiveId; });
+            if (!plan) return;
+            plan.card = ccDefaultCard();
+            renderCardForm(plan);
+            showMessage('已填入默认模板（未保存，点「保存并生效」后前台才会变化）', 'success');
+        }
+
+        async function resetCardConfig() {
+            if (!ccActiveId) return;
+            if (!window.confirm('确认把该套餐的卡片配置重置为未配置？（前台将使用默认模板）')) return;
+            try {
+                const res = await authFetch('/api/admin/card-config/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ plan_id: ccActiveId })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '重置失败');
+                showMessage(data.message || '已重置', 'success');
+                await loadCardConfig();
+            } catch (error) {
+                showMessage(error.message || '重置失败', 'error');
+            }
+        }
+
+        async function loadIntegrationConfig() {
+            try {
+                const res = await authFetch('/api/admin/integration');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '加载失败');
+                const cfg = data.config || {};
+                const enabledEl = document.getElementById('integration_enabled');
+                if (enabledEl) enabledEl.checked = Boolean(cfg.enabled);
+                const keyEl = document.getElementById('integration_key');
+                if (keyEl) keyEl.value = '';
+                const hint = document.getElementById('integration_key_hint');
+                if (hint) {
+                    hint.textContent = cfg.key_saved
+                        ? `已配置密钥：${cfg.key_preview}（留空则不修改现有密钥）`
+                        : '尚未配置集成密钥，请点击「產生新密鑰」。';
+                }
+                renderIntegrationIssues(data.recent_issues || []);
+            } catch (e) {
+                console.error('loadIntegrationConfig failed', e);
+            }
+        }
+
+        function renderIntegrationIssues(issues) {
+            const el = document.getElementById('integration_recent_list');
+            if (!el) return;
+            if (!issues.length) {
+                el.textContent = '尚無發放記錄';
+                return;
+            }
+            el.innerHTML = `<table style="width:100%; border-collapse:collapse">
+                <thead><tr>
+                    <th style="text-align:left">訂單號（ref）</th>
+                    <th style="text-align:left">CDK</th>
+                    <th style="text-align:left">套餐</th>
+                    <th style="text-align:left">時間</th>
+                </tr></thead>
+                <tbody>${issues.map((it) => `<tr>
+                    <td>${escapeHtml(String(it.ref || '—'))}</td>
+                    <td>${escapeHtml(String(it.cdk || '—'))}</td>
+                    <td>${escapeHtml(String(it.plan_type || '—'))}</td>
+                    <td>${escapeHtml(String(it.created_at || '—'))}</td>
+                </tr>`).join('')}</tbody></table>`;
+        }
+
+        async function refreshIntegrationPanel() {
+            await loadIntegrationConfig();
+            showMessage('已重新整理集成資料', 'success');
+        }
+
+        async function saveIntegrationConfig() {
+            try {
+                const payload = {
+                    enabled: Boolean(document.getElementById('integration_enabled')?.checked),
+                    integration_key: document.getElementById('integration_key')?.value.trim() || ''
+                };
+                const res = await authFetch('/api/admin/integration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                showMessage(data.message, 'success');
+                await loadIntegrationConfig();
+            } catch (error) {
+                showMessage(error.message || '集成配置保存失败', 'error');
+            }
+        }
+
+        async function generateIntegrationKey() {
+            if (!confirm('產生新密鑰後，舊密鑰將立即失效，前台商城的對接配置需同步更新。確定繼續？')) return;
+            try {
+                const res = await authFetch('/api/admin/integration/generate-key', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '生成失败');
+                const keyEl = document.getElementById('integration_key');
+                if (keyEl) keyEl.value = data.integration_key || '';
+                showMessage(`新密鑰已生成：${data.integration_key}`, 'success');
+                await loadIntegrationConfig();
+            } catch (error) {
+                showMessage(error.message || '生成密鑰失敗', 'error');
             }
         }
 
