@@ -8,7 +8,11 @@
     "start": "node server.js",
     "start:headful": "cross-env HEADFUL=1 node server.js",
     "test": "vitest --run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pretest": "node tools/check-docs-sync.js",
+    "docs:check": "node tools/check-docs-sync.js",
+    "currency:check": "node tools/check-currency.js",
+    "patch:check": "node tools/xboard-patch-check.js"
   },
   "engines": {
     "node": ">=20"

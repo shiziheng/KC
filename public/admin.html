@@ -8324,14 +8324,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
         function ccPriceText(plan, card) {
             if (card.price.mode === 'manual' && card.price.value != null) {
-                return '¥' + card.price.value + (card.price.unit || '');
+                return '$' + card.price.value + (card.price.unit || '');
             }
             const p = plan.prices || {};
             const order = [['monthly', '/月'], ['quarterly', '/季'], ['half_yearly', '/半年'], ['yearly', '/年'], ['onetime', '']];
             for (const pair of order) {
                 const key = pair[0];
                 if (p[key] != null && Number(p[key]) > 0) {
-                    return '¥' + Number(p[key]) + (card.price.unit || pair[1]);
+                    return '$' + Number(p[key]) + (card.price.unit || pair[1]);
                 }
             }
             return '价格待定';
@@ -8424,9 +8424,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
                     ccInput('cc_price_unit', '价格单位', card.price.unit, '/月') +
                     ccInput('cc_price_tag', '价格标签', card.price.tag, '券后价') +
-                    ccInput('cc_promo_strike', '划线原价', card.promo.strike, '¥120') +
+                    ccInput('cc_promo_strike', '划线原价', card.promo.strike, '$120') +
                 '</div>' +
-                ccInput('cc_promo_text', '促销文案', card.promo.text, '新客领券立减 ¥20') +
+                ccInput('cc_promo_text', '促销文案', card.promo.text, '新客领券立减 $20') +
                 ccTextarea('cc_features', '权益清单（每行一条，最多 8 条）', card.features, 'GPT-5.5 全模型可用\n高级数据分析与绘图\nDALL·E 图像生成') +
                 ccTextarea('cc_guarantees', '保障行（每行一条，最多 4 条）', card.guarantees, '失败全额退款\n安全省心') +
                 ccInput('cc_tip', '提示行（ⓘ 后的文案）', card.tip, '充值时效以订单页提示为准') +

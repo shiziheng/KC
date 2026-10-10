@@ -3209,13 +3209,14 @@
         // FEAT-008：登录跳转后需尽快注入（原来 1.2s 间隔会让原生界面多露一段时间）
     bootTimer = setInterval(tryBoot, 300);
     }
-    // ===== FEAT-017 · 全站货币符号兜底（修正版） =====
+    // ===== FEAT-017 · 全站货币符号兜底（v2：扩展全角 ￥，全页面常开） =====
     // Xboard 原生页面（邀请/工单/流量等）的金额由 umi.js 渲染，custom_html 改不到；
-    // 运行时把文本节点里的「¥」换成「$」。只改文本，不动 DOM 结构。
+    // 运行时把文本节点里的「¥ / ￥」换成「$」。只改文本，不动 DOM 结构。
+    // 2026-10-11：全站余额/金额一律以美元($)展示，不接受人民币符号（用户要求）。
     //
     // ⚠️ 不可用 MutationObserver({characterData:true}) —— 改文本节点会触发观察器自回调，
     //    形成死循环（实测把验收脚本卡死、页面无响应）。改为**被动低频轮询**：
-    //    每 1.5s 扫一次全树，代价可忽略；没有 ¥ 时立即返回，几乎不做功。
+    //    每 1.5s 扫一次全树，代价可忽略；没有 ¥/￥ 时立即返回，几乎不做功。
     var kcCurrencyTimer = null;
     function kcFixCurrency() {
         var scope = document.body;
@@ -3224,10 +3225,10 @@
         var nodes = [];
         var n;
         while ((n = walker.nextNode())) {
-            if (n.nodeValue && n.nodeValue.indexOf('¥') >= 0) { nodes.push(n); }
+            if (n.nodeValue && (n.nodeValue.indexOf('¥') >= 0 || n.nodeValue.indexOf('￥') >= 0)) { nodes.push(n); }
         }
         for (var i = 0; i < nodes.length; i++) {
-            nodes[i].nodeValue = nodes[i].nodeValue.split('¥').join('$');
+            nodes[i].nodeValue = nodes[i].nodeValue.split('¥').join('$').split('￥').join('$');
         }
         return nodes.length > 0;
     }
@@ -3242,6 +3243,8 @@
     function tryBoot() {
         if (booted) { return; }
         if (!document.body) { return; }
+        // 2026-10-11：货币兜底对**所有页面**常开（含游客页/登录页）——余额与金额一律以 $ 展示，不出现人民币符号
+        ensureCurrencyGuard();
         if (!shouldInject()) {
             // R3：未登录 → 游客落地页（登录页挂载 + 白标替换）
             if (isLoginPage()) {

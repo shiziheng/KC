@@ -33,3 +33,21 @@ if (code !== 0) {
   console.error('紧急情况可临时跳过：git commit --no-verify（请勿常态化使用）');
   process.exit(code);
 }
+
+// ── 2026-10-11：货币显示守护（全站金额一律以美元($)展示，不允许人民币符号/字样出现在显示面）──
+const curScript = path.resolve(__dirname, '..', 'tools', 'check-currency.js');
+let curOut = '';
+let curCode = 0;
+try {
+  curOut = execFileSync(process.execPath, [curScript], { encoding: 'utf8' });
+} catch (e) {
+  curOut = (e.stdout || '') + (e.stderr || '');
+  curCode = e.status === undefined ? 1 : e.status;
+}
+process.stdout.write(curOut);
+if (curCode !== 0) {
+  console.error('\n提交被拦截：显示面出现人民币符号/字样。');
+  console.error('全站金额与余额一律以美元($)展示（用户要求 · 2026-10-11）。');
+  console.error('如属「货币兜底替换实现」白名单，请更新 tools/check-currency.js 的 ALLOW_LINE。');
+  process.exit(curCode);
+}
