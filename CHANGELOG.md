@@ -9,6 +9,34 @@
 
 ---
 
+## v1.11.3 · 2026-10-10 · 补回 S8 供应商健康摘要并完成履约链路模拟验证
+
+**一句话概括**：补回 10-07 事故中丢失的 KC 侧「供应商健康摘要（S8）」——新增 `supplier-health.js` 状态机、`/api/integration/health` 重新携带 `supplier_health`、启动/周期刷新与历史快照恢复；商城代充商品从「当前代充服务暂不可售」恢复可售；并完成一次**履约链路全链路模拟验证**（真实下单 → 注入模拟到账回调 → 自动发卡 → 订单页取卡密 → 幂等复验），全程 Mock、零真实扣款。
+
+### 新增
+- `supplier-health.js`（KC 仓库根目录）：S8 健康摘要状态机 —— `healthy` / `degraded`（上游失败 1 次）/ `soldout`（连续 2 次失败或余额低于安全线）三态 + `restoreSupplierHealth()` 人工恢复；字段与 10-07 版持久化数据兼容（`failure_count` / `last_probe_status` / `last_probe_reason_code` / `manual_override` / `mock`）。
+- `server.js`：`/api/integration/health` 恢复输出 `data.supplier_health`；新增启动即刷新 + 每 5 分钟周期刷新（**仅 Mock 模式执行，不产生任何真实上游调用**）；恢复 `supplier_health_history` 快照追加（保留最近 48 条）；新增联调/运维用 `POST /api/integration/health/refresh`（需集成密钥）。
+- `tools/test-supplier-health.js`：S8 状态机自测脚本（此前对应模块丢失，随本版本固化）。
+
+### 修复
+- 商城唯一在售商品「ChatGPT Plus 一个月」被判「当前代充服务暂不可售」：实测 `/plan/kc-cards` `sellable=false`、`reason=KC 健康状态不可达`——根因是 KC 侧 S8 实现丢失（`supplier_health_state` 停留在 10-07 旧快照，健康接口不再输出 `supplier_health`，商城展示与下单前置双双 fail-closed）。补回后实测 `sellable=true`、`availability=onsale`。
+
+### 验证
+- 自测：`node tools/test-supplier-health.js` 全绿（healthy → degraded → soldout → 人工恢复 → 余额过低 全链路断言通过）。
+- 履约链路模拟验证：真实注册用户 + 真实订单 `2026101022104201309630610`（¥15）→ 注入与 BEpusdt 到账通知**同款签名**的模拟回调（HTTP 200 `success`）→ 订单转为已完成 → 插件自动发卡（`v2_plugin_kc_cards`：status=issued、卡密 `KC-UEQQHXST39SBBQG`、attempts=1）→ 订单详情页实测展示「卡密 + 去开通 →」→ KC 兑卡页正常打开；截图见 `debug_screenshots/fulfill-*.png`。
+- 幂等复验：重复注入同一回调 + 重复调用发卡接口 → 均无二次发卡（`reused=true`，发放记录数不变）。
+- 观察（记录不改）：商品卡「立即办理」按 FEAT-014 设计打开「代充开通向导」（登录 ChatGPT → 获取 Session → 选择账号 → 余额支付，四步）；与经典「下单 → USDT 收银台 → 发卡」路径并行存在，本次模拟走经典路径。
+
+### 影响与风险
+- `supplier_health` 刷新当前**仅 Mock 模式执行**；真实模式的实体检（读 ZovoCard 套餐/余额）属「上游只读验通」，需用户批准后开启，安全锁未动。
+- 测试痕迹：测试用户 `fulfill-1791643879018@example.com`、测试订单 1 笔（¥15 模拟支付）、测试卡密 1 张（未兑换），保留供查看。
+
+### 下一步
+- 用户批准后执行「上游只读验通」与「小额真实首单」；真实模式开启 supplier_health 实体检并接入人工恢复入口。
+- 用户执行一笔 $1 真实小额充值测试（付款 → 回传 → 余额到账），完成收款链路最终验收。
+
+---
+
 ## v1.11.2 · 2026-10-10 · 充值下限调整至 $1 与收款链路验收
 
 **一句话概括**：应要求把充值最低金额从 $2 下调至 $1（前端两处 + 插件服务端一处同步），修复「账户充值」页金额校验与提示文本不一致的反向 Bug；随版本记录本轮收款链路验收结果——真实 TRC20 收款钱包完成绑定、测试单跳转与回调口验证通过、Xboard 支付渠道核查未发现差异；并修复面板下单断点（容器内核补丁重打、复测通过）。

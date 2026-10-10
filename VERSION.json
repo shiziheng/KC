@@ -1,8 +1,8 @@
 {
-  "version": "1.11.2",
-  "version_tag": "v1.11.2",
+  "version": "1.11.3",
+  "version_tag": "v1.11.3",
   "date": "2026-10-10",
-  "title": "充值下限调整至 $1 与收款链路验收",
+  "title": "补回 S8 供应商健康摘要并完成履约链路模拟验证",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -63,26 +63,25 @@
   },
   "latest": {
     "added": [
-      "充值下限放宽至 $1（测试期）：充值面板与「账户充值」页均可输入 $1 发起充值"
+      "补回 S8 供应商健康摘要（KC 侧）：`supplier-health.js` 状态机（healthy / degraded / soldout + 人工恢复 + 余额安全线），字段兼容 10-07 版持久化数据",
+      "`/api/integration/health` 恢复输出 `data.supplier_health`；启动 + 每 5 分钟刷新（仅 Mock）、`supplier_health_history` 快照（48 条上限）、联调接口 `POST /api/integration/health/refresh`（需集成密钥）"
     ],
     "changed": [
-      "充值最低金额 $2 → $1：注入源两处（面板/主题页）+ Xboard 插件服务端一处，前后端限制对齐",
-      "修复「账户充值」页金额校验反向 Bug（原 $10~$5000 与提示文本不符，统一为 $1~$500）",
-      "收款链路就绪：真实 TRC20 收款钱包完成绑定；Xboard 支付渠道核查（接口地址/商户号/密钥/类型/回调域名）与 BEpusdt 现状无差异"
+      "商城「ChatGPT Plus 一个月」由「当前代充服务暂不可售」恢复可售：`/plan/kc-cards` sellable=true、availability=onsale（此前 KC 健康状态不可达，前端展示与下单前置双双 fail-closed）"
     ],
     "verified": [
-      "改前/改后「本地注入源 === 线上 custom_html」逐字节一致（220,886 → 220,884 字符）；线上首页实测 MIN_USD = 1 生效、旧「2~500」消失",
-      "接口冒烟：$1 → 200 建套餐、$0.5 → 422 拒绝、同金额复用；php -l 语法检查通过",
-      "收款链路：Xboard 同构测试单 2 笔地址回显正确、submit.php 302 → 收银台 200、回调口验签正确（错签 422 / 正签 200）、容器 → Xboard 网络连通实测通过",
-      "面板全链路复测（容器补丁 1/3/4 重打后）：save 400「已售罄」→ 200 建单 → checkout → 收银台 200；三文件 php -l / octane:reload / grep 在位（1/2/2）与哈希比对双通过"
+      "S8 状态机自测全绿（`tools/test-supplier-health.js`：healthy → degraded → soldout → 人工恢复 → 余额过低）",
+      "履约链路模拟验证（零真实扣款）：真实 ¥15 订单 2026101022104201309630610 → 注入模拟到账回调（BEpusdt 同款签名，HTTP 200）→ 自动发卡 KC-UEQQHXST39SBBQG → 订单详情页展示卡密与「去开通 →」；KC 兑卡页打开正常",
+      "幂等复验：重复回调 + 重复发卡请求均无二次发卡（reused=true，发放记录数不变）；订单详情页/兑卡页截图见 `debug_screenshots/fulfill-*.png`"
     ],
     "risks": [
-      "$1 下限为测试期松绑，是否长期保留待用户决定（恢复 $2 需同步改三处并重部署）",
-      "Xboard 侧插件文件位于宿主挂载目录 D:/tools/Xboard，不在 KC 仓库；环境重建/迁移需单独携带",
-      "核心回调处理器对「订单不存在」误回 success（已记录、未改动核心）"
+      "supplier_health 刷新当前仅 Mock 模式执行；真实模式「上游只读验通」需用户批准后开启（安全锁未动）",
+      "测试痕迹保留：测试用户 1 个、测试订单 1 笔（¥15 模拟支付）、测试卡密 1 张（未兑换）",
+      "商品卡「立即办理」按 FEAT-014 打开「代充开通向导」（登录 ChatGPT → Session → 选号 → 余额支付）；经典「下单 → 收银台 → 发卡」路径并行可用，本次模拟走经典路径"
     ]
   },
   "next": [
+    "用户批准后执行「上游只读验通」（真实凭据只读校验）与「小额真实首单」；真实模式开启 supplier_health 实体检并接入人工恢复入口",
     "用户执行一笔 $1 真实小额充值测试（付款 → 回传 → 余额到账）并完成收款链路最终验收",
     "待用户确认《系统低耦合重整与上线路线》D1–D6 与《后台形态选型》方案稿",
     "上线前：收银台地址与回调域名从内网地址切换为可访问域名；集成密钥轮换"
