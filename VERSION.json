@@ -1,8 +1,8 @@
 {
-  "version": "1.11.0",
-  "version_tag": "v1.11.0",
-  "date": "2026-10-08",
-  "title": "Zovo 商品目录映射与 Mock 订单补全（不调用真实上游）",
+  "version": "1.11.1",
+  "version_tag": "v1.11.1",
+  "date": "2026-10-10",
+  "title": "恢复对外集成接口与被回滚吞失的实现",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -64,28 +64,26 @@
   },
   "latest": {
     "added": [
-      "独立业务后台按 Zovo GPT registry 键映射 Go、Plus、Pro 5x/20x/50x 和 Codex 点数商品；续费绑卡不作为普通商品",
-      "Mock 订单快照保存上游套餐引用、目录来源/版本、服务费、资格标记、本地 client_request_id 和未提交上游状态"
+      "恢复 KC 侧 /api/integration/*（发卡/回查/任务状态/health）与 /api/admin/integration、/api/admin/card-config 系列接口（按 10-05 找回快照逐段合并）",
+      "恢复后台「对外集成」「商品卡片配置」面板，以及 ZovoCard 适配器挂载、卡池跳过、模拟模式开关、卡密 180 天有效期与未兑卡/告警检查等被回滚吞失的实现"
     ],
     "changed": [
-      "商品售价与成本参考仍由运营维护；GPT 动态报价不写成固定售价，点数加购标记需已有有效 Plus/Pro",
-      "KC `/admin`、Xboard 原商城和旧业务路由保持不变；ZovoCard、支付、退款和真实履约仍关闭，目录使用本地文档 fixture"
+      "server.js 以快照为基座并保留 10-07 后的 business 路由改动，清理一处重复校验；mysql-store.js 与快照逐字节一致；public/admin.html 保留一处格式修复",
+      "集成密钥仍为联调历史测试值（两侧一致），正式收款前建议轮换；上游与安全锁维持 Mock/关闭"
     ],
     "verified": [
-      "Zovo 目录/商品校验及后台/前台订单映射测试通过；全量 Vitest 5 个文件、28 项用例通过",
-      "Node 服务文件与业务后台内嵌 JavaScript 语法检查通过；未调用外部 Zovo API、未创建真实上游订单",
-      "Web 生产构建成功；统一部署 app/web 后修正订单映射并仅重建 app，KC runtime、后台页与独立前台均 200，未授权目录 API 为 401",
-      "容器目录读取返回 12 项 GPT 文档 fixture；app/web/mysql 均 healthy，两个 Mock 环境锁均为 1"
+      "三件验收全绿：逻辑 13/13、端到端 15/15、真并发 8 路只发 1 张；详见 docs/验收/v1.11.1-集成接口恢复验收.md",
+      "/api/integration/health 修复后返回 200（修复前 404）；重建 app 后本地与容器内文件 md5 一致；node --check 通过",
+      "测试卡密与 XB-* 引用已清理、集成配置按测前备份还原；未放开安全锁、未调用真实上游"
     ],
     "risks": [
-      "当前后台商品目录是基于 Zovo 文档的本地 Mock fixture，不代表账号实时启用或当下可售",
-      "Codex 点数需要有效 Plus/Pro 订阅；Mock 订单无法校验目标账号资格，未来履约必须增加前置校验",
-      "目录为文档 fixture，不是真实账号实时状态；本次代码不应被解释为允许打开 Mock 锁或启用真实资金/履约"
+      "集成密钥为历史测试值，正式收款前建议轮换",
+      "逐文件比对以找回的 3 个文件为限，其余文件无 10-05 快照"
     ]
   },
   "next": [
-    "运营人员可验收后台新增商品的操作体验；本次未用真实账号写入商品或订单",
-    "实时 Zovo 目录、preflight、真实支付/履约和外部订单须另行审批，本版本保持 Mock"
+    "待用户确认《系统低耦合重整与上线路线》D1–D6；阶段 1 前置为真实钱包地址（唯一硬阻塞）",
+    "上游只读验通与小额真实首单均需单独批准；本版本保持 Mock，集成密钥建议正式收款前轮换"
   ],
   "immutable_constraints": {
     "zovocard_mock_locked": "ZOVOCARD_MOCK=1 + REQUIRE_ZOVOCARD_MOCK=1 持续开启",

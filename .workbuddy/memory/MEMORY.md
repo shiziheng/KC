@@ -14,7 +14,7 @@
 - 快照留底用 `tools/git-safe.js snapshot`（hash-object 实现，不碰工作区）；别用 stash。
 - 重建仓库后提交报 `invalid object` → 删 `.git/index` 重建。git 输出中文路径是 GBK → 比对先解码或走 hash-object。
 - 提交前 `git status` 核实；显式分组 add 优先。身份仅仓库内配置：`KC-CatK <iamkc1110@gmail.com>`。
-- 现状：文档已提交至 `0855561`；**v1.9–v1.11 代码改动（约 40 文件）仍未提交** → 阶段 0 优先固化；期间禁止破坏性 git 操作。
+- 现状（2026-10-10）：v1.9–v1.11 改动已分三组提交（`44f6621`/`6119ff1`/`d6c0d00`），F1 修复已提交（`f50eb2f`），v1.11.1 文档同步提交后工作区干净。
 
 ## 本机环境坑
 - Bash 无 coreutils → 写 `.js` 用 node 跑、输出落文件再 Read；命令勿管道给 coreutils。
@@ -40,7 +40,7 @@
 
 ## 对外集成（Xboard→KC）
 - `POST /api/integration/cdk/issue` 幂等（ref=订单号），GET 回查 + health 免鉴权；头 `X-Integration-Key`；响应 `{success,data:{ref,cdk,plan_type,reused}}`；CDK 必须 `type='自助'`；发卡挂 `order.open.after`。
-- ⛔ 2026-10-09：此组接口在 10-07 恢复时被回滚丢失（实测 404）；材料已固化 `.codex-recovery/2026-10-09-integration-recovered/`。修复 = 逐段合并回当前版本 + `tools/test-integration-issue-{logic,e2e,race}.js` 三件验收；**验收前不得开启真实收款**。
+- ✅ 2026-10-10 已修复（`v1.11.1`，`f50eb2f`）：按快照逐段合并三文件；三件验收全绿（13/13、15/15、并发 8 路 1 张）；health 404→200。**审计发现回滚还吞了：ZovoCard 挂载、卡池跳过、cfg.mock、卡密 180 天有效期、未兑卡/卡住告警——均已补回。** 集成密钥仍为联调测试值（待轮换）；真实收款仍未开启。
 
 ## Xboard 平台真相
 - `ghcr.io/cedar2025/xboard`：机场出身的 SaaS 面板（PHP/Laravel/Octane，宿主无源码）；前台 hash 路由无 SPA fallback、仅 12 页、无钱包页；金额单位「分」；custom_html 注入位在 `#app` 外；`v2_settings` 无 key 列。
