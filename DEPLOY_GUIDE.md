@@ -83,8 +83,8 @@
 
 | 服务 | 类型 | 容器 | 宿主端口 | 访问地址 |
 |---|---|---|---|---|
-| **KC 代充引擎** | compose `kc-gpt-pay2` | `kc-gpt-pay2-app`<br>`kc-gpt-pay2-mysql` | 3100→3000<br>3310→3306 | 前台 `http://localhost:3100/`<br>后台 `http://localhost:3100/admin-login` |
-| **Xboard 商城** | compose `xboard` | `xboard` | 7001→80 | 前台 `http://localhost:7001/`<br>后台 `http://localhost:7001/5fea4ca1` |
+| **KC 代充引擎与独立业务前台** | compose `kc-gpt-pay2` | `kc-gpt-pay2-app`<br>`kc-gpt-pay2-web`<br>`kc-gpt-pay2-mysql` | 3100→3000<br>3001→3000<br>3310→3306 | 业务后台 `http://localhost:3100/business-admin`<br>独立 Mock 前台 `http://localhost:3001/`<br>KC 技术后台 `http://localhost:3100/admin-login` |
+| **Xboard 旧商城（回退入口）** | compose `xboard` | `xboard` | 7001→80 | 前台 `http://localhost:7001/`<br>后台 `http://localhost:7001/5fea4ca1` |
 | **BEpusdt** | 独立容器 | `bepusdt` | 8080→8080 | 后台 `http://localhost:8080/0c09205c71` |
 
 ---
@@ -180,7 +180,7 @@ A：设 `XBOARD_DIR` 环境变量指向 Xboard 目录，或把 Xboard 放在本�
 A：装 `jq`（`apt install jq` / `brew install jq`），或确保有 `python3` 或 `node`。
 
 **Q：改了什么需要重启？**
-A：`server.js`、`mysql-store.js`、`public/` 需 `docker compose up -d --build app` 重建；`zovocard-client.js` 等 bind mount 文件实时生效。
+A：KC API/后台变更需 `docker compose up -d --build app`；独立前台代码或配置变更需 `docker compose up -d --build web`；两者同时变更时统一执行 `docker compose up -d --build app web`。`public/` 等 bind mount 文件通常实时生效。ZovoCard 仍必须维持 Mock。
 
 **Q：Xboard 改了配置但前台没生效？**
 A：必须 `php artisan optimize:clear` —— `admin_setting()` 会把配置读进 Laravel 缓存，只写数据库无效。脚本的 `inject` 动作已包含这一步。

@@ -9,10 +9,10 @@
       "type": "compose",
       "compose_path": "docker-compose.yml",
       "project": "kc-gpt-pay2",
-      "containers": ["kc-gpt-pay2-app", "kc-gpt-pay2-mysql"],
-      "ports": ["3100:3000", "3310:3306"],
+      "containers": ["kc-gpt-pay2-app", "kc-gpt-pay2-mysql", "kc-gpt-pay2-web"],
+      "ports": ["3100:3000", "3310:3306", "3001:3000"],
       "health_url": "http://localhost:3100/api/public/runtime",
-      "access_urls": ["http://localhost:3100/admin-login"],
+      "access_urls": ["http://localhost:3100/admin-login", "http://localhost:3001/"],
       "requires_env": [".env"],
       "build": true,
       "inject": false

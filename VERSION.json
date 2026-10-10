@@ -1,8 +1,8 @@
 {
-  "version": "1.8.0",
-  "version_tag": "v1.8.0",
-  "date": "2026-10-07",
-  "title": "独立代充后台 R0–R2 代码落地（保持 Mock）",
+  "version": "1.11.0",
+  "version_tag": "v1.11.0",
+  "date": "2026-10-08",
+  "title": "Zovo 商品目录映射与 Mock 订单补全（不调用真实上游）",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -34,17 +34,18 @@
   },
   "product_scope": {
     "产品定位": "ChatGPT Plus / Pro 自动代充平台",
-    "四个组成部分": [
+    "五个组成部分": [
       "KC 代充引擎",
-      "Xboard 商城（过渡期，用户当前使用的页面）",
+      "独立业务前台（Mock，不收款、不履约）",
+      "Xboard 商城（过渡期回退入口）",
       "BEpusdt USDT 收款网关",
-      "独立业务后台（R0–R2 代码已实现，未部署）"
+      "独立业务后台（R0–R4，保持 Mock）"
     ],
     "核心原则": "付款成功不等于开通成功 —— 支付与履约状态分离",
     "三档规划": {
       "待做": [
-        "独立前台完整支付",
-        "独立前台代充履约",
+        "独立前台真实支付",
+        "独立前台真实代充履约",
         "真实生产首单验证（需批准）",
         "真实链上钱包地址（需用户提供，当前阻塞）",
         "旧数据迁移",
@@ -63,34 +64,32 @@
   },
   "latest": {
     "added": [
-      "独立业务后台 API 与 public/business-admin.html：商品、模拟订单、USDT 随机尾数、模拟核验/补记、钱包和流水查询",
-      "tools/verify-business-backend.js 改为只读检查，只发 GET 且需显式提供已有管理员令牌",
-      "Docker Compose 固定注入 REQUIRE_ZOVOCARD_MOCK=1 和 ZOVOCARD_MOCK=1"
+      "独立业务后台按 Zovo GPT registry 键映射 Go、Plus、Pro 5x/20x/50x 和 Codex 点数商品；续费绑卡不作为普通商品",
+      "Mock 订单快照保存上游套餐引用、目录来源/版本、服务费、资格标记、本地 client_request_id 和未提交上游状态"
     ],
     "changed": [
-      "接入现有管理员鉴权、现存 kc_business 表和 0001/0002 迁移校验；不自动迁移、不触碰 KC/Xboard 旧库",
-      "商品和业务账号信息采用白名单字段、邮箱脱敏/指纹化；Mock 充值补记追加幂等钱包流水和审计",
-      "产品全景、开发计划与项目状态同步为代码已实现、未部署；记录 Xboard 菜单跳转未接通"
+      "商品售价与成本参考仍由运营维护；GPT 动态报价不写成固定售价，点数加购标记需已有有效 Plus/Pro",
+      "KC `/admin`、Xboard 原商城和旧业务路由保持不变；ZovoCard、支付、退款和真实履约仍关闭，目录使用本地文档 fixture"
     ],
     "verified": [
-      "node --check 通过；内嵌管理页脚本语法检查通过",
-      "Vitest 2 个测试文件、13 项用例通过",
-      "对现存 kc_business 做只读接口核验：健康、汇总、商品、订单、充值、钱包、流水接口均返回成功；未调用写接口",
-      "Docker 引擎不可访问，因此没有重启服务或部署；业务库没有写入"
+      "Zovo 目录/商品校验及后台/前台订单映射测试通过；全量 Vitest 5 个文件、28 项用例通过",
+      "Node 服务文件与业务后台内嵌 JavaScript 语法检查通过；未调用外部 Zovo API、未创建真实上游订单",
+      "Web 生产构建成功；统一部署 app/web 后修正订单映射并仅重建 app，KC runtime、后台页与独立前台均 200，未授权目录 API 为 401",
+      "容器目录读取返回 12 项 GPT 文档 fixture；app/web/mysql 均 healthy，两个 Mock 环境锁均为 1"
     ],
     "risks": [
-      "代码未部署；Xboard 菜单仍指向旧插件页，需要运营可访问的 KC 后台 URL 和登录衔接方案",
-      "充值识别与补记目前是本地 Mock 演练，不接链、不收真实 USDT、不修改 KC/Xboard 余额"
+      "当前后台商品目录是基于 Zovo 文档的本地 Mock fixture，不代表账号实时启用或当下可售",
+      "Codex 点数需要有效 Plus/Pro 订阅；Mock 订单无法校验目标账号资格，未来履约必须增加前置校验",
+      "目录为文档 fixture，不是真实账号实时状态；本次代码不应被解释为允许打开 Mock 锁或启用真实资金/履约"
     ]
   },
   "next": [
-    "确认可供运营浏览器访问的 KC 后台地址与登录方式，把 Xboard 代充运营菜单接到独立业务后台",
-    "在 Docker 引擎可用环境部署并做 Mock 运行验收",
-    "进入 R3：在现有前台框架中增量接入业务商品、模拟下单与状态查询"
+    "运营人员可验收后台新增商品的操作体验；本次未用真实账号写入商品或订单",
+    "实时 Zovo 目录、preflight、真实支付/履约和外部订单须另行审批，本版本保持 Mock"
   ],
   "immutable_constraints": {
     "zovocard_mock_locked": "ZOVOCARD_MOCK=1 + REQUIRE_ZOVOCARD_MOCK=1 持续开启",
-    "session_never_persisted": "不保存 Session / token / Cookie / 密码 / 卡号 / CVC",
+    "session_never_persisted": "不保存用户提供的 ChatGPT Session/token/Cookie/密码/卡号/CVC；Xboard 登录令牌沿用既有浏览器登录机制，不保存到业务库或审计",
     "live_payment_disabled": "真实支付、真实履约、对外上游 API 全部关闭",
     "kc_menu_untouched": "KC 后台及技术菜单保持原样",
     "ledger_immutable": "资金由不可变流水驱动，余额变动须有唯一 event_key",
@@ -98,7 +97,7 @@
     "no_secrets_in_docs": ".env 凭据不得写入任何文档、注释或 CHANGELOG"
   },
   "services": [
-    { "id": "kc", "type": "compose", "project": "kc-gpt-pay2", "host_ports": ["3100:3000", "3310:3306"] },
+    { "id": "kc", "type": "compose", "project": "kc-gpt-pay2", "host_ports": ["3100:3000", "3310:3306", "3001:3000"] },
     { "id": "xboard", "type": "compose", "project": "xboard", "host_ports": ["7001:80"] },
     { "id": "bepusdt", "type": "standalone", "host_ports": ["8080:8080"] }
   ],
