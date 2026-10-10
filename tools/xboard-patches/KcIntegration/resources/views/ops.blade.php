@@ -26,6 +26,7 @@
 
     <section class="grid">
         <div class="card"><h3>商品与订单</h3><a href="/{{ $securePath }}/#/finance/plan">代充商品</a><a href="/{{ $securePath }}/#/finance/order">订单管理</a><a href="/{{ $securePath }}/#/user/manage">用户与余额</a></div>
+        <div class="card"><h3>客服工作台</h3><a href="/plugins/kc_integration/support">客服查询（余额 / 订单 / 充值 / 卡密）</a><div class="muted" style="padding:8px 0 0">只读聚合查询 + 标准话术 · 金额以美元展示 · 不索取账号凭据</div></div>
         <div class="card"><h3>支付与售后</h3><a href="/{{ $securePath }}/#/payment">USDT 支付配置</a>@if(!empty($walletUrl))<a href="{{ $walletUrl }}" target="_blank" rel="noopener">打开 BEpusdt 钱包后台 ↗</a>@else<span class="muted" style="display:block;padding:8px 0">未配置钱包后台地址</span>@endif<a href="/{{ $securePath }}/#/user/ticket">售后工单</a><a href="/{{ $securePath }}/#/system">系统状态（管理员）</a></div>
         <div class="card"><h3>暂不使用</h3><div class="muted">优惠券、分销、礼品卡、主题、邮件、节点、流量等菜单已从运营入口移除，底层数据未删除。</div></div>
     </section>
@@ -43,7 +44,9 @@
     <p class="muted" style="margin-top:18px">技术维护入口仍可通过原 Xboard 菜单访问；本页面只提供代充运营入口，未删除底层路由。</p>
 </main>
 <script>
-const api=(path,opt={})=>fetch(path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(opt.headers||{})},...opt}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok||d.code<0)throw new Error(d.message||'请求失败');return d});
+const kcTok=()=>{try{const r=localStorage.getItem('VUE_NAIVE_ACCESS_TOKEN');if(!r)return '';const j=JSON.parse(r);return (j&&typeof j==='object'&&j.value)?String(j.value):(String(r).length<400?String(r):'');}catch(e){return ''}};
+const api=(path,opt={})=>{const t=kcTok();return fetch(path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(t?{Authorization:'Bearer '+t}:{}),...(opt.headers||{})},...opt}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok||d.code<0)throw new Error(d.message||'请求失败');return d})};
+(function(){if(!kcTok()){const d=document.createElement('div');d.className='muted';d.style.cssText='margin:0 0 12px;color:#b45309';d.textContent='未检测到管理端登录态：请先在管理端登录，再刷新本页（查询与补单接口需管理员身份）。';const m=document.querySelector('main');if(m)m.prepend(d);}})();
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 async function load(){const q=encodeURIComponent(document.getElementById('search').value.trim());const d=await api('/admin/kc/topups?trade_no='+q);const rows=d.data?.orders||d.orders||[];document.getElementById('rows').innerHTML=rows.length?rows.map(r=>`<tr><td>${esc(r.trade_no)}<br><span class="muted">${esc(r.payment_reference||'')}</span></td><td>${esc(r.user_email||r.user_id)}</td><td>${Number(r.expected_amount||0)} / ${Number(r.received_amount||0)}</td><td><span class="status ${r.status==='done'?'done':''}">${esc(r.match_status||r.status)}</span></td><td style="max-width:180px;word-break:break-all">${esc(r.tx_hash||'—')}</td><td><button class="btn" onclick="pick('${esc(r.trade_no)}','${esc(r.tx_hash||'')}','${Number(r.received_amount||0)}')">带入补单</button> <button class="btn" onclick="review('${esc(r.trade_no)}')">标记异常</button></td></tr>`).join(''):'<tr><td colspan="6" class="muted">暂无记录</td></tr>'}
 function pick(t,x,a){document.getElementById('trade').value=t;document.getElementById('tx').value=x;document.getElementById('received').value=a||'';document.getElementById('reason').focus()}

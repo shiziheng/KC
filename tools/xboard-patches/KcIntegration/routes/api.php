@@ -12,6 +12,7 @@ use Plugin\KcIntegration\Controllers\CompensationController;
 use Plugin\KcIntegration\Controllers\LedgerController;
 use Plugin\KcIntegration\Controllers\RiskController;
 use Plugin\KcIntegration\Controllers\AdminMenuController;
+use Plugin\KcIntegration\Controllers\SupportController;
 
 /*
 |--------------------------------------------------------------------------
@@ -49,7 +50,7 @@ Route::prefix('user/kc')->middleware('user')->group(function () {
     // ── FEAT-004 · D3：充值 ──
     // 把金额落成一次性充值套餐，返回 plan_id（前台随后走原生 save→checkout）
     Route::post('/topup/prepare', [TopupController::class, 'prepare'])->middleware('throttle:10,1');
-    // 按订单号查充值记录（订单页展示「已充值 ¥X 到余额」）
+    // 按订单号查充值记录（订单页展示「已充值 $X 到余额」；全站金额一律美元计价）
     Route::get('/topup/info', [TopupController::class, 'info']);
     // FEAT-014：充值订单台账（按 pending/overdue/done/failed 分组）
     Route::get('/topup/orders', [TopupController::class, 'orders'])->middleware('throttle:30,1');
@@ -121,6 +122,13 @@ Route::prefix('admin/kc/topups')->middleware(['user', 'admin'])->group(function 
     Route::get('/', [TopupController::class, 'adminList']);
     Route::post('/credit', [TopupController::class, 'adminCredit']);
     Route::post('/mark-review', [TopupController::class, 'adminMarkReview']);
+});
+
+// 客服工作台（SP-2026-10-11 · P1）：只读聚合查询（用户全景 / 订单进度 + KC 实时复核）。
+// 页面载体：/plugins/kc_integration/support（routes/web.php）。
+Route::prefix('admin/kc/support')->middleware(['user', 'admin'])->group(function () {
+    Route::get('/user', [SupportController::class, 'user']);
+    Route::get('/order', [SupportController::class, 'order']);
 });
 
 // Xboard 非代充菜单清理策略（只读，可供统一入口或管理端壳读取）。

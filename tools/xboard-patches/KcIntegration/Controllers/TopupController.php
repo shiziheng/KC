@@ -133,7 +133,7 @@ class TopupController extends PluginController
     }
 
     /**
-     * 查询某笔订单的充值信息（订单页展示「已充值 ¥X 到余额」）。
+     * 查询某笔订单的充值信息（订单页展示「已充值 $X 到余额」；全站金额一律美元计价）。
      * GET /user/kc/topup/info?trade_no=xxx
      */
     public function info(Request $request)
