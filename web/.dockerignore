@@ -1,9 +1,5 @@
 node_modules
 .next
-.git
-.env
-.env.*
-*.log
-README.md
-.dockerignore
-Dockerfile
+out
+coverage
+npm-debug.log

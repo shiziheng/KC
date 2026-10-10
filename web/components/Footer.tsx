@@ -12,7 +12,7 @@ export default function Footer() {
             <span className="text-h3 text-t1">KC 加速</span>
           </div>
           <p className="mt-2 max-w-md text-aux text-t3">
-            官方渠道代充，3 分钟自动到账。支持 USDT 与账户余额支付，开通失败全额退款。
+            当前提供代充业务流程的 Mock 演示，不收取真实款项、不进行真实代充。交易凭证不是发票或付款证明。
           </p>
         </div>
 
@@ -22,9 +22,7 @@ export default function Footer() {
             <ul className="space-y-1.5 text-aux text-t3">
               <li><Link href="/plan" className="hover:text-brand">商品</Link></li>
               <li><Link href="/order" className="hover:text-brand">我的订单</Link></li>
-              <li><Link href="/topup" className="hover:text-brand">余额充值</Link></li>
-              <li><Link href="/redeem" className="hover:text-brand">兑换卡密</Link></li>
-              <li><Link href="/referral" className="hover:text-brand">邀请返利</Link></li>
+              <li><Link href="/help#support" className="hover:text-brand">售后留言</Link></li>
             </ul>
           </div>
           <div>
@@ -39,7 +37,7 @@ export default function Footer() {
 
       <div className="border-t border-line">
         <div className="kc-container flex flex-col gap-1 py-4 text-aux text-t3 md:flex-row md:items-center md:justify-between">
-          <span>虚拟商品，一经开通不支持退款，请确认后购买。</span>
+          <span>Mock 演示不构成真实付款、开通或退款承诺。</span>
           <span>© {new Date().getFullYear()} KC 加速</span>
         </div>
       </div>

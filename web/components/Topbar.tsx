@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { formatUSD } from '@/lib/format';
 
 const NAV = [
   { href: '/', label: '首页' },
@@ -87,8 +86,8 @@ export default function Topbar() {
 
           {/* 右侧操作区 */}
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/topup" className="kc-btn kc-btn-primary kc-btn-sm md:px-4 md:py-2">
-              立即充值
+            <Link href="/plan" className="kc-btn kc-btn-primary kc-btn-sm md:px-4 md:py-2">
+              浏览商品
             </Link>
 
             {/* 登录态区域：加载中显示占位，避免「先显示登录按钮再跳成头像」的闪动 */}
@@ -100,14 +99,6 @@ export default function Topbar() {
             ) : loggedIn && user ? (
               <>
                 <span className="hidden h-7 w-px bg-line md:block" />
-                <Link
-                  href="/topup"
-                  className="hidden rounded-md bg-brand-soft px-3 py-2 text-aux font-medium text-brand transition-colors hover:bg-brand/15 md:block"
-                  title="账户余额"
-                >
-                  {formatUSD(user.balance)}
-                </Link>
-
                 <div ref={userRef} className="relative hidden md:block">
                   <button
                     type="button"
@@ -123,9 +114,7 @@ export default function Topbar() {
                     <div className="absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-lg border border-line bg-card shadow-lg">
                       <div className="border-b border-line px-3.5 py-2.5">
                         <div className="truncate text-aux font-medium text-t1">{user.email}</div>
-                        <div className="mt-0.5 text-aux text-t3">
-                          余额 {formatUSD(user.balance)}
-                        </div>
+                        <div className="mt-0.5 text-aux text-t3">与本 Mock 业务订单相互独立</div>
                       </div>
                       <div className="p-1.5">
                         <Link
@@ -139,18 +128,6 @@ export default function Topbar() {
                           className="block rounded-md px-3 py-2 text-body text-t2 transition-colors hover:bg-black/[.04] hover:text-brand"
                         >
                           我的订单
-                        </Link>
-                        <Link
-                          href="/redeem"
-                          className="block rounded-md px-3 py-2 text-body text-t2 transition-colors hover:bg-black/[.04] hover:text-brand"
-                        >
-                          兑换卡密
-                        </Link>
-                        <Link
-                          href="/referral"
-                          className="block rounded-md px-3 py-2 text-body text-t2 transition-colors hover:bg-black/[.04] hover:text-brand"
-                        >
-                          邀请返利
                         </Link>
                         <button
                           type="button"
@@ -166,12 +143,6 @@ export default function Topbar() {
               </>
             ) : (
               <>
-                <Link
-                  href="/redeem"
-                  className="hidden rounded-md px-3 py-2 text-body text-t2 transition-colors hover:bg-black/[.04] hover:text-t1 md:block"
-                >
-                  兑换卡密
-                </Link>
                 <Link
                   href="/login"
                   className="hidden rounded-md px-3 py-2 text-body text-t2 transition-colors hover:bg-black/[.04] hover:text-t1 md:block"
@@ -209,7 +180,7 @@ export default function Topbar() {
             {loggedIn && user && (
               <div className="mb-2 rounded-md bg-brand-soft px-3.5 py-3">
                 <div className="truncate text-aux font-medium text-brand">{user.email}</div>
-                <div className="mt-0.5 text-aux text-brand/80">余额 {formatUSD(user.balance)}</div>
+                <div className="mt-0.5 text-aux text-brand/80">Mock 订单与旧商城账户分开记录</div>
               </div>
             )}
 
@@ -234,12 +205,6 @@ export default function Topbar() {
                 <Link href="/profile" className="block rounded-md px-3.5 py-3 text-body text-t2">
                   个人中心
                 </Link>
-                <Link href="/redeem" className="block rounded-md px-3.5 py-3 text-body text-t2">
-                  兑换卡密
-                </Link>
-                <Link href="/referral" className="block rounded-md px-3.5 py-3 text-body text-t2">
-                  邀请返利
-                </Link>
                 <button
                   type="button"
                   onClick={doLogout}
@@ -250,12 +215,6 @@ export default function Topbar() {
               </>
             ) : (
               <>
-                <Link href="/redeem" className="block rounded-md px-3.5 py-3 text-body text-t2">
-                  兑换卡密
-                </Link>
-                <Link href="/referral" className="block rounded-md px-3.5 py-3 text-body text-t2">
-                  邀请返利
-                </Link>
                 <Link href="/login" className="block rounded-md px-3.5 py-3 text-body text-t2">
                   登录 / 注册
                 </Link>

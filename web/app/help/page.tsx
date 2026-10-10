@@ -13,9 +13,13 @@ export default function HelpPage() {
         <span className="kc-tag bg-brand-soft text-brand">帮助中心</span>
         <h1 className="mt-3 text-h1 text-t1">办理前看这里</h1>
         <p className="mt-2 text-body text-t2">
-          从账号准备、凭据粘贴，到余额支付、订单履约和售后处理，按步骤了解整个流程。
+          当前是 Mock 演示版本。这里说明模拟下单、状态、售后留言和凭据范围。
         </p>
       </header>
+
+      <div className="mt-5 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-aux text-amber-900">
+        真实收款与真实开通尚未开放。请勿转账，也不要提供 ChatGPT Session、Token、Cookie、密码或支付凭据。
+      </div>
 
       <nav aria-label="帮助目录" className="mt-6 flex flex-wrap gap-2">
         {HELP_QUICK_LINKS.map((item) => (
@@ -60,7 +64,7 @@ export default function HelpPage() {
         <aside className="h-fit space-y-4 lg:sticky lg:top-24">
           <div className="kc-card p-5">
             <h2 className="text-h3 text-t1">还没开始？</h2>
-            <p className="mt-2 text-aux text-t2">先看看当前可售商品，再按向导逐步办理。</p>
+            <p className="mt-2 text-aux text-t2">先浏览当前可售的 Mock 商品，确认演示流程范围。</p>
             <div className="mt-4 flex flex-col gap-2">
               <Link href="/plan" className="kc-btn kc-btn-primary">查看商品 →</Link>
               <Link href="/order" className="kc-btn kc-btn-ghost">查看我的订单</Link>
@@ -68,7 +72,7 @@ export default function HelpPage() {
           </div>
           <div id="support" className="kc-card scroll-mt-24 p-5">
             <h2 className="text-h3 text-t1">需要处理订单问题？</h2>
-            <p className="mt-2 text-aux text-t2">请从对应消费订单发起售后，附上订单号后几位和现象说明。</p>
+            <p className="mt-2 text-aux text-t2">在线客服尚未接入。订单问题可在对应 Mock 订单中留言，由运营人员在后台查看。</p>
             <Link href="/order" className="mt-4 inline-flex text-aux text-brand hover:underline">去我的订单 →</Link>
           </div>
         </aside>

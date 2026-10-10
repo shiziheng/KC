@@ -5,8 +5,8 @@ import Topbar from '@/components/Topbar';
 import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
-  title: 'KC 加速 · ChatGPT Plus 官方直充',
-  description: '官方渠道代充，3 分钟自动到账。支持 USDT 与账户余额支付，失败全额退款。',
+  title: 'KC 代充业务 · Mock 流程演示',
+  description: '浏览代充商品并体验模拟订单流程；当前不收款、不扣款、不进行真实代充。',
 };
 
 export const viewport: Viewport = {

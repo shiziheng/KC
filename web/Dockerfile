@@ -1,36 +1,27 @@
-# ============================================================
-# KC 前台（Next.js）— 生产镜像
-#
-# 与 KC 代充引擎（kc-gpt-pay2-app）分开构建、分开部署。
-# 后端地址由 XBOARD_ORIGIN 注入，用于服务端转发接口。
-# ============================================================
+FROM node:20-slim AS builder
 
-FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci
 
-
-FROM node:22-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+ARG XBOARD_ORIGIN=http://host.docker.internal:7001
+ARG KC_API_ORIGIN=http://app:3000
+ENV XBOARD_ORIGIN=${XBOARD_ORIGIN}
+ENV KC_API_ORIGIN=${KC_API_ORIGIN}
 ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY . .
 RUN npm run build
 
-
-FROM node:22-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
 
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3001 \
-    HOSTNAME=0.0.0.0
-
-# standalone 产物自带精简的 node_modules 与服务入口
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-EXPOSE 3001
-
+EXPOSE 3000
 CMD ["node", "server.js"]

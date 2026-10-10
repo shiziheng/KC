@@ -4,202 +4,117 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import GuideModal from '@/components/GuideModal';
-import PlanCard from '@/components/PlanCard';
-import { api, pg } from '@/lib/api';
-import { categoriesOf, mergePlans } from '@/lib/plans';
-import type { Category, Plan, PlanCardsResp, PlanView } from '@/lib/types';
+import { createMockOrder, fetchStorefrontProducts, type StorefrontProduct } from '@/lib/storefront';
+
+function price(product: StorefrontProduct) {
+  const prefix = product.currency === 'USD' ? '$' : '';
+  return `${prefix}${product.sellingAmount} ${product.currency === 'USDT' ? 'USDT' : ''}`.trim();
+}
 
 export default function PlanPage() {
   const { loggedIn, loading: authLoading } = useAuth();
   const router = useRouter();
-
-  const [plans, setPlans] = useState<PlanView[]>([]);
-  const [cats, setCats] = useState<Category[]>([]);
-  const [faq, setFaq] = useState<{ q: string; a: string }[]>([]);
-  const [activeCat, setActiveCat] = useState('');
-  const [guide, setGuide] = useState<PlanView | null>(null);
+  const [products, setProducts] = useState<StorefrontProduct[]>([]);
+  const [selected, setSelected] = useState<StorefrontProduct | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr('');
-
-    // 卡片配置是公开接口
-    const cfgRes = await pg.get<PlanCardsResp>('/plan/kc-cards', { auth: false });
-    const cfg = cfgRes.ok && cfgRes.data ? cfgRes.data : null;
-
-    if (cfg) {
-      setCats(categoriesOf(cfg));
-      setFaq(Array.isArray(cfg.faq) ? cfg.faq : []);
+    setError('');
+    const result = await fetchStorefrontProducts();
+    if (!result.ok || !result.data) {
+      setError(result.message || '商品暂时无法加载，请稍后重试');
+      setProducts([]);
     } else {
-      setCats(categoriesOf(null));
+      setProducts(result.data.filter((item) => item.availability === 'onsale'));
     }
+    setLoading(false);
+  }, []);
 
-    // 商品列表：登录用用户接口，游客用公开接口（开放游客浏览商品与价格；
-    // 购买动作仍要求登录——点击「立即办理」时引导）
-    // ⚠️ 该版本 Xboard 的游客套餐路由是 guest/plan/fetch（无 guest/plan/list）
-    const pRes = loggedIn
-      ? await api.get<Plan[] | Record<string, Plan>>('/v1/user/plan/fetch')
-      : await api.get<Plan[] | Record<string, Plan>>('/v1/guest/plan/fetch');
+  useEffect(() => { void load(); }, [load]);
 
-    if (!pRes.ok) {
-      setErr(pRes.message || '商品加载失败，请稍后重试');
-      setLoading(false);
+  async function beginOrder() {
+    if (!selected || busy) return;
+    if (!loggedIn) {
+      router.push('/login?redirect=' + encodeURIComponent('/plan'));
       return;
     }
-
-    const raw = pRes.data;
-    const list: Plan[] = Array.isArray(raw)
-      ? raw
-      : raw && typeof raw === 'object'
-        ? Object.values(raw)
-        : [];
-
-    setPlans(mergePlans(list, cfg));
-    setLoading(false);
-  }, [loggedIn]);
-
-  useEffect(() => {
-    if (!authLoading) void load();
-  }, [authLoading, load]);
-
-  // 首次加载完成后，默认选中第一个有商品的分类
-  useEffect(() => {
-    if (!activeCat && plans.length) setActiveCat(plans[0].category);
-  }, [plans, activeCat]);
-
-  /** 游客点击购买 → 引导登录（登录后回到本页）；登录用户 → 打开代充向导 */
-  const openPlan = useCallback(
-    (v: PlanView) => {
-      if (!loggedIn) {
-        router.push('/login?redirect=' + encodeURIComponent('/plan'));
-        return;
-      }
-      setGuide(v);
-    },
-    [loggedIn, router]
-  );
-
-  const shown = activeCat ? plans.filter((p) => p.category === activeCat) : plans;
-  const usedCats = cats.filter((c) => plans.some((p) => p.category === c.key));
+    setBusy(true);
+    const result = await createMockOrder(selected.id);
+    setBusy(false);
+    if (!result.ok || !result.data?.orderRef) {
+      setError(result.message || '模拟订单创建失败，请重试');
+      return;
+    }
+    setSelected(null);
+    router.push('/order');
+  }
 
   return (
     <div className="kc-container py-8 md:py-12">
-      <header>
-        <h1 className="text-h1 text-t1">商品</h1>
-        <p className="mt-1.5 text-body text-t2">
-          选择需要的服务，用账户余额支付，系统自动完成开通。
-        </p>
-        <Link href="/help#purchase" className="mt-2 inline-flex text-aux text-brand hover:underline">
-          购买前须知 →
-        </Link>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-h1 text-t1">代充商品</h1>
+          <p className="mt-1.5 text-body text-t2">商品价格由运营后台维护；当前仅支持模拟下单，不会收款或真实开通。</p>
+        </div>
+        <span className="kc-tag kc-tag-warn">MOCK 演示 · 不扣款</span>
       </header>
 
-      {/* 分类切换 */}
-      {usedCats.length > 1 && (
-        <div className="mt-6 flex flex-wrap gap-2">
-          {usedCats.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setActiveCat(c.key)}
-              className={
-                'rounded-md px-3.5 py-2 text-body transition-colors ' +
-                (activeCat === c.key
-                  ? 'bg-brand-soft font-medium text-brand'
-                  : 'text-t3 hover:bg-black/[.04] hover:text-t1')
-              }
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="notice mt-5 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-aux text-amber-900">
+        当前阶段不会发起 USDT 收款、余额扣款或上游代充。模拟状态仅用于核对网站流程，不代表实际付款或开通结果。
+      </div>
 
-      {/* 加载中 */}
-      {loading && (
+      {error && <div className="mt-4 rounded-md bg-err/[.07] px-3 py-2.5 text-aux text-err">{error}</div>}
+      {loading ? (
+        <div className="mt-6 grid gap-4 md:grid-cols-3">{[0, 1, 2].map((n) => <div key={n} className="kc-card h-64 animate-pulse" />)}</div>
+      ) : products.length ? (
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="kc-card h-72 animate-pulse" />
+          {products.map((product) => (
+            <article key={product.id} className="kc-card flex flex-col p-5">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-h3 text-t1">{product.name}</h2>
+                <span className="kc-tag bg-brand-soft text-brand">Mock 商品</span>
+              </div>
+              <p className="mt-2 text-aux text-t3">套餐类型：{product.planCode.replace('_', ' ')}</p>
+              {product.isCredit && <p className="mt-2 text-aux text-t2">Codex 点数加购；上游要求目标账号已有有效 Plus / Pro 订阅。当前页面仍是 Mock 演练。</p>}
+              <div className="mt-5 text-h1 text-brand">{price(product)}</div>
+              <p className="mt-2 flex-1 text-aux text-t2">标称金额 {product.faceAmount} {product.currency}。订单支付和处理状态只在模拟环境中推进。</p>
+              <button type="button" onClick={() => setSelected(product)} className="kc-btn kc-btn-primary mt-5 w-full">
+                创建模拟订单
+              </button>
+            </article>
           ))}
         </div>
-      )}
-
-      {/* 出错 */}
-      {!loading && err && (
-        <div className="kc-card mt-6 p-6 text-center">
-          <p className="text-body text-err">{err}</p>
-          <button type="button" onClick={() => void load()} className="kc-btn kc-btn-ghost mt-4">
-            重试
-          </button>
+      ) : (
+        <div className="kc-card mt-6 p-8 text-center">
+          <p className="text-body text-t2">当前没有可售代充商品</p>
+          <button type="button" onClick={() => void load()} className="kc-btn kc-btn-ghost mt-4">重新加载</button>
         </div>
       )}
 
-      {/* 商品网格（游客也可见；点击购买时引导登录） */}
-      {!loading && !err && (
-        <>
-          {shown.length > 0 ? (
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              {shown.map((v) => (
-                <PlanCard key={v.plan.id} view={v} onOpen={openPlan} />
-              ))}
-            </div>
-          ) : (
-            <div className="kc-card mt-6 p-10 text-center">
-              <p className="text-body text-t3">该分类下暂无在售商品</p>
-            </div>
-          )}
-        </>
-      )}
+      <p className="mt-6 text-aux text-t3">已有模拟订单？<Link href="/order" className="ml-1 text-brand hover:underline">查看订单和凭证</Link></p>
 
-      {/* 游客提示条 */}
-      {!authLoading && !loggedIn && !err && (
-        <div className="mt-6 rounded-md bg-brand-soft px-4 py-3.5 text-aux text-t2">
-          浏览无需登录。点击「立即办理」时会引导你登录或注册，登录后使用账户余额支付。
+      {selected && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setSelected(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="mock-order-title" className="kc-card w-full max-w-lg p-6">
+            <h2 id="mock-order-title" className="text-h2 text-t1">确认模拟订单</h2>
+            <div className="mt-4 rounded-md bg-page p-4 text-body text-t2">
+              <div className="flex justify-between gap-4"><span>商品</span><strong className="text-t1">{selected.name}</strong></div>
+              <div className="mt-2 flex justify-between gap-4"><span>金额</span><strong className="text-brand">{price(selected)}</strong></div>
+            </div>
+            <p className="mt-4 text-aux text-t3">确认后仅在独立业务库创建一张未支付的 Mock 订单。之后可手动推进模拟支付和履约；不会连接支付网关、ZovoCard 或其他上游。</p>
+            {!authLoading && !loggedIn && <p className="mt-3 text-aux text-warn">创建订单前需要先登录。</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setSelected(null)} disabled={busy} className="kc-btn kc-btn-ghost">取消</button>
+              <button type="button" onClick={() => void beginOrder()} disabled={busy || authLoading} className="kc-btn kc-btn-primary">
+                {busy ? '正在创建…' : loggedIn ? '确认创建（不扣款）' : '登录后继续'}
+              </button>
+            </div>
+          </section>
         </div>
       )}
-
-      {/* 常见问题 */}
-      {faq.length > 0 && (
-        <section className="mt-12">
-          <h2 className="text-h2 text-t1">常见问题</h2>
-          <div className="mt-4 space-y-2">
-            {faq.map((f, i) => (
-              <FaqItem key={i} q={f.q} a={f.a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* 代充向导 */}
-      {guide && (
-        <GuideModal
-          view={guide}
-          onClose={() => {
-            setGuide(null);
-            void load();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function FaqItem({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="kc-card overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-      >
-        <span className="text-body font-medium text-t1">{q}</span>
-        <span className={'shrink-0 text-t3 transition-transform ' + (open ? 'rotate-180' : '')}>▾</span>
-      </button>
-      {open && <div className="border-t border-line px-4 py-3.5 text-body text-t2">{a}</div>}
     </div>
   );
 }
