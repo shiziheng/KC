@@ -54,6 +54,7 @@ _recovery_snapshot/
 # Root-level one-off temp files produced by tooling/scripts
 _*.txt
 _*.tmp
+_*.js
 
 # --- One-off temp files produced by tooling/scripts ---
 _ps_parse.txt
