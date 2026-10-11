@@ -3,8 +3,9 @@
 > 状态看 docs/00_项目状态.md；当日写 .workbuddy/memory/YYYY-MM-DD.md。
 
 ## 协作与文档
-- 节奏：方案→计划→分段执行，每段停下等确认；开场读 README 顶→docs/产品全景.md→CHANGELOG 顶→本文件。
-- 版本规范六步（见 docs/开发规范.md）：版本号→代码→同步全景→自测→CHANGELOG→入口；CHANGELOG 只追加；产品全景=能力唯一正本；闸门 tools/check-docs-sync.js+pre-commit。
+- 节奏：方案→计划→分段执行，每段停下等确认；开场读 README→docs/产品全景.md→CHANGELOG 顶→本文件。
+- 版本规范六步（见 docs/开发规范.md）：版本号→代码→同步全景→自测→CHANGELOG→入口；CHANGELOG 只追加；产品全景=能力唯一正本；闸门 check-docs-sync+pre-commit。
+- 架构基线：后台形态=分层 C（2026-10-11 确认）：运营台自建+内核借壳少改；契约 docs/接口/运营台契约-v1.md。
 
 ## ⚠️ Git 铁律
 - 未提交内容绝不 reset --hard/stash/clean -fd；破坏性测试用临时副本；留底 tools/git-safe.js snapshot。
@@ -35,7 +36,7 @@
 ## Xboard 平台真相
 - ghcr.io/cedar2025/xboard（Octane）：hash 路由、仅 12 页、无钱包页；金额以分计；custom_html 在 #app 外；v2_settings 无 key 列；补列 kc_is_topup / kc_topup_amount / kc_card。
 - 支付渠道 v2_payment；EPay=plugins-core 定制插件；回调 /api/v1/guest/payment/notify/{method}/{uuid}；「订单不存在」误回 success（不动）。
-- 红线：只许 ①保命补丁 ②插件 API ③壳层菜单；admin/kc/* 12 接口（403=存活）。壳页(ops/support)公开壳+数据接口 admin 鉴权，token 取同源 localStorage。
+- 红线：只许 ①保命补丁 ②插件 API ③壳层菜单；admin/kc/* 18 接口（403=存活）。壳页(ops/support)公开壳+数据接口 admin 鉴权，token 取同源 localStorage。
 - 坑：period 键错配；plan/save 不收 show/sell/renew/sort；余额=抵扣池（纯余额单 OrderService->paid('BALANCE-..')）；分销快照 order.open.after（20/10/5）；/invite/save 是 GET；插件 PascalCase 目录/snake code、listen()、路由无 /api 前缀、新增后 octane:reload；order.open.after 5s 超时内 HTTP 2~3s 全吞。
 - 插件配置有 1h Cache::remember（octane:reload 不清）→ 要即时生效的配置键直读 DB（如 card_buy_*）。
 
