@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商品管理 · 体验演示（方案原型 SP-2026-10-13）</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F2;--panel:#FFFFFF;--line:#E4E3DC;--line2:#D3D1C7;
+  --text:#1F2328;--sub:#6B6F76;--dim:#9A9Ea5;
+  --teal:#0F6E56;--teal-deep:#085041;--teal-dark:#04342C;
+  --teal-bg:#E1F5EE;--teal-fill:#9FE1CB;
+  --amber-bg:#FAEEDA;--amber:#854F0B;--amber-line:#EF9F27;
+  --red-bg:#FCEBEB;--red:#A32D2D;--red-line:#F09595;
+  --radius:12px;--radius-sm:8px;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.55}
+.app{display:flex;min-height:100vh}
+.sidebar{width:204px;flex:0 0 204px;background:#FBFBF9;border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:6px}
+.brand{font-size:14px;font-weight:600;padding:6px 10px 14px;display:flex;align-items:center;gap:8px}
+.brand .dot{width:10px;height:10px;border-radius:3px;background:var(--teal)}
+.brand small{font-weight:400;color:var(--sub);font-size:11px}
+.nav-item{padding:9px 12px;border-radius:var(--radius-sm);color:var(--sub);cursor:default}
+.nav-item.active{background:var(--teal-bg);color:var(--teal-deep);font-weight:600}
+.nav-item.dim{color:var(--dim);font-size:12px}
+.side-foot{margin-top:auto;font-size:11px;color:var(--dim);padding:10px 12px;border-top:1px dashed var(--line2)}
+.main{flex:1;max-width:1140px;padding:22px 30px 60px}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.tabs{display:flex;gap:6px;background:#ECEBE6;padding:4px;border-radius:10px}
+.tab{border:0;background:transparent;padding:7px 16px;border-radius:7px;font-size:13px;color:var(--sub);cursor:pointer;font-family:inherit}
+.tab.active{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.badge{margin-left:auto;font-size:12px;color:var(--teal-deep);background:var(--teal-bg);padding:4px 12px;border-radius:999px}
+.view{display:none}
+.view.active{display:block}
+.page-head{display:flex;align-items:flex-end;gap:12px;margin-bottom:16px}
+.page-head h1{font-size:20px;font-weight:650}
+.page-head p{color:var(--sub);font-size:13px;margin-top:2px}
+.page-head .spacer{flex:1}
+.btn{border:1px solid var(--line2);background:#fff;color:var(--text);padding:8px 16px;border-radius:9px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--teal-deep)}
+.btn.primary:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{border-color:transparent;color:var(--sub)}
+.btn.ghost:hover{color:var(--text);background:#EFEEE9}
+.btn.sm{padding:5px 11px;font-size:12px;border-radius:7px}
+.prod{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;display:flex;align-items:center;gap:18px;transition:box-shadow .15s}
+.prod:hover{box-shadow:0 3px 14px rgba(30,35,40,.06)}
+.prod .info{flex:1;min-width:0}
+.prod .name{font-size:15px;font-weight:620;display:flex;align-items:center;gap:8px}
+.prod .meta{color:var(--sub);font-size:12.5px;margin-top:4px;display:flex;gap:14px;flex-wrap:wrap}
+.prod .price{font-size:19px;font-weight:650;color:var(--text);white-space:nowrap}
+.prod .price small{font-size:12px;color:var(--sub);font-weight:400}
+.prod .acts{display:flex;gap:8px}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.pill.on{background:var(--teal-bg);color:var(--teal-deep)}
+.pill.off{background:#ECEBE6;color:var(--sub)}
+.pill.api{background:var(--amber-bg);color:var(--amber)}
+.pill.warn{background:var(--amber-bg);color:var(--amber)}
+.steps{display:flex;align-items:center;gap:0;margin:6px 0 22px}
+.step-node{display:flex;align-items:center;gap:9px;color:var(--dim)}
+.step-node .bub{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:13px;background:#fff;transition:all .2s}
+.step-node .lb{font-size:13px}
+.step-node.active{color:var(--text)}
+.step-node.active .bub{border-color:var(--teal);background:var(--teal);color:#fff;font-weight:600}
+.step-node.done{color:var(--teal-deep)}
+.step-node.done .bub{border-color:var(--teal);background:var(--teal-bg);color:var(--teal-deep)}
+.step-node.done .bub::after{content:"✓";font-size:13px}
+.step-node.done .bub .n{display:none}
+.step-line{flex:1;height:1.5px;background:var(--line2);margin:0 14px;max-width:80px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:14px}
+.panel h2{font-size:15px;font-weight:650;margin-bottom:4px}
+.panel .subtitle{color:var(--sub);font-size:12.5px;margin-bottom:16px}
+.src-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.src{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;cursor:pointer;transition:all .15s;background:#fff}
+.src:hover{border-color:var(--teal-fill)}
+.src.sel{border-color:var(--teal);background:var(--teal-bg)}
+.src .sn{font-weight:620;font-size:13.5px}
+.src .st{color:var(--sub);font-size:12px;margin-top:3px}
+.src .sc{color:var(--dim);font-size:11.5px;margin-top:6px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field .hint{font-size:11.5px;color:var(--dim);font-weight:400;margin-left:6px}
+.field input[type=text],.field input[type=number],.field select,.field textarea{width:100%;border:1px solid var(--line2);border-radius:var(--radius-sm);padding:9px 12px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--text)}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,86,.12)}
+.field textarea{resize:vertical;min-height:64px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.inline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.money-prefix{display:flex;align-items:center;gap:0}
+.money-prefix span{background:#F1F0EB;border:1px solid var(--line2);border-right:0;border-radius:8px 0 0 8px;padding:9px 11px;color:var(--sub);font-size:13px}
+.money-prefix input{border-radius:0 8px 8px 0 !important}
+.switch{position:relative;width:40px;height:22px;background:var(--line2);border-radius:999px;cursor:pointer;transition:background .15s;flex:0 0 40px}
+.switch::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:3px;left:3px;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch.on{background:var(--teal)}
+.switch.on::after{left:21px}
+.api-block{border:1.5px solid var(--teal-fill);background:#F6FBF9;border-radius:var(--radius);padding:16px 18px;margin:6px 0 14px}
+.api-block .head{display:flex;align-items:center;gap:10px;font-weight:650;font-size:13.5px;color:var(--teal-deep)}
+.radio-row{display:flex;gap:18px;align-items:center;padding-top:2px}
+.radio-row label{display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;font-size:13px}
+.radio-row input{accent-color:var(--teal)}
+.sim{margin-top:14px;border:1px dashed var(--teal-fill);border-radius:var(--radius-sm);padding:12px 14px;background:#fff}
+.sim .line{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--sub)}
+.sim .line b{color:var(--text);font-weight:620}
+.sim .line.hl b{color:var(--teal-deep)}
+.sim .ctrl{margin-top:8px;display:flex;gap:8px}
+.preview-card{border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;background:#fff;position:sticky;top:20px}
+.preview-card .pc-name{font-weight:650;font-size:15px}
+.preview-card .pc-sub{color:var(--sub);font-size:12.5px;margin-top:4px;min-height:18px}
+.preview-card .pc-price{margin-top:12px;font-size:20px;font-weight:680}
+.preview-card .pc-price small{font-size:12px;color:var(--sub);font-weight:400}
+.preview-card .pc-was{color:var(--dim);text-decoration:line-through;font-size:13px;margin-left:8px;font-weight:400}
+.preview-card .pc-btn{margin-top:14px;background:var(--teal);color:#fff;border-radius:9px;text-align:center;padding:9px;font-weight:600;font-size:13.5px}
+.preview-card .pc-tag{display:inline-block;font-size:11px;background:var(--teal-bg);color:var(--teal-deep);border-radius:6px;padding:2px 8px;margin-top:10px}
+.wizard-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.wizard-foot .left{margin-right:auto}
+.success{max-width:520px;margin:60px auto;text-align:center}
+.success .big{width:64px;height:64px;border-radius:50%;background:var(--teal-bg);color:var(--teal);font-size:30px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;animation:pop .35s ease}
+@keyframes pop{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+.success h2{font-size:19px;font-weight:650;margin-bottom:6px}
+.success p{color:var(--sub);font-size:13.5px}
+.success .sum{margin:18px auto;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 18px;text-align:left;font-size:13px;line-height:1.9}
+.api-wrap{display:grid;grid-template-columns:300px 1fr;gap:16px}
+.api-note{background:var(--amber-bg);border:1px solid var(--amber-line);color:var(--amber);border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:14px}
+.ctrl-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.ctrl-card h3{font-size:13.5px;font-weight:650;margin-bottom:10px}
+.ctrl-card .cost{font-size:22px;font-weight:680;color:var(--text)}
+.ctrl-card .cost small{font-size:12px;color:var(--sub);font-weight:400}
+.ctrl-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.console{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.console .c-head{padding:10px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--sub);display:flex;gap:8px;align-items:center;background:#FBFBF9}
+.console .c-body{padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;max-height:560px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.eev{color:var(--teal-deep)}
+.eev.err{color:var(--red)}
+.eq{color:var(--sub)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--teal-fill);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.tag-demo{font-size:10.5px;border:1px solid var(--line2);color:var(--dim);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span>KC 后台<small>演示原型</small></div>
+    <div class="nav-item active">商品管理</div>
+    <div class="nav-item">上游管理</div>
+    <div class="nav-item">权益</div>
+    <div class="nav-item dim">其他技术菜单…</div>
+    <div class="side-foot">演示原型 · 数据为模拟<br>不连接真实系统</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="tabs">
+        <button class="tab active" id="tab-shop" onclick="switchTab('shop')">商品管理（运营视角）</button>
+        <button class="tab" id="tab-api" onclick="switchTab('api')">下游 API 演示（客户视角）</button>
+      </div>
+      <span class="badge">方案原型 · SP-2026-10-13</span>
+    </div>
+
+    <section class="view active" id="view-shop">
+      <div id="pane-list">
+        <div class="page-head">
+          <div>
+            <h1>商品管理</h1>
+            <p>商城卖多少钱、API 加多少价 —— 都在这里配，保存即同步商城</p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn primary" onclick="startCreate()">+ 新建商品</button>
+        </div>
+        <div id="prod-list"></div>
+      </div>
+
+      <div id="pane-wizard" style="display:none">
+        <div class="page-head">
+          <div>
+            <h1 id="wiz-title">新建商品</h1>
+            <p id="wiz-sub">3 步完成，不用记任何编号</p>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn ghost" onclick="backToList()">← 返回列表</button>
+        </div>
+
+        <div class="steps">
+          <div class="step-node active" id="sn1"><span class="bub"><span class="n">1</span></span><span class="lb">选货源</span></div>
+          <div class="step-line"></div>
+          <div class="step-node" id="sn2"><span class="bub"><span class="n">2</span></span><span class="lb">定价</span></div>
+          <div class="step-line"></div>
+          <div class="step-node" id="sn3"><span class="bub"><span class="n">3</span></span><span class="lb">上架信息</span></div>
+        </div>
+
+        <div id="step1" class="panel">
+          <h2>① 选货源</h2>
+          <p class="subtitle">从上游目录挑一个商品 —— 点卡片即可，不需要输任何编号</p>
+          <div class="src-grid" id="src-grid"></div>
+          <div class="wizard-foot">
+            <button class="btn primary" id="s1-next" onclick="goStep(2)" disabled>下一步 →</button>
+          </div>
+        </div>
+
+        <div id="step2" class="panel" style="display:none">
+          <h2>② 定价</h2>
+          <p class="subtitle">商城填「卖多少」；要开 API 分销，再填「加多少」—— 两个价格互不影响</p>
+          <div class="row2" style="grid-template-columns:1.25fr 1fr;align-items:start">
+            <div>
+              <div class="field">
+                <label>计费周期</label>
+                <select id="f-period"><option>月付</option><option>一次性</option></select>
+              </div>
+              <div class="field">
+                <label>商城零售价（固定）<span class="hint">客户实际支付的价，不随上游成本波动</span></label>
+                <div class="money-prefix"><span>$</span><input type="number" id="f-retail" placeholder="15.00" step="0.01" oninput="renderSim()"></div>
+              </div>
+              <div class="field">
+                <label>划线原价<span class="hint">选填，商城显示删除线</span></label>
+                <div class="money-prefix"><span>$</span><input type="number" id="f-was" placeholder="20.00" step="0.01" oninput="renderPreview()"></div>
+              </div>
+
+              <div class="api-block">
+                <div class="head"><span class="switch" id="api-switch" onclick="toggleApi()"></span>API 分销定价 <span class="hint" style="font-weight:400">开启后，下游调 API 拿到「成本 + 加价」的报价</span></div>
+                <div id="api-params" style="display:none;margin-top:14px">
+                  <div class="field">
+                    <label>加价方式</label>
+                    <div class="radio-row">
+                      <label><input type="radio" name="mk" value="percent" checked onchange="renderSim()">按比例：成本 × (1 + 15%)</label>
+                      <label><input type="radio" name="mk" value="fixed" onchange="renderSim()">按固定额：成本 + $2</label>
+                    </div>
+                  </div>
+                  <div class="row2">
+                    <div class="field"><label>加价幅度</label><input type="number" id="f-mkv" value="15" oninput="renderSim()"></div>
+                    <div class="field"><label>保护价 <span class="hint">选填</span></label><input type="number" id="f-floor" placeholder="不低于" oninput="renderSim()"></div>
+                  </div>
+                  <div class="field"><label>取整</label>
+                    <select id="f-round" onchange="renderSim()"><option value="0.01">不取整（$11.50）</option><option value="0.1">到 0.1</option><option value="0.5">到 0.5</option><option value="1">到 1</option></select>
+                  </div>
+                  <div class="sim" id="sim"></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="preview-card" id="pc2"></div>
+            </div>
+          </div>
+          <div class="wizard-foot">
+            <button class="btn ghost left" onclick="goStep(1)">← 上一步</button>
+            <button class="btn primary" onclick="goStep(3)">下一步 →</button>
+          </div>
+        </div>
+
+        <div id="step3" class="panel" style="display:none">
+          <h2>③ 上架信息</h2>
+          <p class="subtitle">名称与卖点已预填，确认即可上架</p>
+          <div class="row2" style="grid-template-columns:1.25fr 1fr;align-items:start">
+            <div>
+              <div class="field"><label>商品名称</label><input type="text" id="f-name" placeholder="如：ChatGPT Plus 一个月" oninput="renderPreview()"></div>
+              <div class="field"><label>一句话卖点</label><textarea id="f-sell" oninput="renderPreview()">官方渠道直充，支付后自动发放卡密</textarea></div>
+              <div class="field"><label>分类标签</label>
+                <select id="f-cat"><option>代充</option><option>充值</option><option>权益</option></select>
+              </div>
+              <div class="field"><label>上架状态</label>
+                <div class="radio-row">
+                  <label><input type="radio" name="live" value="1" checked>立即上架</label>
+                  <label><input type="radio" name="live" value="0">先存草稿</label>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="preview-card" id="pc3"></div>
+            </div>
+          </div>
+          <div class="wizard-foot">
+            <button class="btn ghost left" onclick="goStep(2)">← 上一步</button>
+            <button class="btn primary" id="save-btn" onclick="saveProduct()">保存并上架</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="pane-success" style="display:none">
+        <div class="success">
+          <div class="big">✓</div>
+          <h2 id="ok-title">已上架并同步到商城</h2>
+          <p>商城立即可见可买 · 全程 2 分钟 · 不用碰第二个后台</p>
+          <div class="sum" id="ok-sum"></div>
+          <button class="btn primary" onclick="backToList()">回到商品列表</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-api">
+      <div class="page-head">
+        <div>
+          <h1>下游 API 演示</h1>
+          <p>模拟下游客户接入：目录 → 报价 → 下单 → 拿卡密（价格随上游成本浮动）</p>
+        </div>
+      </div>
+      <div class="api-note">体验建议：先点「重新报价」→ 再点「上游涨价 +8%」→ 直接「下单」会收到 <b>409 价格已变动</b>（需重新报价）→ 再「重新报价」→「下单」成功拿到卡密。</div>
+      <div class="api-wrap">
+        <div class="ctrl-card">
+          <h3>上游成本（模拟）</h3>
+          <div class="cost">$<span id="api-cost">10.00</span> <small>/ ChatGPT Plus 进货价</small></div>
+          <div class="ctrl-list">
+            <button class="btn sm" onclick="apiBump(8)">↑ 上游涨价 +8%</button>
+            <button class="btn sm" onclick="apiBump(-8)">↓ 上游降价 -8%</button>
+            <button class="btn sm" onclick="apiResetCost()">重置成本 $10.00</button>
+          </div>
+          <h3 style="margin-top:18px">下游操作（带签名）</h3>
+          <div class="ctrl-list">
+            <button class="btn sm" onclick="apiCatalog()">1 · 查询目录 catalog</button>
+            <button class="btn sm" onclick="apiQuote()">2 · 报价 quote（锁价 60s）</button>
+            <button class="btn sm" onclick="apiOrder()">3 · 下单 orders（拿卡密）</button>
+          </div>
+        </div>
+        <div class="console">
+          <div class="c-head"><span>请求 / 响应日志</span><span style="margin-left:auto" id="balance-hint">下游余额：$500.00</span></div>
+          <div class="c-body" id="api-log"><span class="eq">等待操作… 先点左侧「1 · 查询目录」</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var SOURCES = [
+  { key:'go', name:'ChatGPT Go', type:'订阅 · 月付', cost:6 },
+  { key:'plus', name:'ChatGPT Plus', type:'订阅 · 月付', cost:10 },
+  { key:'pro_5x', name:'ChatGPT Pro (5x)', type:'订阅 · 月付', cost:18 },
+  { key:'pro_20x', name:'ChatGPT Pro (20x)', type:'订阅 · 月付', cost:52 },
+  { key:'pro_50x', name:'ChatGPT Pro (50x)', type:'订阅 · 月付', cost:120 },
+  { key:'credit1000', name:'Codex Credits 1,000', type:'积分 · 一次性', cost:8 },
+  { key:'credit5000', name:'Codex Credits 5,000', type:'积分 · 一次性', cost:36 },
+  { key:'credit25000', name:'Codex Credits 25,000', type:'积分 · 一次性', cost:170 }
+];
+var PRODUCTS = [
+  { id:1, name:'ChatGPT Plus 一个月', price:15, unit:'/月', status:'在售中', src:'ChatGPT Plus（月付）· ZovoCard', srcKey:'plus', api:true, sell:'官方渠道直充，支付后自动发放卡密', cost:10, sales:'今日 3 单 / 累计 32 单' },
+  { id:2, name:'余额充值 $14', price:14, unit:'起', status:'在售中', src:'未绑货源', srcKey:null, api:false, sell:'余额充值，到账即用', cost:0, sales:'今日 0 单 / 累计 0 单' },
+  { id:3, name:'ChatGPT Pro 5x 一个月', price:49, unit:'/月', status:'已下架', src:'ChatGPT Pro (5x) · ZovoCard', srcKey:'pro_5x', api:true, sell:'Pro 5x 官方直充', cost:18, sales:'—' }
+];
+var wiz = { edit:false, editId:null, step:1, src:null, cost:10, api:false, markupType:'percent', simCost:10 };
+var apiState = { cost:10, lastQuote:null, balance:500, orderSeq:0 };
+
+function $(s){ return document.querySelector(s); }
+function money(n){ return '$' + Number(n).toFixed(2); }
+function calcQuote(cost){
+  var v = parseFloat($('#f-mkv').value || '0');
+  var q = wiz.markupType === 'percent' ? cost * (1 + v/100) : cost + v;
+  var floor = parseFloat($('#f-floor').value || '0');
+  if (floor && q < floor) q = floor;
+  var r = parseFloat($('#f-round') ? $('#f-round').value : '0.01');
+  if (r > 0.011) q = Math.ceil(q / r) * r;
+  return Math.round(q * 100) / 100;
+}
+function toast(msg){
+  var t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+}
+function switchTab(name){
+  $('#tab-shop').classList.toggle('active', name === 'shop');
+  $('#tab-api').classList.toggle('active', name === 'api');
+  $('#view-shop').classList.toggle('active', name === 'shop');
+  $('#view-api').classList.toggle('active', name === 'api');
+}
+
+function renderList(){
+  var html = '';
+  PRODUCTS.forEach(function(p){
+    html += '<div class="prod">'
+      + '<div class="info"><div class="name">' + p.name
+      + '<span class="pill ' + (p.status === '在售中' ? 'on' : 'off') + '">' + p.status + '</span>'
+      + (p.api ? '<span class="pill api">API 已开</span>' : '')
+      + '</div>'
+      + '<div class="meta"><span>货源：' + p.src + (p.srcKey ? '' : ' <b style="color:var(--amber)">（建议补绑）</b>') + '</span><span>' + p.sales + '</span>'
+      + (p.api && p.cost ? '<span>成本 ' + money(p.cost) + ' → 本商品 API 报价 ' + money(p.cost * 1.15) + '</span>' : '')
+      + '</div></div>'
+      + '<div class="price">' + money(p.price) + '<small>' + p.unit + '</small></div>'
+      + '<div class="acts">'
+      + '<button class="btn sm" onclick="editProduct(' + p.id + ')">编辑</button>'
+      + '<button class="btn sm" onclick="toast(\'已复制商品（演示）\')">复制</button>'
+      + '<button class="btn sm" onclick="toggleStatus(' + p.id + ')">' + (p.status === '在售中' ? '下架' : '上架') + '</button>'
+      + '</div></div>';
+  });
+  $('#prod-list').innerHTML = html;
+}
+function toggleStatus(id){
+  var p = PRODUCTS.find(function(x){ return x.id === id; });
+  p.status = p.status === '在售中' ? '已下架' : '在售中';
+  renderList(); toast(p.name + ' 已' + (p.status === '在售中' ? '上架（商城立即可见）' : '下架（商城立即隐藏）'));
+}
+
+function renderSources(){
+  var html = '';
+  SOURCES.forEach(function(s){
+    html += '<div class="src" data-key="' + s.key + '" onclick="pickSrc(\'' + s.key + '\')">'
+      + '<div class="sn">' + s.name + '</div>'
+      + '<div class="st">' + s.type + '</div>'
+      + '<div class="sc">货源：ZovoCard · 成本参考 ' + money(s.cost) + '</div></div>';
+  });
+  $('#src-grid').innerHTML = html;
+  if (wiz.src){
+    document.querySelectorAll('.src').forEach(function(el){
+      el.classList.toggle('sel', el.getAttribute('data-key') === wiz.src.key);
+    });
+  }
+}
+function pickSrc(key){
+  wiz.src = SOURCES.find(function(s){ return s.key === key; });
+  wiz.cost = wiz.src.cost; wiz.simCost = wiz.src.cost;
+  document.querySelectorAll('.src').forEach(function(el){
+    el.classList.toggle('sel', el.getAttribute('data-key') === key);
+  });
+  $('#s1-next').disabled = false;
+  if (!$('#f-name').value || !wiz.edit) {
+    $('#f-name').value = wiz.src.name + (wiz.src.type.indexOf('月付') >= 0 ? ' 一个月' : '');
+  }
+  $('#f-period').value = wiz.src.type.indexOf('月付') >= 0 ? '月付' : '一次性';
+}
+
+function startCreate(){
+  wiz = { edit:false, editId:null, step:1, src:null, cost:10, api:false, markupType:'percent', simCost:10 };
+  $('#wiz-title').textContent = '新建商品';
+  $('#wiz-sub').textContent = '3 步完成，不用记任何编号';
+  $('#save-btn').textContent = '保存并上架';
+  $('#f-retail').value = ''; $('#f-was').value = ''; $('#f-name').value = '';
+  $('#f-sell').value = '官方渠道直充，支付后自动发放卡密';
+  $('#api-switch').classList.remove('on'); $('#api-params').style.display = 'none';
+  document.querySelector('input[name=mk][value=percent]').checked = true;
+  $('#f-mkv').value = '15'; $('#f-floor').value = ''; $('#f-round').value = '0.01';
+  $('#pane-list').style.display = 'none'; $('#pane-success').style.display = 'none';
+  $('#pane-wizard').style.display = 'block';
+  renderSources(); goStep(1);
+}
+function editProduct(id){
+  var p = PRODUCTS.find(function(x){ return x.id === id; });
+  wiz = { edit:true, editId:id, step:2, src:null, cost:p.cost, api:p.api, markupType:'percent', simCost:p.cost };
+  if (p.srcKey){ wiz.src = SOURCES.find(function(s){ return s.key === p.srcKey; }); }
+  $('#wiz-title').textContent = '编辑商品 · ' + p.name;
+  $('#wiz-sub').textContent = '改完直接保存 —— 商城与 API 报价即时生效';
+  $('#save-btn').textContent = '保存并同步商城';
+  $('#f-retail').value = p.price; $('#f-was').value = '';
+  $('#f-name').value = p.name; $('#f-sell').value = p.sell; $('#f-cat').value = '代充';
+  $('#api-switch').classList.toggle('on', p.api);
+  $('#api-params').style.display = p.api ? 'block' : 'none';
+  $('#pane-list').style.display = 'none'; $('#pane-success').style.display = 'none';
+  $('#pane-wizard').style.display = 'block';
+  renderSources(); goStep(2); renderSim(); renderPreview();
+}
+function goStep(n){
+  wiz.step = n;
+  var ok1 = !!wiz.src;
+  if (n === 2 && !ok1){ toast('请先在第 1 步选择一个货源'); return; }
+  if (n === 3){
+    var r = parseFloat($('#f-retail').value || '0');
+    if (!r){ toast('请先填写商城零售价'); return; }
+    if (!$('#f-name').value){ toast('请填写商品名称'); return; }
+  }
+  $('#step1').style.display = n === 1 ? 'block' : 'none';
+  $('#step2').style.display = n === 2 ? 'block' : 'none';
+  $('#step3').style.display = n === 3 ? 'block' : 'none';
+  [1,2,3].forEach(function(i){
+    var el = $('#sn' + i);
+    el.classList.toggle('active', i === n);
+    el.classList.toggle('done', i < n);
+  });
+  if (n === 2){ renderSim(); renderPreview(); }
+  if (n === 3){ renderPreview(); }
+}
+function backToList(){
+  $('#pane-wizard').style.display = 'none'; $('#pane-success').style.display = 'none';
+  $('#pane-list').style.display = 'block';
+  renderList();
+}
+function toggleApi(){
+  wiz.api = !wiz.api;
+  $('#api-switch').classList.toggle('on', wiz.api);
+  $('#api-params').style.display = wiz.api ? 'block' : 'none';
+  renderSim();
+}
+function renderSim(){
+  if (!wiz.api){ return; }
+  var mk = document.querySelector('input[name=mk]:checked').value;
+  wiz.markupType = mk;
+  var label = $('#f-mkv').previousElementSibling ? null : null;
+  var base = calcQuote(wiz.cost);
+  var up = calcQuote(wiz.cost * 1.1);
+  var dn = calcQuote(wiz.cost * 0.9);
+  $('#sim').innerHTML =
+    '<div class="line"><span>当前成本 ' + money(wiz.cost) + '</span><span>对外报价 <b>' + money(base) + '</b></span></div>'
+    + '<div class="line"><span>成本 +10% ' + money(wiz.cost * 1.1) + '</span><span>报价 <b>' + money(up) + '</b></span></div>'
+    + '<div class="line"><span>成本 -10% ' + money(wiz.cost * 0.9) + '</span><span>报价 <b>' + money(dn) + '</b></span></div>'
+    + '<div class="ctrl"><button class="btn sm" onclick="simBump(10)">模拟上游涨价 +10%</button><button class="btn sm" onclick="simBump(-10)">降价 -10%</button><button class="btn sm" onclick="simBump(0)">重置</button></div>';
+  renderPreview();
+}
+function simBump(pct){
+  if (pct === 0){ wiz.simCost = wiz.cost; }
+  else { wiz.simCost = wiz.simCost * (1 + pct/100); }
+  var base = calcQuote(wiz.cost);
+  var now = calcQuote(wiz.simCost);
+  $('#sim').innerHTML =
+    '<div class="line"><span>基准成本 ' + money(wiz.cost) + '</span><span>报价 <b>' + money(base) + '</b></span></div>'
+    + '<div class="line hl"><span>当前模拟成本 ' + money(wiz.simCost) + '</span><span>报价 <b>' + money(now) + '</b></span></div>'
+    + '<div class="line"><span style="color:var(--dim)">成本一变，API 报价自动跟着变；商城零售价不受影响</span><span></span></div>'
+    + '<div class="ctrl"><button class="btn sm" onclick="simBump(10)">再涨 +10%</button><button class="btn sm" onclick="simBump(-10)">降 -10%</button><button class="btn sm" onclick="renderSim()">重置</button></div>';
+}
+function renderPreview(){
+  [2,3].forEach(function(){
+    var retail = parseFloat($('#f-retail').value || '0');
+    var was = parseFloat($('#f-was').value || '0');
+    var name = $('#f-name').value || (wiz.src ? wiz.src.name : '商品名称');
+    var sell = $('#f-sell').value || '一句话卖点';
+    var unit = $('#f-period') && $('#f-period').value === '一次性' ? '' : '/月';
+    var html = '<div class="pc-name">' + name.replace(/</g,'&lt;') + '</div>'
+      + '<div class="pc-sub">' + sell.replace(/</g,'&lt;') + '</div>'
+      + '<div class="pc-price">' + (retail ? money(retail) + '<small>' + unit + '</small>' : '<span style="color:var(--dim);font-size:14px">价格待填</span>')
+      + (was && retail && was > retail ? '<span class="pc-was">' + money(was) + '</span>' : '') + '</div>'
+      + '<div class="pc-btn">立即办理</div>'
+      + (wiz.api ? '<div class="pc-tag">API 报价 ' + money(calcQuote(wiz.cost)) + ' 起（随成本浮动）</div>' : '')
+      + '<div style="font-size:11px;color:var(--dim);margin-top:8px">商城卡片实时预览</div>';
+    var el = $('#pc' + _);
+  });
+  renderPreviewInner();
+}
+function renderPreviewInner(){
+  var retail = parseFloat($('#f-retail').value || '0');
+  var was = parseFloat($('#f-was').value || '0');
+  var name = $('#f-name').value || (wiz.src ? wiz.src.name : '商品名称');
+  var sell = $('#f-sell').value || '一句话卖点';
+  var unit = $('#f-period').value === '一次性' ? '' : '/月';
+  var html = '<div class="pc-name">' + name.replace(/</g,'&lt;') + '</div>'
+    + '<div class="pc-sub">' + sell.replace(/</g,'&lt;') + '</div>'
+    + '<div class="pc-price">' + (retail ? money(retail) + '<small>' + unit + '</small>' : '<span style="color:var(--dim);font-size:14px">价格待填</span>')
+    + (was && retail && was > retail ? '<span class="pc-was">' + money(was) + '</span>' : '') + '</div>'
+    + '<div class="pc-btn">立即办理</div>'
+    + (wiz.api ? '<div class="pc-tag">API 报价 ' + money(calcQuote(wiz.cost)) + ' 起（随成本浮动）</div>' : '')
+    + '<div style="font-size:11px;color:var(--dim);margin-top:8px">商城卡片实时预览</div>';
+  var p2 = $('#pc2'); var p3 = $('#pc3');
+  if (p2) p2.innerHTML = html;
+  if (p3) p3.innerHTML = html;
+}
+function saveProduct(){
+  var retail = parseFloat($('#f-retail').value || '0');
+  if (!retail){ toast('请填写商城零售价'); return; }
+  var name = $('#f-name').value;
+  var live = document.querySelector('input[name=live]:checked').value === '1';
+  if (wiz.edit){
+    var p = PRODUCTS.find(function(x){ return x.id === wiz.editId; });
+    p.price = retail; p.name = name; p.api = wiz.api; p.cost = wiz.cost;
+    p.sell = $('#f-sell').value;
+    toast('已保存 · 商城与 API 报价即时生效');
+    backToList(); return;
+  }
+  var id = Math.max.apply(null, PRODUCTS.map(function(x){ return x.id; })) + 1;
+  PRODUCTS.unshift({
+    id:id, name:name, price:retail, unit: $('#f-period').value === '一次性' ? '起' : '/月',
+    status: live ? '在售中' : '已下架',
+    src: wiz.src.name + '（' + ($('#f-period').value === '一次性' ? '一次性' : '月付') + '）· ZovoCard',
+    srcKey: wiz.src.key, api: wiz.api, sell: $('#f-sell').value, cost: wiz.cost,
+    sales:'今日 0 单 / 累计 0 单'
+  });
+  $('#ok-sum').innerHTML =
+    '商品：<b>' + name + '</b><br>'
+    + '商城零售价（固定）：<b>' + money(retail) + ($('#f-period').value === '一次性' ? '' : '/月') + '</b><br>'
+    + 'API 分销：<b>' + (wiz.api ? '已开 · 当前报价 ' + money(calcQuote(wiz.cost)) + '（成本 ' + money(wiz.cost) + ' + 加价）' : '未开（仅商城售卖）') + '</b><br>'
+    + '状态：<b>' + (live ? '已上架 · 商城立即可见可买' : '草稿（未上架）') + '</b>';
+  $('#pane-wizard').style.display = 'none';
+  $('#pane-success').style.display = 'block';
+}
+
+function apiNow(){ return new Date().toISOString().slice(11, 19); }
+function apiLog(kind, html){
+  var el = $('#api-log');
+  if (el.getAttribute('data-init') !== '1'){ el.innerHTML = ''; el.setAttribute('data-init', '1'); }
+  el.innerHTML += '<div style="margin-bottom:10px"><span class="' + (kind === 'err' ? 'eev err' : 'eq') + '">[' + apiNow() + '] ' + (kind === 'err' ? '✗ 错误' : kind === 'req' ? '→ 请求' : '← 响应') + '</span>\n' + html + '</div>';
+  el.scrollTop = el.scrollHeight;
+}
+function apiBalanceRender(){ $('#balance-hint').textContent = '下游余额：' + money(apiState.balance); }
+function apiCatalog(){
+  var items = PRODUCTS.filter(function(p){ return p.status === '在售中' && p.srcKey && p.cost; }).map(function(p){
+    return { sku: 'xplan_' + p.id, name: p.name, price: Number((p.cost * 1.15).toFixed(2)), currency: 'USD', available: true };
+  });
+  apiLog('req', 'GET /api/open/v1/catalog  <span class="eq">X-Api-Key: ak_live_•••</span>');
+  apiLog('res', JSON.stringify({ success: true, data: items }, null, 2));
+}
+function apiQuote(){
+  var cost = apiState.cost;
+  var price = Math.round(cost * 1.15 * 100) / 100;
+  var qid = 'q_' + Math.random().toString(36).slice(2, 10);
+  apiState.lastQuote = { qid:qid, price:price, costAtQuote:cost, ttl:60, ts:Date.now() };
+  apiLog('req', 'POST /api/open/v1/quote  <span class="eq">{ "sku": "xplan_1", "qty": 1 }</span>');
+  apiLog('res', JSON.stringify({
+    success: true,
+    data: { quote_id: qid, unit_price: price, total: price, currency: 'USD', expires_in: 60, cost_basis: cost }
+  }, null, 2));
+}
+function apiOrder(){
+  if (!apiState.lastQuote){
+    apiLog('req', 'POST /api/open/v1/orders');
+    apiLog('err', JSON.stringify({ success:false, code:'QUOTE_REQUIRED', message:'请先调用 quote 获取报价' }, null, 2));
+    return;
+  }
+  var q = apiState.lastQuote;
+  var drift = Math.abs(apiState.cost - q.costAtQuote) / q.costAtQuote;
+  apiLog('req', 'POST /api/open/v1/orders  <span class="eq">{ "quote_id": "' + q.qid + '", "client_order_no": "PO-2026-0001" }</span>');
+  if (drift > 0.03){
+    apiLog('err', JSON.stringify({
+      success: false, code: 'PRICE_CHANGED',
+      message: '价格已更新，请重新报价（成本自报价后变动 ' + (drift * 100).toFixed(1) + '% > 3%）',
+      data: { new_unit_price: Math.round(apiState.cost * 1.15 * 100) / 100 }
+    }, null, 2));
+    return;
+  }
+  if (apiState.balance < q.price){
+    apiLog('err', JSON.stringify({ success:false, code:'INSUFFICIENT_BALANCE', message:'下游余额不足' }, null, 2));
+    return;
+  }
+  apiState.balance -= q.price; apiBalanceRender(); apiState.orderSeq++;
+  var cdk = 'KC-' + Math.random().toString(36).slice(2, 12).toUpperCase();
+  apiLog('res', JSON.stringify({
+    success: true,
+    data: { order_id: 'api_ord_' + (1000 + apiState.orderSeq), status: 'delivered', amount: q.price, currency: 'USD', cdk: cdk, delivered_at: new Date().toISOString() }
+  }, null, 2));
+  apiState.lastQuote = null;
+}
+function apiBump(pct){
+  apiState.cost = Math.round(apiState.cost * (1 + pct/100) * 100) / 100;
+  $('#api-cost').textContent = apiState.cost.toFixed(2);
+  apiLog('req', '<span class="eq">（服务端事件：上游价格同步）成本 ' + (pct > 0 ? '↑' : '↓') + ' 至 ' + money(apiState.cost) + '</span>');
+  if (apiState.lastQuote){
+    apiLog('res', '<span class="eq">该商品未过期报价（' + money(apiState.lastQuote.price) + '）现在处于「成本已变动」状态：直接下单将返回 409</span>');
+  }
+}
+function apiResetCost(){
+  apiState.cost = 10; $('#api-cost').textContent = '10.00';
+  apiState.lastQuote = null;
+  apiLog('req', '<span class="eq">（模拟重置）成本回到 $10.00</span>');
+}
+
+renderList();
+apiBalanceRender();
+</script>
+</body>
+</html>
