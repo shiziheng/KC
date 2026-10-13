@@ -312,7 +312,7 @@ process.on('exit', () => cleanupProcesses());
 let storeReadyPromise = null;
 
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '15mb';
-app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(express.json({ limit: JSON_BODY_LIMIT, verify: function (req, res, buf) { try { req.rawBody = buf; } catch (e) { /* ignore */ } } }));
 
 let cachedAdminPaths = null;
 
@@ -5585,6 +5585,335 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
         }
 
         res.json({ success: true, message: '已保存并同步商城', data: { plan_id: planId } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// ─── v1.25.0 · 对外分销 API + API 客户管理（UX-5/6，SP-2026-10-13-API-v1.0.0 精简执行）──
+// 对外面：/api/open/v1/*（下游客户，API Key + HMAC 签名 + 时间戳 + 限流 + 预充值余额）
+// 管理面：/api/admin/api-clients/*（运营，requireSecondaryAuth）
+// 履约：复用 store.issueCdkByRef（Zovo Mock 发卡），ref=内部单号；下单同步返回卡密。
+
+const OPEN_API_RATE_WINDOW_MS = 60 * 1000;
+const OPEN_API_DEFAULT_LIMIT = Number(process.env.OPEN_API_RATE_LIMIT || 120);
+const OPEN_API_TS_WINDOW_SEC = 300;
+const OPEN_API_QUOTE_TTL_MS = 60 * 1000;
+const OPEN_API_PRICE_DRIFT_TOLERANCE = 0.03;
+const openApiRateBuckets = new Map(); // clientId -> { windowStart, count }
+
+function openApiSign(secret, method, path, timestamp, rawBody) {
+    const bodyHash = crypto.createHash('sha256').update(rawBody || Buffer.alloc(0)).digest('hex');
+    const canonical = String(method).toUpperCase() + '\n' + path + '\n' + String(timestamp) + '\n' + bodyHash;
+    return crypto.createHmac('sha256', String(secret)).update(canonical).digest('hex');
+}
+function openApiSafeEq(a, b) {
+    const ba = Buffer.from(String(a || ''));
+    const bb = Buffer.from(String(b || ''));
+    if (ba.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ba, bb);
+}
+async function requireOpenApiAuth(req, res, next) {
+    try {
+        await ensureStoreReady();
+        const key = String(req.headers['x-api-key'] || '').trim();
+        const ts = String(req.headers['x-timestamp'] || '').trim();
+        const sig = String(req.headers['x-signature'] || '').trim().toLowerCase();
+        if (!key || !ts || !sig) {
+            return res.status(401).json({ success: false, code: 'INVALID_SIGNATURE', message: '缺少鉴权头（X-Api-Key / X-Timestamp / X-Signature）' });
+        }
+        const tsNum = Number(ts);
+        if (!Number.isFinite(tsNum) || Math.abs(Math.floor(Date.now() / 1000) - tsNum) > OPEN_API_TS_WINDOW_SEC) {
+            return res.status(401).json({ success: false, code: 'TIMESTAMP_EXPIRED', message: '时间戳超出 5 分钟窗口（防重放）' });
+        }
+        const rows = await store.runQuery('SELECT * FROM kc_api_clients WHERE api_key=? LIMIT 1', [key]);
+        if (!rows.length) {
+            return res.status(401).json({ success: false, code: 'INVALID_KEY', message: 'API Key 无效' });
+        }
+        const client = rows[0];
+        if (client.status !== 'active') {
+            return res.status(403).json({ success: false, code: 'CLIENT_DISABLED', message: '客户已停用' });
+        }
+        const expect = openApiSign(client.api_secret, req.method, req.path, ts, req.rawBody);
+        if (!openApiSafeEq(expect, sig)) {
+            return res.status(401).json({ success: false, code: 'INVALID_SIGNATURE', message: '签名校验失败' });
+        }
+        const nowMs = Date.now();
+        let bucket = openApiRateBuckets.get(client.id);
+        if (!bucket || nowMs - bucket.windowStart > OPEN_API_RATE_WINDOW_MS) {
+            bucket = { windowStart: nowMs, count: 0 };
+            openApiRateBuckets.set(client.id, bucket);
+        }
+        bucket.count += 1;
+        const limit = Number(client.rate_limit) > 0 ? Number(client.rate_limit) : OPEN_API_DEFAULT_LIMIT;
+        if (bucket.count > limit) {
+            return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '请求过于频繁（' + limit + ' 次/分钟）' });
+        }
+        req.openApiClient = client;
+        next();
+    } catch (error) {
+        res.status(500).json({ success: false, code: 'INTERNAL', message: error.message });
+    }
+}
+
+function openApiQuotePrice(costCents, markupPercent) {
+    const pct = Number(markupPercent) || 0;
+    return Math.max(0, Math.round(Number(costCents) || 0) * (100 + pct) / 100);
+}
+async function openApiFindSku(sku) {
+    const rows = await store.runQuery(
+        'SELECT k.*, u.upstream_price_cents FROM kc_plans k ' +
+        'LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
+        'WHERE k.code = ? LIMIT 1', [sku]
+    );
+    return rows.length ? rows[0] : null;
+}
+function openApiSkuAvailable(plan, costCents) {
+    return Number(plan.api_enabled) === 1 &&
+        !!plan.upstream_plan_key &&
+        PRODUCT_UPSTREAM_KEY_WHITELIST.indexOf(String(plan.upstream_plan_key)) >= 0 &&
+        (Number(costCents) || 0) > 0;
+}
+function openApiUsd(cents) { return Number(((Number(cents) || 0) / 100).toFixed(2)); }
+
+// 1) 商品目录（含当前报价）
+app.get('/api/open/v1/catalog', requireOpenApiAuth, async (req, res) => {
+    try {
+        const rows = await store.runQuery(
+            'SELECT k.code, k.display_name, k.upstream_code, k.upstream_plan_key, k.api_enabled, k.api_markup_percent, u.upstream_price_cents ' +
+            'FROM kc_plans k LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
+            'WHERE k.api_enabled = 1 ORDER BY k.id'
+        );
+        const items = rows.map(function (r) {
+            const cost = Number(r.upstream_price_cents) || 0;
+            const avail = openApiSkuAvailable(r, cost);
+            return {
+                sku: r.code,
+                name: r.display_name,
+                currency: 'USD',
+                deliver: 'card',
+                available: avail,
+                price: avail ? openApiUsd(openApiQuotePrice(cost, r.api_markup_percent)) : null
+            };
+        });
+        res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 2) 报价（锁价 60 秒）
+app.post('/api/open/v1/quote', requireOpenApiAuth, async (req, res) => {
+    try {
+        const sku = String((req.body || {}).sku || '').trim();
+        const qty = Math.max(1, Math.min(100, parseInt((req.body || {}).qty, 10) || 1));
+        if (!sku) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 sku' });
+        const plan = await openApiFindSku(sku);
+        if (!plan) return res.status(404).json({ success: false, code: 'SKU_NOT_FOUND', message: '商品不存在：' + sku });
+        const cost = Number(plan.upstream_price_cents) || 0;
+        if (!openApiSkuAvailable(plan, cost)) {
+            return res.status(409).json({ success: false, code: 'SKU_UNAVAILABLE', message: '该商品当前不可售（未开启 API 分销或上游成本未配置）' });
+        }
+        const unit = openApiQuotePrice(cost, plan.api_markup_percent);
+        const total = unit * qty;
+        const quoteId = 'q_' + crypto.randomBytes(8).toString('hex');
+        const expiresAt = new Date(Date.now() + OPEN_API_QUOTE_TTL_MS);
+        await store.runExecute(
+            'INSERT INTO kc_api_quote_logs (client_id, quote_id, sku_code, cost_cents, markup_percent, unit_price_cents, qty, total_cents, expires_at) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [req.openApiClient.id, quoteId, sku, cost, Number(plan.api_markup_percent) || 0, unit, qty, total, expiresAt]
+        );
+        res.json({
+            success: true,
+            data: {
+                quote_id: quoteId, sku: sku, qty: qty,
+                unit_price: openApiUsd(unit), total: openApiUsd(total), currency: 'USD',
+                cost_basis: openApiUsd(cost),
+                expires_at: expiresAt.toISOString(), expires_in: 60
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 3) 下单（幂等 + 锁价校验 + 余额原子扣减 + 履约同步发卡）
+app.post('/api/open/v1/orders', requireOpenApiAuth, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const clientOrderNo = String(b.client_order_no || '').trim();
+        const quoteId = String(b.quote_id || '').trim();
+        if (!clientOrderNo || clientOrderNo.length > 64) {
+            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'client_order_no 必填且 ≤64 字符（幂等键）' });
+        }
+        if (!quoteId) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 quote_id' });
+
+        // 幂等：同客户同单号直接回原单
+        const dup = await store.runQuery('SELECT * FROM kc_api_orders WHERE client_id=? AND client_order_no=? LIMIT 1', [req.openApiClient.id, clientOrderNo]);
+        if (dup.length) {
+            const d = dup[0];
+            return res.json({
+                success: true,
+                data: { order_id: d.our_order_no, status: d.status, amount: openApiUsd(d.amount_cents), currency: 'USD', cdk: d.cdk || null, reused: true }
+            });
+        }
+
+        const qRows = await store.runQuery('SELECT * FROM kc_api_quote_logs WHERE quote_id=? AND client_id=? LIMIT 1', [quoteId, req.openApiClient.id]);
+        if (!qRows.length) return res.status(404).json({ success: false, code: 'QUOTE_NOT_FOUND', message: '报价不存在' });
+        const q = qRows[0];
+        if (q.consumed_order_id) return res.status(409).json({ success: false, code: 'QUOTE_CONSUMED', message: '报价已被使用' });
+        if (new Date(q.expires_at).getTime() < Date.now()) {
+            return res.status(409).json({ success: false, code: 'QUOTE_EXPIRED', message: '报价已过期（60 秒），请重新报价' });
+        }
+
+        // 成本变动容忍（3%）
+        const plan = await openApiFindSku(q.sku_code);
+        const curCost = plan ? (Number(plan.upstream_price_cents) || 0) : 0;
+        const baseCost = Number(q.cost_cents) || 0;
+        const drift = baseCost > 0 ? Math.abs(curCost - baseCost) / baseCost : 1;
+        if (drift > OPEN_API_PRICE_DRIFT_TOLERANCE || !plan || !openApiSkuAvailable(plan, curCost)) {
+            const newUnit = plan && curCost > 0 ? openApiQuotePrice(curCost, plan.api_markup_percent) : null;
+            return res.status(409).json({
+                success: false, code: 'PRICE_CHANGED',
+                message: '价格已更新（成本自报价后变动 ' + (drift * 100).toFixed(1) + '% > 3%），请重新报价',
+                data: { new_unit_price: newUnit === null ? null : openApiUsd(newUnit) }
+            });
+        }
+
+        const amount = Number(q.total_cents) || 0;
+        const deducted = await store.runExecute(
+            'UPDATE kc_api_clients SET balance_cents = balance_cents - ? WHERE id=? AND balance_cents >= ?',
+            [amount, req.openApiClient.id, amount]
+        );
+        if (!deducted || Number(deducted.affectedRows) === 0) {
+            return res.status(402).json({ success: false, code: 'INSUFFICIENT_BALANCE', message: '预充值余额不足' });
+        }
+
+        const ourOrderNo = 'api_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+        let cdk = '';
+        let status = 'created';
+        let failReason = '';
+        try {
+            const result = await store.issueCdkByRef(ourOrderNo, {
+                planType: String(plan.upstream_plan_key),
+                source: 'open_api',
+                orderId: null,
+                userRef: 'client:' + req.openApiClient.code,
+                createCdks: createCdks
+            });
+            cdk = result && result.cdk ? String(result.cdk) : '';
+            status = cdk ? 'delivered' : 'failed';
+        } catch (e) {
+            status = 'failed';
+            failReason = String((e && e.message) || e).slice(0, 200);
+            await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [amount, req.openApiClient.id]).catch(function () { });
+        }
+
+        const ins = await store.runExecute(
+            'INSERT INTO kc_api_orders (client_id, client_order_no, our_order_no, sku_code, qty, quote_id, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [req.openApiClient.id, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, curCost, q.unit_price_cents, amount, status, cdk, failReason]
+        );
+        await store.runExecute('UPDATE kc_api_quote_logs SET consumed_order_id=? WHERE id=?', [ins.insertId, q.id]);
+
+        if (status !== 'delivered') {
+            return res.status(502).json({ success: false, code: 'FULFILL_FAILED', message: '履约失败（余额已退回）：' + failReason });
+        }
+        res.json({
+            success: true,
+            data: { order_id: ourOrderNo, status: status, amount: openApiUsd(amount), currency: 'USD', cdk: cdk }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 4) 查单（含交付物）
+app.get('/api/open/v1/orders/:orderNo', requireOpenApiAuth, async (req, res) => {
+    try {
+        const rows = await store.runQuery('SELECT * FROM kc_api_orders WHERE our_order_no=? AND client_id=? LIMIT 1', [String(req.params.orderNo || ''), req.openApiClient.id]);
+        if (!rows.length) return res.status(404).json({ success: false, code: 'ORDER_NOT_FOUND', message: '订单不存在' });
+        const o = rows[0];
+        res.json({
+            success: true,
+            data: {
+                order_id: o.our_order_no, client_order_no: o.client_order_no, sku: o.sku_code, qty: o.qty,
+                status: o.status, amount: openApiUsd(o.amount_cents), currency: 'USD', cdk: o.cdk || null, created_at: o.created_at
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ─── 管理面：API 客户 ────────────────────────────────────────────────────────
+app.get('/api/admin/api-clients', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rows = await store.runQuery(
+            'SELECT c.id, c.code, c.name, c.api_key, c.balance_cents, c.status, c.rate_limit, c.callback_url, c.note, c.created_at, ' +
+            '(SELECT COUNT(*) FROM kc_api_orders o WHERE o.client_id = c.id) AS orders_total, ' +
+            '(SELECT COUNT(*) FROM kc_api_orders o WHERE o.client_id = c.id AND o.status = \'delivered\') AS orders_delivered, ' +
+            '(SELECT COALESCE(SUM(o.amount_cents), 0) FROM kc_api_orders o WHERE o.client_id = c.id AND o.status = \'delivered\') AS gmv_cents ' +
+            'FROM kc_api_clients c ORDER BY c.id DESC'
+        );
+        res.json({ success: true, data: rows });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/api-clients', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const name = String((req.body || {}).name || '').trim();
+        if (!name) return res.status(400).json({ success: false, message: '客户名称必填' });
+        const code = 'cli_' + crypto.randomBytes(3).toString('hex');
+        const apiKey = 'ak_live_' + crypto.randomBytes(12).toString('hex');
+        const apiSecret = crypto.randomBytes(24).toString('hex');
+        await store.runExecute(
+            'INSERT INTO kc_api_clients (code, name, api_key, api_secret, balance_cents, status, rate_limit, note) VALUES (?, ?, ?, ?, 0, ?, ?, ?)',
+            [code, name, apiKey, apiSecret, 'active', OPEN_API_DEFAULT_LIMIT, 'v1.25.0 创建']
+        );
+        res.json({ success: true, message: '已创建（密钥仅本次返回，请立即保存；丢失可在详情页重置）', data: { code, name, api_key: apiKey, api_secret: apiSecret } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/api-clients/:id/recharge', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10) || 0;
+        const amount = Number((req.body || {}).amount);
+        if (!(amount > 0) || amount > 1000000) return res.status(400).json({ success: false, message: '充值金额必须大于 0' });
+        const cents = Math.round(amount * 100);
+        const r = await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [cents, id]);
+        if (!r || Number(r.affectedRows) === 0) return res.status(404).json({ success: false, message: '客户不存在' });
+        const [rows] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [id]);
+        res.json({ success: true, message: '已充值 $' + amount.toFixed(2), data: { balance_cents: rows[0].balance_cents, balance: openApiUsd(rows[0].balance_cents) } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/api-clients/:id/status', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10) || 0;
+        const status = String((req.body || {}).status || '') === 'active' ? 'active' : 'disabled';
+        const r = await store.runExecute('UPDATE kc_api_clients SET status=? WHERE id=?', [status, id]);
+        if (!r || Number(r.affectedRows) === 0) return res.status(404).json({ success: false, message: '客户不存在' });
+        res.json({ success: true, message: status === 'active' ? '已启用' : '已停用' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.get('/api/admin/api-clients/:id/credential', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10) || 0;
+        const rows = await store.runQuery('SELECT code, name, api_key, api_secret, rate_limit FROM kc_api_clients WHERE id=? LIMIT 1', [id]);
+        if (!rows.length) return res.status(404).json({ success: false, message: '客户不存在' });
+        res.json({ success: true, data: rows[0] });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 上游目录成本（API 加价的成本来源；MVP 手填，真实上游同步后续版本）
+app.post('/api/admin/upstreams/:code/plans/:key/price', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const code = String(req.params.code || '').trim();
+        const key = String(req.params.key || '').trim();
+        const price = Number((req.body || {}).price);
+        if (!(price >= 0) || price > 1000000) return res.status(400).json({ success: false, message: '成本价必须 ≥ 0（美元）' });
+        const cents = Math.round(price * 100);
+        const r = await store.runExecute('UPDATE kc_upstream_plans SET upstream_price_cents=? WHERE upstream_code=? AND upstream_plan_key=?', [cents, code, key]);
+        if (!r || Number(r.affectedRows) === 0) return res.status(404).json({ success: false, message: '上游目录项不存在' });
+        res.json({ success: true, message: '成本已更新为 $' + price.toFixed(2), data: { upstream_price_cents: cents } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

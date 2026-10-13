@@ -463,6 +463,65 @@ async function ensurePlansTable() {
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status'); } catch (e) { /* 已存在 */ }
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_enabled'); } catch (e) { /* 已存在 */ }
 }
+// v1.25.0 · 对外分销 API（SP-2026-10-13-API-v1.0.0 精简执行）
+const API_CLIENTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_clients (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(32) NOT NULL COMMENT '客户内部编号 cli_xxx',
+    name VARCHAR(128) NOT NULL DEFAULT '',
+    api_key VARCHAR(64) NOT NULL COMMENT 'ak_live_xxx',
+    api_secret VARCHAR(96) NOT NULL COMMENT 'HMAC 签名密钥（本机 Mock 环境明文）',
+    balance_cents INT NOT NULL DEFAULT 0 COMMENT '预充值余额（分）',
+    callback_url VARCHAR(255) NOT NULL DEFAULT '' COMMENT '交付回调地址（v2 启用）',
+    rate_limit INT NOT NULL DEFAULT 120 COMMENT '每分钟请求上限',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_code (code),
+    UNIQUE KEY uk_api_key (api_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对外分销 API 客户'`;
+
+const API_ORDERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_orders (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    client_order_no VARCHAR(64) NOT NULL COMMENT '下游单号（幂等键）',
+    our_order_no VARCHAR(64) NOT NULL COMMENT '内部单号（发卡 ref）',
+    sku_code VARCHAR(64) NOT NULL,
+    qty INT NOT NULL DEFAULT 1,
+    quote_id VARCHAR(40) NOT NULL DEFAULT '',
+    cost_cents INT NOT NULL DEFAULT 0 COMMENT '下单时成本',
+    unit_price_cents INT NOT NULL DEFAULT 0,
+    amount_cents INT NOT NULL DEFAULT 0,
+    status ENUM('created','delivered','failed') NOT NULL DEFAULT 'created',
+    cdk VARCHAR(64) NOT NULL DEFAULT '',
+    fail_reason VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_client_order (client_id, client_order_no),
+    UNIQUE KEY uk_our_order (our_order_no),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对外分销 API 订单'`;
+
+const API_QUOTE_LOGS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_quote_logs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    quote_id VARCHAR(40) NOT NULL COMMENT 'q_xxx',
+    sku_code VARCHAR(64) NOT NULL,
+    cost_cents INT NOT NULL DEFAULT 0 COMMENT '报价时成本',
+    markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
+    unit_price_cents INT NOT NULL DEFAULT 0,
+    qty INT NOT NULL DEFAULT 1,
+    total_cents INT NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL COMMENT '60 秒锁价',
+    consumed_order_id BIGINT UNSIGNED NULL COMMENT '被哪个订单消费',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_quote (quote_id),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对外报价流水'`;
+
+async function ensureApiClientsTable() { await ensureTable('kc_api_clients', API_CLIENTS_TABLE_SQL); }
+async function ensureApiOrdersTable() { await ensureTable('kc_api_orders', API_ORDERS_TABLE_SQL); }
+async function ensureApiQuoteLogsTable() { await ensureTable('kc_api_quote_logs', API_QUOTE_LOGS_TABLE_SQL); }
 async function ensurePricingRulesTable() { await ensureTable('kc_pricing_rules', PRICING_RULES_TABLE_SQL); }
 async function ensurePricingSnapshotTable() { await ensureTable('kc_order_pricing_snapshot', PRICING_SNAPSHOT_TABLE_SQL); }
 
@@ -816,6 +875,9 @@ async function ensureReady() {
     await ensureUpstreamPlansTable();
     await ensureUpstreamHealthTable();
     await ensurePlansTable();
+    await ensureApiClientsTable();
+    await ensureApiOrdersTable();
+    await ensureApiQuoteLogsTable();
     await ensurePricingRulesTable();
     await ensurePricingSnapshotTable();
     await ensureListingCardsTable();

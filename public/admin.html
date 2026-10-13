@@ -1834,6 +1834,10 @@
                 <i data-lucide="server-cog"></i>
                 <span>上游管理</span>
             </div>
+            <div class="nav-item" onclick="switchPage('api_clients', this)" data-page="api_clients">
+                <i data-lucide="plug"></i>
+                <span>API 客户</span>
+            </div>
             <div class="nav-item" onclick="switchPage('admin_login_logs', this)" data-page="admin_login_logs">
                 <i data-lucide="shield-check"></i>
                 <span>登录日志</span>
@@ -3305,6 +3309,31 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 <p class="runtime-log-hint">与「任务管理」中的数据库记录不同：此处为实时流水，便于排查 Playwright / 子进程输出；筛选 Job 可在文本内搜索。</p>
                 <div class="runtime-log-pre-wrap">
                     <pre id="runtime_log_pre" class="runtime-log-pre" spellcheck="false"></pre>
+                </div>
+            </div>
+        </div>
+
+        <div id="api_clients" class="page-view">
+            <h1>API 客户</h1>
+            <p style="color:var(--text-dim); margin:8px 0 16px;">对外分销 API 客户：创建客户发密钥 / 充值余额 / 停用启用 / 查看凭证与用量。下游用 API Key + 签名调用 <code>/api/open/v1/*</code>，下单扣预充值余额，同步返回卡密。</p>
+            <div class="panel">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">客户列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadApiClients()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openNewApiClientDialog()">+ 新建客户</button>
+                </div>
+                <div id="api-clients-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div></div>
+            </div>
+
+            <div id="api-client-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:520px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="api-client-dialog-title" style="margin:0 0 14px; font-size:18px;">新建 API 客户</h3>
+                    <div id="api-client-dialog-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeApiClientDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="api-client-dialog-ok" onclick="confirmCreateApiClient()">创建并生成密钥</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -5196,6 +5225,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (pId === 'cdks') {
                 loadCdkList().catch((error) => {
                     console.error('Failed to load CDK list', error);
+                });
+            }
+
+            if (pId === 'api_clients') {
+                loadApiClients().catch((error) => {
+                    console.error('Failed to load api clients', error);
                 });
             }
 
@@ -9459,6 +9494,133 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             } catch (e) { showMessage(e.message || '同步失败', 'error'); }
         }
 
+        // ===================== v1.25.0 · API 客户管理（UX-6，下游分销入口） =====================
+        async function loadApiClients() {
+            const box = document.getElementById('api-clients-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/api-clients');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '加载失败');
+                const list = data.data || [];
+                if (!list.length) {
+                    box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无客户，点右上「新建客户」开始</div>';
+                    return;
+                }
+                const rows = list.map(function (c) {
+                    const bal = '$' + (Number(c.balance_cents || 0) / 100).toFixed(2);
+                    const st = c.status === 'active'
+                        ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;">启用</span>'
+                        : '<span style="background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:10px;font-size:11px;">停用</span>';
+                    const orders = Number(c.orders_total || 0), ok = Number(c.orders_delivered || 0);
+                    const gmv = '$' + (Number(c.gmv_cents || 0) / 100).toFixed(2);
+                    return '<tr>' +
+                        '<td><b>' + escapeHtml(c.name) + '</b><div style="color:var(--text-dim);font-size:11px;"><code>' + escapeHtml(c.code) + '</code></div></td>' +
+                        '<td style="font-size:12px;"><code>' + escapeHtml(c.api_key) + '</code></td>' +
+                        '<td><b>' + bal + '</b></td>' +
+                        '<td>' + st + '</td>' +
+                        '<td style="font-size:12px;">' + orders + ' 单 / 成功 ' + ok + ' · GMV ' + gmv + '</td>' +
+                        '<td style="font-size:11px;color:var(--text-dim);">' + escapeHtml(c.note || '') + '</td>' +
+                        '<td style="white-space:nowrap;">' +
+                        '<button type="button" class="btn" style="padding:4px 10px; font-size:12px;" onclick="rechargeApiClient(' + c.id + ')">充值</button> ' +
+                        '<button type="button" class="btn" style="padding:4px 10px; font-size:12px;" onclick="viewApiClientCredential(' + c.id + ')">凭证</button> ' +
+                        '<button type="button" class="btn" style="padding:4px 10px; font-size:12px;" onclick="toggleApiClient(' + c.id + ',\'' + c.status + '\')">' + (c.status === 'active' ? '停用' : '启用') + '</button>' +
+                        '</td></tr>';
+                }).join('');
+                box.innerHTML = '<table class="kc-table"><thead><tr><th>客户</th><th>API Key</th><th>余额</th><th>状态</th><th>用量</th><th>备注</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table>';
+                if (window.lucide && lucide.createIcons) lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+
+        function openNewApiClientDialog() {
+            document.getElementById('api-client-dialog-title').textContent = '新建 API 客户';
+            document.getElementById('api-client-dialog-body').innerHTML =
+                '<label style="font-size:12px; color:var(--text-dim);">客户名称<input id="ac-name" class="asset-input" style="width:100%; margin-top:4px;" placeholder="如：下游分销商 A"></label>' +
+                '<p style="font-size:11px;color:var(--text-dim);margin-top:10px;">创建后返回 API Key 与 Secret（密钥仅显示一次，请立即保存）。</p>';
+            document.getElementById('api-client-dialog-backdrop').style.display = 'flex';
+        }
+        function closeApiClientDialog() {
+            document.getElementById('api-client-dialog-backdrop').style.display = 'none';
+        }
+        async function confirmCreateApiClient() {
+            const name = document.getElementById('ac-name').value.trim();
+            if (!name) { showMessage('请填写客户名称', 'error'); return; }
+            const btn = document.getElementById('api-client-dialog-ok');
+            btn.disabled = true; btn.textContent = '创建中...';
+            try {
+                const res = await authFetch('/api/admin/api-clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '创建失败');
+                document.getElementById('api-client-dialog-title').textContent = '创建成功 — 请立即保存密钥';
+                document.getElementById('api-client-dialog-body').innerHTML =
+                    '<div style="font-size:13px;line-height:2.1;">' +
+                    '<div>客户：<b>' + escapeHtml(data.data.name) + '</b>（<code>' + escapeHtml(data.data.code) + '</code>）</div>' +
+                    '<div>API Key：<code style="user-select:all;">' + escapeHtml(data.data.api_key) + '</code></div>' +
+                    '<div>Secret：<code style="user-select:all;color:#b45309;">' + escapeHtml(data.data.api_secret) + '</code></div>' +
+                    '<div style="color:var(--text-dim);font-size:11px;">签名：HMAC-SHA256(secret, METHOD\\npath\\ntimestamp\\nsha256(body))，头 X-Api-Key / X-Timestamp / X-Signature</div>' +
+                    '</div>';
+                document.getElementById('api-client-dialog-ok').textContent = '完成';
+                document.getElementById('api-client-dialog-ok').onclick = function () { closeApiClientDialog(); loadApiClients(); };
+                showMessage('客户已创建，请保存密钥', 'success');
+            } catch (e) {
+                showMessage(e.message || '创建失败', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        async function rechargeApiClient(id) {
+            const v = prompt('充值金额（美元）：', '100');
+            if (!v) return;
+            const amount = Number(v);
+            if (!(amount > 0)) { showMessage('金额必须大于 0', 'error'); return; }
+            try {
+                const res = await authFetch('/api/admin/api-clients/' + id + '/recharge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '充值失败');
+                showMessage(data.message || '已充值', 'success');
+                loadApiClients();
+            } catch (e) { showMessage(e.message || '充值失败', 'error'); }
+        }
+        async function toggleApiClient(id, cur) {
+            const next = cur === 'active' ? 'disabled' : 'active';
+            try {
+                const res = await authFetch('/api/admin/api-clients/' + id + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '操作失败');
+                showMessage(data.message || '已更新', 'success');
+                loadApiClients();
+            } catch (e) { showMessage(e.message || '操作失败', 'error'); }
+        }
+        async function viewApiClientCredential(id) {
+            try {
+                const res = await authFetch('/api/admin/api-clients/' + id + '/credential');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '查询失败');
+                const d = data.data;
+                alert('API 客户凭证\n\n客户：' + d.name + '（' + d.code + '）\nAPI Key：' + d.api_key + '\nSecret：' + d.api_secret + '\n限流：' + d.rate_limit + ' 次/分钟');
+            } catch (e) { showMessage(e.message || '查询失败', 'error'); }
+        }
+
+        // 上游目录成本设置（API 加价的成本来源）
+        function setUpstreamPlanPrice(code, key) {
+            const v = prompt('设置「' + key + '」的上游成本价（美元，API 报价 = 成本 × (1 + 加价率)）：', '10');
+            if (v === null || v === '') return;
+            const price = Number(v);
+            if (!(price >= 0)) { showMessage('金额必须 ≥ 0', 'error'); return; }
+            (async function () {
+                try {
+                    const res = await authFetch('/api/admin/upstreams/' + encodeURIComponent(code) + '/plans/' + encodeURIComponent(key) + '/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ price }) });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error((data && data.message) || '设置失败');
+                    showMessage(data.message || '成本已更新', 'success');
+                    openUpstreamDetail(code);
+                } catch (e) { showMessage(e.message || '设置失败', 'error'); }
+            })();
+        }
+
         // ===================== v1.24.0 · 商品管理 MVP（一个页面配商品，保存即同步商城） =====================
         let _productsCache = [];
 
@@ -9873,7 +10035,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             '<td>' + escapeHtml(p.display_name) + '</td>' +
                             '<td>' + escapeHtml(p.sku_type) + (tags.length ? ' · ' + escapeHtml(tags.join(' · ')) : '') + '</td>' +
                             '<td>' + escapeHtml(p.period) + '</td>' +
-                            '<td>' + (p.upstream_price_cents ? '$' + (p.upstream_price_cents / 100).toFixed(2) : '—') + '</td>' +
+                            '<td>' + (p.upstream_price_cents ? '$' + (p.upstream_price_cents / 100).toFixed(2) : '—') + ' <button type="button" class="btn btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="setUpstreamPlanPrice(\'' + code + '\',\'' + escapeHtml(p.upstream_plan_key) + '\')">设成本</button></td>' +
                             '<td>' + (p.enabled ? '<span style="color:var(--success);">✓</span>' : '<span style="color:var(--text-dim);">—</span>') + '</td>' +
                             '<td style="color:var(--text-dim);font-size:11px;">' + escapeHtml(p.note || '') + '</td>' +
                         '</tr>';
