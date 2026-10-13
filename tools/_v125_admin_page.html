@@ -1,0 +1,24 @@
+        <div id="api_clients" class="page-view">
+            <h1>API 客户</h1>
+            <p style="color:var(--text-dim); margin:8px 0 16px;">对外分销 API 客户：创建客户发密钥 / 充值余额 / 停用启用 / 查看凭证与用量。下游用 API Key + 签名调用 <code>/api/open/v1/*</code>，下单扣预充值余额，同步返回卡密。</p>
+            <div class="panel">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">客户列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadApiClients()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openNewApiClientDialog()">+ 新建客户</button>
+                </div>
+                <div id="api-clients-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div></div>
+            </div>
+
+            <div id="api-client-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:520px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="api-client-dialog-title" style="margin:0 0 14px; font-size:18px;">新建 API 客户</h3>
+                    <div id="api-client-dialog-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeApiClientDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="api-client-dialog-ok" onclick="confirmCreateApiClient()">创建并生成密钥</button>
+                    </div>
+                </div>
+            </div>
+        </div>
