@@ -128,6 +128,13 @@ class PlanCardController extends PluginController
                 $faq = [];
             }
 
+            // 优惠行全局开关（v1.14.0）：与单卡 promo.enabled 为「与」关系；
+            // 直读 v2_settings，后台保存后即时生效，可随时一键关闭全站优惠行。
+            $promoRowRaw = json_decode((string) DB::table('v2_settings')->where('name', 'kc_promo_row')->value('value'), true);
+            $promoRow = [
+                'enabled' => !(is_array($promoRowRaw) && array_key_exists('enabled', $promoRowRaw) && !filter_var($promoRowRaw['enabled'], FILTER_VALIDATE_BOOLEAN)),
+            ];
+
             // 「购买卡密」入口配置（P1）：直读 DB（绕过插件配置的 1 小时 Cache::remember，
             // 保证后台保存后「立即生效」，开关可随时关闭）
             try {
@@ -155,6 +162,7 @@ class PlanCardController extends PluginController
                 'availability' => $availability,
                 'supplier_health' => $healthResult['health'],
                 'card_buy' => $cardBuy,
+                'promo_row' => $promoRow,
                 'categories' => array_values($categories),
                 'faq' => array_values($faq),
             ]);

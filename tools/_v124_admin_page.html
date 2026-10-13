@@ -1,0 +1,24 @@
+        <div id="products" class="page-view">
+            <h1>商品管理</h1>
+            <p style="color:var(--text-dim); margin:8px 0 16px;">商城商品一站式配置：名称 / 价格 / 货源 / 展示 —— 保存即同步商城，立即可见可买。</p>
+            <div class="panel">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">商品列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadProductsList()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openProductDialog(null)">+ 新建商品</button>
+                </div>
+                <div id="products-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div></div>
+            </div>
+
+            <div id="product-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:680px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="product-dialog-title" style="margin:0 0 16px; font-size:18px;">编辑商品</h3>
+                    <div id="product-dialog-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeProductDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="product-dialog-ok" onclick="saveProductDialog()">保存并同步商城</button>
+                    </div>
+                </div>
+            </div>
+        </div>

@@ -11,8 +11,10 @@
  *   - Xboard 插件快照 tools/xboard-patches/**（与运行实例对齐）
  *   - 部署引擎脚本
  *
- * 唯一白名单：tools/kc_theme_inject.html 的「货币兜底替换实现」自身 ——
- *   它必须包含 ¥/￥ 字面量才能做运行时替换（FEAT-017），按行模式放行。
+ * 白名单（均为「货币兜底替换实现」自身，必须包含 ¥ 字面量才能做运行时替换）：
+ *   - tools/kc_theme_inject.html（前台运行时替换，FEAT-017）
+ *   - tools/xboard-patches/admin.blade.php 与 tools/_v123_admin_inject_script.html.tpl
+ *     （管理端 KC-ADMIN-V2 运行时替换实现），按行模式放行注释描述行。
  *
  * 用法：node tools/check-currency.js   （有非白名单命中时退出码 1）
  */
@@ -24,6 +26,7 @@ const FILES = [
   'tools/kc_theme_inject.html',
   'tools/kc_panel_inject.html',
   'tools/kc_activate_inject.html',
+  'tools/_v123_admin_inject_script.html.tpl',
   'server.js',
   'kc-deploy_20261007.ps1',
   'kc-deploy_20261007.sh',
@@ -36,6 +39,8 @@ const TOKENS = ['¥', '￥', 'CNY', 'RMB', '人民币'];
 
 const ALLOW_LINE = [
   { file: 'tools/kc_theme_inject.html', re: /FEAT-017|kcFixCurrency|货币|人民币|indexOf\(|split\(|换成|「¥|¥\/￥/ },
+  { file: 'tools/xboard-patches/admin.blade.php', re: /KC-ADMIN-V2|文案兜底|货币（/ },
+  { file: 'tools/_v123_admin_inject_script.html.tpl', re: /KC-ADMIN-V2|文案兜底|货币（/ },
 ];
 
 function allowed(rel, line) {

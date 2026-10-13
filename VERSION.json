@@ -1,8 +1,8 @@
 {
-  "version": "1.13.0",
-  "version_tag": "v1.13.0",
-  "date": "2026-10-11",
-  "title": "客服工作台与全站美元显示守护",
+  "version": "1.24.0",
+  "version_tag": "v1.24.0",
+  "date": "2026-10-13",
+  "title": "商品管理 MVP：一个页面配商品，保存即同步商城",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",

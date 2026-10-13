@@ -19,6 +19,7 @@
           （plan/fetch 无库存/销量字段；余额充值类 onetime 套餐被过滤）
        8. plan 页 CSS 网格卡片化（card-container → grid）+ 首个订阅套餐推荐角标
        9. order 页表格卡片化 + 状态语义着色（按行内状态文本匹配，MutationObserver 保活）
+       10. S4 机场字段过滤器：订单/列表/个人中心/菜单的机场字段屏蔽与代充化 + node/traffic 路由拦截（v1.22.0 · SP-2026-10-12-v1.1.0）
      路由映射（_recon-xb3.js 逐项点击实测）：
        首页→#/dashboard 商品→#/plan 订单→#/order
        个人中心→#/profile 邀请→#/invite 工单→#/ticket
@@ -426,6 +427,20 @@
   .kc-pc-btn:hover { opacity: .92; }
   .kc-pc-btn.kc-ghost { background: transparent; color: var(--kc-t2); border: 1px solid var(--kc-card-border); }
   .kc-pc-wait { font-size: 11.5px; color: var(--kc-t3); text-align: center; margin-top: 8px; }
+  .kc-pc-sub { font-size: 12px; color: var(--kc-t3); margin-top: 3px; min-height: 15px; }
+  .kc-pc-promo { font-size: 12px; color: var(--kc-t3); margin-top: 4px; }
+  .kc-pc-promo s { opacity: .85; }
+  .kc-pc-promo em { color: #A32D2D; font-style: normal; font-weight: 600; }
+  .kc-pc-guars { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 9px; }
+  .kc-pc-guars span { font-size: 11px; color: var(--kc-t3); }
+  .kc-pc-tip { font-size: 11px; color: var(--kc-t3); margin-top: 6px; }
+  .kc-pc-type {
+    position: absolute; top: -10px; right: 16px; z-index: 2; font-size: 11px; font-weight: 700;
+    color: var(--kc-brand); background: var(--kc-brand-soft); border-radius: 999px; padding: 3px 10px; letter-spacing: .3px;
+  }
+  .kc-pc-type.kc-tc-green { color: #639922; background: rgba(99, 153, 34, .12); }
+  .kc-pc-type.kc-tc-amber { color: #BA7517; background: rgba(186, 117, 23, .14); }
+  .kc-pc-type.kc-tc-gray { color: var(--kc-t2); background: rgba(136, 135, 128, .16); }
   /* --- R4：两条路径对照（立即代充 / 兑换卡密）--- */
   .kc-portal-paths { margin-top: 28px; }
   .kc-paths-head { text-align: center; }
@@ -553,6 +568,14 @@
   .kc-cb-badge.kc-bc-green { background: #639922; }
   .kc-cb-badge.kc-bc-amber { background: #BA7517; }
   .kc-cb-badge.kc-bc-gray { background: #888780; }
+  .kc-cb-type {
+    position: absolute; top: -11px; right: 16px; z-index: 2; font-size: 11px; font-weight: 700;
+    color: var(--kc-brand); background: var(--kc-brand-soft); border-radius: 999px; padding: 3px 12px; letter-spacing: .3px;
+  }
+  .kc-cb-type.kc-side-left { left: 16px; right: auto; }
+  .kc-cb-type.kc-tc-green { color: #639922; background: rgba(99, 153, 34, .12); }
+  .kc-cb-type.kc-tc-amber { color: #BA7517; background: rgba(186, 117, 23, .14); }
+  .kc-cb-type.kc-tc-gray { color: var(--kc-t2); background: rgba(136, 135, 128, .16); }
   .kc-card.kc-card-featured { border: 2px solid var(--kc-brand) !important; background: var(--kc-brand-soft) !important; }
   .kc-card.kc-card-soon { opacity: .72; }
   .kc-card.kc-card-soon .kc-cb-title, .kc-card.kc-card-soon .kc-cb-price b { color: var(--kc-t3); }
@@ -756,6 +779,13 @@
   .kc-cb-buy a:hover { color: var(--kc-brand); border-bottom-color: var(--kc-brand); }
   .kc-cb-buy b { font-weight: 700; }
   .kc-cb-buy em { font-style: normal; color: var(--kc-t3); font-size: 11.5px; }
+  /* R6 底部服务 chips（后台可配；默认不配置即不显示） */
+  .kc-cb-chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 18px; }
+  .kc-cb-chips a {
+    font-size: 11.5px; color: var(--kc-t2); text-decoration: none;
+    border: 1px solid var(--kc-card-border); border-radius: 999px; padding: 4px 12px;
+  }
+  .kc-cb-chips a:hover { color: var(--kc-brand); border-color: var(--kc-brand); }
   #kc-buy { position: fixed; inset: 0; z-index: 9997; display: none; align-items: center; justify-content: center; padding: 18px; }
   #kc-buy.kc-on { display: flex; }
   .kc-buy-mask { position: absolute; inset: 0; background: rgba(10, 12, 16, .55); }
@@ -893,6 +923,11 @@
                 var raw = null;
                 try { raw = localStorage.getItem('VUE_NAIVE_ACCESS_TOKEN'); } catch (e2) { }
                 if (!raw) { document.documentElement.classList.add('kc-pre-guest'); }
+            }
+            // R6：直接访问商品页（#/plan...）的游客会被路由守卫弹到登录页——记下意图，
+            // 游客落地页挂载后自动滚到「套餐」区，平滑衔接（15 秒内有效）
+            if (h.indexOf('#/plan') === 0) {
+                try { sessionStorage.setItem('kc_land_price', String(Date.now())); } catch (e4) { }
             }
         } catch (e) { }
     })();
@@ -1063,9 +1098,6 @@
                   '<a class="kc-tb-mi" href="#/profile">个人中心</a>' +
                   '<a class="kc-tb-mi" href="#/invite">我的邀请</a>' +
                   '<a class="kc-tb-mi" href="#/ticket">我的工单</a>' +
-                  '<a class="kc-tb-mi" href="#/knowledge">使用文档</a>' +
-                  '<a class="kc-tb-mi" href="#/node">节点状态</a>' +
-                  '<a class="kc-tb-mi" href="#/traffic">流量明细</a>' +
                   '<button class="kc-tb-mi" type="button" data-action="redeem">兑换卡密</button>' +
                   '<div class="kc-tb-menu-sep"></div>' +
                   '<button class="kc-tb-mi kc-tb-logout" type="button" data-action="logout">退出登录</button>' +
@@ -1092,9 +1124,6 @@
             '<a href="#/profile" data-route="#/profile">个人中心</a>' +
             '<a href="#/invite" data-route="#/invite">我的邀请</a>' +
             '<a href="#/ticket" data-route="#/ticket">我的工单</a>' +
-            '<a href="#/knowledge" data-route="#/knowledge">使用文档</a>' +
-            '<a href="#/node" data-route="#/node">节点状态</a>' +
-            '<a href="#/traffic" data-route="#/traffic">流量明细</a>' +
             '<button type="button" data-action="redeem">兑换卡密</button>' +
           '</nav>' +
           '<button class="kc-drawer-logout" type="button" data-action="logout">退出登录</button>' +
@@ -1239,6 +1268,16 @@
             return (j && j.data) ? j.data : [];
         }).catch(function () { return []; });
     }
+    // R6：游客版套餐列表（guest 接口，免登录）——游客落地页「套餐」区使用
+    function fetchGuestPlans() {
+        return fetch('/api/v1/guest/plan/fetch', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); }).then(function (j) {
+            return (j && j.data) ? j.data : [];
+        }).catch(function () { return []; });
+    }
     // 最低周期价标签（plan/fetch 无库存/销量字段，仅报价）
     function minPriceLabel(p) {
         var opts = [['month_price', '/月'], ['quarter_price', '/季'], ['half_year_price', '/半年'],
@@ -1271,8 +1310,60 @@
                 '<div class="kc-pc-name">' + esc(p.name) + '</div>' +
                 '<div class="kc-pc-price">' + esc(minPriceLabel(p)) + '</div>' +
                 '<ul class="kc-pc-feats">' + feats.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>' +
-                '<a class="kc-pc-btn" href="#/plan/' + esc(p.id) + '">立即订阅</a>';
+                '<a class="kc-pc-btn" href="#/plan/' + esc(p.id) + '">立即办理</a>';
         });
+    }
+    // ===== R6 · 游客「套餐」区：真实商品数据（与商品页同一套配置） =====
+    function kcGuestSellable(plans) {
+        return (plans || []).filter(function (p) {
+            return p.show && p.sell &&
+                (p.month_price != null || p.quarter_price != null || p.half_year_price != null ||
+                    p.year_price != null || p.two_year_price != null || p.three_year_price != null);
+        }).sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); });
+    }
+    function kcGuestCardHtml(p, c, isMain) {
+        var title = (c.title && String(c.title).trim()) ? String(c.title).trim() : p.name;
+        var price = cardPriceOf(p, c);
+        var badge = (c.badge && c.badge.text) ? '<span class="kc-pc-badge">' + esc(c.badge.text) + '</span>' : '';
+        var typeCfg = (c.type && typeof c.type === 'object') ? c.type : {};
+        var typeText = String(typeCfg.text || '').trim() || ((c.category || 'recharge') === 'recharge' ? '代充' : '');
+        var typeCls = ({ green: ' kc-tc-green', amber: ' kc-tc-amber', gray: ' kc-tc-gray' })[typeCfg.color] || '';
+        var typeChip = typeText ? '<span class="kc-pc-type' + typeCls + '">' + esc(typeText) + '</span>' : '';
+        var promo = (PROMO_ROW_ENABLED && c.promo && c.promo.enabled !== false && (c.promo.strike || c.promo.text))
+            ? '<div class="kc-pc-promo">' + (c.promo.strike ? '<s>' + esc(c.promo.strike) + '</s> ' : '') + (c.promo.text ? '<em>' + esc(c.promo.text) + '</em>' : '') + '</div>'
+            : '';
+        var feats = (c.features && c.features.length) ? c.features : ['官方渠道直充，下单后自动开通'];
+        var guars = (c.guarantees && c.guarantees.length) ? c.guarantees : [];
+        // 底部服务 chips：与商品页同一套配置与点击行为（document 级委托）；默认不配置即不显示
+        var chipsHtml = (c.chips || []).filter(function (x) { return x && x.text; }).slice(0, 4).map(function (x) {
+            return '<a href="javascript:;" data-chip="' + esc(String(x.href || '')) + '">' + esc(x.text) + '</a>';
+        }).join('');
+        return '<div class="kc-price-card' + (isMain ? ' kc-pc-main' : '') + '">' +
+            typeChip + badge +
+            '<div class="kc-pc-name">' + esc(title) + '</div>' +
+            '<div class="kc-pc-sub">' + esc(c.subtitle || '') + '</div>' +
+            '<div class="kc-pc-price">' + esc(price.num) + (price.unit ? '<span class="kc-pc-unit"> ' + esc(price.unit) + '</span>' : '') + '</div>' +
+            promo +
+            '<ul class="kc-pc-feats">' + feats.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') + '</ul>' +
+            (guars.length ? '<div class="kc-pc-guars">' + guars.map(function (g) { return '<span>◷ ' + esc(g) + '</span>'; }).join('') + '</div>' : '') +
+            (c.tip ? '<div class="kc-pc-tip">ⓘ ' + esc(c.tip) + '</div>' : '') +
+            (chipsHtml ? '<div class="kc-cb-chips">' + chipsHtml + '</div>' : '') +
+            '<button class="kc-pc-btn" type="button" data-action="guest-buy" data-plan="' + esc(p.id) + '" style="margin-top: 12px;">登录后购买</button>' +
+            '</div>';
+    }
+    function renderGuestPlans() {
+        var box = document.getElementById('kc-guest-main-card');
+        if (!box) { return; }
+        Promise.all([fetchGuestPlans(), fetchPlanConfig()]).then(function (res) {
+            var subs = kcGuestSellable(res[0]);
+            if (!subs.length) { return; }
+            var cfg = res[1] || {};
+            var html = subs.map(function (p, idx) {
+                var c = (cfg.cards && cfg.cards[String(p.id)]) || {};
+                return kcGuestCardHtml(p, c, idx === 0 || c.state === 'featured');
+            }).join('');
+            box.outerHTML = html;
+        }).catch(function () { });
     }
     // ===== R3 · 游客落地页（未登录首页：展示核心卖点，CTA 弹登录） =====
     // 主推卡价格为静态兜底（未登录拿不到 plan/fetch），与商品库同步改这一处
@@ -1303,7 +1394,7 @@
         '<div class="kc-portal-pricing" id="kc-guest-price">' +
           '<div class="kc-price-head"><div class="kc-price-title">选择适合你的套餐</div><div class="kc-price-sub">付款后自动发卡密，兑卡开通全程自助 · 登录后即可下单</div></div>' +
           '<div class="kc-price-cards">' +
-            '<div class="kc-price-card kc-pc-main">' +
+            '<div class="kc-price-card kc-pc-main" id="kc-guest-main-card">' +
               '<span class="kc-pc-badge">主推</span>' +
               '<div class="kc-pc-name">ChatGPT Plus</div>' +
               '<div class="kc-pc-price">' + KC_GUEST_MAIN_PRICE + '</div>' +
@@ -1353,6 +1444,17 @@
         document.body.classList.add('kc-guest-on');
         document.documentElement.classList.add('kc-guest-scroll');
         document.documentElement.classList.remove('kc-pre-guest');
+        renderGuestPlans();
+        // R6：游客从 #/plan 被守卫弹回时，自动滚到「套餐」区（意图留存 15s 内有效）
+        var lp = 0;
+        try { lp = Number(sessionStorage.getItem('kc_land_price') || 0); } catch (eLp) { }
+        if (lp && (Date.now() - lp) < 15000) {
+            try { sessionStorage.removeItem('kc_land_price'); } catch (eLp2) { }
+            setTimeout(function () {
+                var t = document.getElementById('kc-guest-price');
+                if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+            }, 500);
+        }
         return true;
     }
     var guestTimer = null;
@@ -1386,6 +1488,45 @@
         brandLoginCard();
     }
     function closeLoginModal() { document.body.classList.remove('kc-guest-login'); }
+    // ===== R6 · 登录门控续接：游客点「登录后购买」→ 登录成功 → 自动回商品页并继续 =====
+    var kcGateTimer = null;
+    function kcGateRead() {
+        try { return JSON.parse(sessionStorage.getItem('kc_gate') || 'null'); } catch (e) { return null; }
+    }
+    function kcGateClear() { try { sessionStorage.removeItem('kc_gate'); } catch (e) { } }
+    function ensureIntentResume() {
+        if (kcGateTimer) { return; }
+        var g = kcGateRead();
+        if (!g || !g.planId) { return; }
+        if (Date.now() - (g.ts || 0) > 30 * 60 * 1000) { kcGateClear(); return; }
+        var tries = 0;
+        kcGateTimer = setInterval(function () {
+            tries++;
+            var g2 = kcGateRead();
+            if (!g2 || !g2.planId) { clearInterval(kcGateTimer); kcGateTimer = null; return; }
+            if (!readToken()) {
+                if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; }
+                return;
+            }
+            var hNow = window.location.hash || '';
+            if (hNow.indexOf('#/plan') !== 0 || /^#\/plan\/\d+/.test(hNow)) {
+                if (!g2.jumped) {
+                    g2.jumped = true;
+                    try { sessionStorage.setItem('kc_gate', JSON.stringify(g2)); } catch (e2) { }
+                    try { window.location.hash = '#/plan'; } catch (e3) { }
+                }
+                if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; }
+                return;
+            }
+            var card = document.querySelector('.card-container .n-card[data-kc-plan-id="' + g2.planId + '"][data-kc-card="1"]');
+            if (!card) { if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; } return; }
+            var btn = card.querySelector('.n-card__action button');
+            if (!btn) { return; }
+            kcGateClear();
+            clearInterval(kcGateTimer); kcGateTimer = null;
+            try { btn.click(); } catch (e4) { }
+        }, 500);
+    }
     function teardownGuest() {
         ['kc-guest', 'kc-guest-topbar'].forEach(function (id) {
             var el = document.getElementById(id);
@@ -1534,7 +1675,7 @@
         html += '</div>' +
             '<div class="kc-rc-custom"><span>$</span><input id="kc-rc-input" type="number" min="1" max="500" placeholder="自定义金额（整数美元，1~500）"/></div>' +
             '<button class="kc-rc-next" type="button" data-action="recharge-next">下一步</button>' +
-            '<div class="kc-rc-note">充值到账后可用于购买本站商品与订阅；余额支付余额不足时先充值再下单。</div>';
+            '<div class="kc-rc-note">充值到账后可用于购买本站商品；余额支付余额不足时先充值再下单。</div>';
         card.innerHTML = html;
         var btns = card.querySelectorAll('.kc-rc-amt');
         for (var j = 0; j < btns.length; j++) {
@@ -2740,6 +2881,8 @@
     // ===== FEAT-006 · plan 页商品卡片渲染（后台可配 + 兜底默认 + 三态） =====
     var planTimer = null;
     var cardCfgCache = { at: 0, data: null };
+    // v1.14.0：优惠行全局开关（后台可一键关闭）；由 /plan/kc-cards 的 promo_row.enabled 下发，默认开启
+    var PROMO_ROW_ENABLED = true;
     var CARD_DEFAULT_GUARANTEES = ['失败全额退款', '安全省心'];
     // 商品页配置（卡片 + 分类 + 常见问题，一次请求 · FEAT-009 扩展）
     function fetchPlanConfig() {
@@ -2749,7 +2892,8 @@
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 var d = (j && j.data) || {};
-                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [], card_buy: d.card_buy || null };
+                PROMO_ROW_ENABLED = !(d.promo_row && d.promo_row.enabled === false);
+                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [], card_buy: d.card_buy || null, promo_row: d.promo_row || null };
                 cardCfgCache = { at: Date.now(), data: cfg };
                 return cfg;
             })
@@ -2783,13 +2927,20 @@
         if (c.badge && c.badge.text) {
             html += '<span class="kc-cb-badge kc-' + (c.badge.pos === 'right' ? 'br' : 'bl') + ' kc-bc-' + (c.badge.color || 'brand') + '">' + esc(c.badge.text) + '</span>';
         }
+        // R6 类型标：右上角软底角标（后台可配；代充类目缺省「代充」）
+        var kcTypeCfg = (c.type && typeof c.type === 'object') ? c.type : {};
+        var kcTypeText = String(kcTypeCfg.text || '').trim() || ((c.category || 'recharge') === 'recharge' ? '代充' : '');
+        if (kcTypeText) {
+            var kcTypeCls = ({ green: ' kc-tc-green', amber: ' kc-tc-amber', gray: ' kc-tc-gray' })[kcTypeCfg.color] || '';
+            html += '<span class="kc-cb-type' + kcTypeCls + (c.badge && c.badge.pos === 'right' ? ' kc-side-left' : '') + '">' + esc(kcTypeText) + '</span>';
+        }
         html += '<div class="kc-cb-title">' + esc(title) + '</div>' +
             '<div class="kc-cb-sub">' + esc(subtitle) + '</div>' +
             '<div class="kc-cb-price"><b>' + esc(price.num) + '</b>' +
               (price.unit ? '<span>' + esc(price.unit) + '</span>' : '') +
               ((c.price && c.price.tag) ? '<span class="kc-cb-tag">' + esc(c.price.tag) + '</span>' : '') +
             '</div>' +
-            (((c.promo && (c.promo.strike || c.promo.text)))
+            (((PROMO_ROW_ENABLED && c.promo && c.promo.enabled !== false && (c.promo.strike || c.promo.text)))
               ? '<div class="kc-cb-promo">' + (c.promo.strike ? '<s>' + esc(c.promo.strike) + '</s> ' : '') + (c.promo.text ? '<em>' + esc(c.promo.text) + '</em>' : '') + '</div>'
               : '') +
             '<div class="kc-cb-divider"></div>' +
@@ -2843,6 +2994,16 @@
             buy.innerHTML = '<a href="javascript:;" data-kc-buy="1"><b>' + esc(buyCfg.label) + '</b>' +
                 (buyCfg.hint ? '<em>' + esc(buyCfg.hint) + '</em>' : '') + '<span>→</span></a>';
             card.appendChild(buy);
+        }
+        // R6 底部服务 chips（后台可配；默认不配置即不显示——用户已确认「默认不开」）
+        var kcChips = (c.chips || []).filter(function (x) { return x && x.text; }).slice(0, 4);
+        if (kcChips.length && !card.querySelector('.kc-cb-chips')) {
+            var chipsEl = document.createElement('div');
+            chipsEl.className = 'kc-cb-chips';
+            chipsEl.innerHTML = kcChips.map(function (x) {
+                return '<a href="javascript:;" data-chip="' + esc(String(x.href || '')) + '">' + esc(x.text) + '</a>';
+            }).join('');
+            card.appendChild(chipsEl);
         }
     }
     // 【FEAT-014】代充卡片按钮文案守卫
@@ -3090,6 +3251,12 @@
             else if (act === 'redeem') { closeDrawer(); openRedeemPanel(); }
             else if (act === 'logout') { closeDrawer(); doLogout(); }
             else if (act === 'guest-login') { openLoginModal(); }
+            else if (act === 'guest-buy') {
+                var gpid = el.getAttribute('data-plan') || '';
+                try { sessionStorage.setItem('kc_gate', JSON.stringify({ planId: gpid, ts: Date.now() })); } catch (errG) { }
+                openLoginModal();
+                ensureIntentResume();
+            }
             else if (act === 'go-recharge') { closeDrawer(); openRechargePage(); }
             else if (act === 'recharge-close') { closeRechargePage(); }
             else if (act === 'recharge-next') { rechargeNext(); }
@@ -3098,6 +3265,19 @@
                 var n = document.getElementById('kc-notice');
                 if (n) { n.style.display = 'none'; }
                 try { sessionStorage.setItem('kc_notice_closed', '1'); } catch (err) { }
+            }
+        }
+        // R6：底部服务 chips（#faq 页内滚动 / #/ 路由 / 外链）
+        var chipA = e.target.closest('.kc-cb-chips a[data-chip]');
+        if (chipA) {
+            var chipHref = chipA.getAttribute('data-chip') || '';
+            if (chipHref === '#faq') {
+                var faqBox = document.getElementById('kc-plan-faq');
+                if (faqBox) { faqBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+            } else if (/^https?:/i.test(chipHref)) {
+                window.open(chipHref, '_blank', 'noopener');
+            } else if (chipHref.indexOf('#/') === 0) {
+                try { window.location.hash = chipHref; } catch (eChip) { }
             }
         }
         // FEAT-009：商品页分类筛选 tab
@@ -3150,12 +3330,175 @@
         orderTimer = setInterval(function () {
             if (!isOrderPage()) { clearInterval(orderTimer); orderTimer = null; return; }
             paintOrderStatus();
+            kcFFRun(); // v1.22.0 · 机场字段过滤器（SP §M1）
             releasePreApp();
             if (++tries > 15) { clearInterval(orderTimer); orderTimer = null; }
         }, 800);
     }
+    // ===== S4 · 机场字段过滤器（v1.22.0 / SP-2026-10-12-v1.1.0）=====
+    // 全站屏蔽 Xboard 原生机场字段并代充化：文案精确整段匹配（不依赖编译类名）；
+    // 只隐藏不删除 Vue 节点（防 patch 报错）；幂等（已达标跳过）+ 心跳/观察器自愈
+    // （Vue 重渲染刷回原文案时自动再改）。
+    // ⚠️ 禁用 characterData 观察器（改文本会自回调死循环，见 FEAT-017 注释）。
+    var KC_FF_PERIODS = {
+        '月付': '30 天', '季付': '90 天', '半年付': '180 天', '年付': '365 天',
+        '两年付': '730 天', '三年付': '1095 天', '一次性': '单次'
+    };
+    var KC_FF_RULES = {
+        rows: [
+            { label: '类型/周期', rename: '服务周期', map: KC_FF_PERIODS },
+            { label: '产品流量', rename: '交付方式', value: '卡密自动发放' },
+            { label: '旧订阅折抵金额', hide: true },
+            { label: '折抵', hide: true }
+        ],
+        cols: [{ label: '周期', rename: '服务周期', map: KC_FF_PERIODS }],
+        nodes: [{ text: '查看使用教程', hide: true }],
+        cards: [{ title: '重置订阅信息', hide: true }, { title: '通知', hide: true }],
+        redirect: { '#/node': '#/dashboard', '#/traffic': '#/dashboard' }
+    };
+    function kcFFHide(el) {
+        if (!el) { return; }
+        if (el.getAttribute('data-kc-ff-hidden') === '1') { return; }
+        el.setAttribute('data-kc-ff-hidden', '1');
+        el.style.setProperty('display', 'none', 'important');
+    }
+    function kcFFSetLeafText(scopeEl, oldText, newText) {
+        if (!scopeEl) { return false; }
+        var cur = (scopeEl.textContent || '').trim();
+        if (cur === newText) { return true; }
+        if (cur !== oldText) { return false; }
+        var leaves = scopeEl.querySelectorAll('*');
+        for (var i = leaves.length - 1; i >= 0; i--) {
+            if (leaves[i].childElementCount === 0 && (leaves[i].textContent || '').trim() === oldText) {
+                leaves[i].textContent = newText;
+                return true;
+            }
+        }
+        if (scopeEl.childElementCount === 0) { scopeEl.textContent = newText; return true; }
+        return false;
+    }
+    function kcFFMapValue(text) {
+        var t = String(text || '').trim();
+        return KC_FF_PERIODS[t] || t;
+    }
+    function kcFFRunRows() {
+        var divs = document.querySelectorAll('#app div');
+        for (var i = 0; i < divs.length; i++) {
+            var d = divs[i];
+            if (d.childElementCount !== 2) { continue; }
+            if (d.getAttribute('data-kc-ff') === '1') { continue; }
+            var labEl = d.children[0];
+            var valEl = d.children[1];
+            var lab = (labEl.textContent || '').trim();
+            if (lab.length > 16 || lab.charAt(lab.length - 1) !== '：') { continue; }
+            var key = lab.slice(0, -1);
+            for (var r = 0; r < KC_FF_RULES.rows.length; r++) {
+                var rule = KC_FF_RULES.rows[r];
+                if (rule.label !== key) { continue; }
+                if (rule.hide) { kcFFHide(d); d.setAttribute('data-kc-ff', '1'); continue; }
+                var valOld = (valEl.textContent || '').trim();
+                var valNew = rule.value != null ? rule.value : kcFFMapValue(valOld);
+                var okL = kcFFSetLeafText(labEl, key + '：', (rule.rename || key) + '：');
+                var okV = kcFFSetLeafText(valEl, valOld, valNew);
+                if (okL && okV) { d.setAttribute('data-kc-ff', '1'); }
+            }
+        }
+    }
+    function kcFFRunCols() {
+        var ths = document.querySelectorAll('th');
+        for (var i = 0; i < ths.length; i++) {
+            var th = ths[i];
+            if (th.getAttribute('data-kc-ff-col') === '1') { continue; }
+            var t = (th.textContent || '').trim();
+            for (var r = 0; r < KC_FF_RULES.cols.length; r++) {
+                var rule = KC_FF_RULES.cols[r];
+                if (t !== rule.label) { continue; }
+                th.setAttribute('data-kc-ff-col', '1');
+                var idx = th.cellIndex;
+                kcFFSetLeafText(th, rule.label, rule.rename || rule.label);
+                var tds = document.querySelectorAll('td');
+                for (var j = 0; j < tds.length; j++) {
+                    var cell = tds[j];
+                    if (cell.cellIndex !== idx) { continue; }
+                    var oldV = (cell.textContent || '').trim();
+                    var newV = rule.map ? (rule.map[oldV] || null) : null;
+                    if (newV && newV !== oldV) { kcFFSetLeafText(cell, oldV, newV); }
+                }
+            }
+        }
+    }
+    function kcFFRunNodes() {
+        var all = document.querySelectorAll('#app button, #app a');
+        for (var i = 0; i < all.length; i++) {
+            var el = all[i];
+            if (el.getAttribute('data-kc-ff-node') === '1') { continue; }
+            var t = (el.textContent || '').trim();
+            for (var r = 0; r < KC_FF_RULES.nodes.length; r++) {
+                var rule = KC_FF_RULES.nodes[r];
+                if (t !== rule.text) { continue; }
+                el.setAttribute('data-kc-ff-node', '1');
+                if (rule.hide) { kcFFHide(el); }
+            }
+        }
+    }
+    function kcFFRunCards() {
+        var cards = document.querySelectorAll('#app .n-card');
+        for (var i = 0; i < cards.length; i++) {
+            var c = cards[i];
+            if (c.getAttribute('data-kc-ff-card') === '1') { continue; }
+            var head = c.querySelector('.n-card-header__main');
+            var title = head ? (head.textContent || '').trim() : '';
+            for (var r = 0; r < KC_FF_RULES.cards.length; r++) {
+                var rule = KC_FF_RULES.cards[r];
+                if (title !== rule.title) { continue; }
+                c.setAttribute('data-kc-ff-card', '1');
+                if (rule.hide) { kcFFHide(c); }
+            }
+        }
+    }
+    function kcFFGuardRoute() {
+        var h = window.location.hash || '';
+        var map = KC_FF_RULES.redirect;
+        for (var k in map) {
+            if (map.hasOwnProperty(k) && h.indexOf(k) === 0) {
+                try { window.location.replace(map[k]); } catch (e) { window.location.hash = map[k]; }
+                return true;
+            }
+        }
+        return false;
+    }
+    var kcFFLastRun = 0;
+    function kcFFRun() {
+        if (!document.body) { return; }
+        if (kcFFGuardRoute()) { return; }
+        if (!document.body.classList.contains('kc-has-topbar')) { return; }
+        var now = Date.now();
+        if (now - kcFFLastRun < 60) { return; }
+        kcFFLastRun = now;
+        kcFFRunRows();
+        kcFFRunCols();
+        kcFFRunNodes();
+        kcFFRunCards();
+    }
+    var kcFFTimer = null;
+    var kcFFObserver = null;
+    var kcFFObsTimer = null;
+    function kcFFInit() {
+        if (!kcFFObserver) {
+            try {
+                kcFFObserver = new MutationObserver(function () {
+                    if (kcFFObsTimer) { return; }
+                    kcFFObsTimer = setTimeout(function () { kcFFObsTimer = null; kcFFRun(); }, 80);
+                });
+                kcFFObserver.observe(document.body, { childList: true, subtree: true });
+            } catch (e) { kcFFObserver = null; }
+        }
+        if (!kcFFTimer) { kcFFTimer = setInterval(kcFFRun, 1000); }
+        kcFFRun();
+    }
     window.addEventListener('hashchange', function () {
         syncActive();
+        kcFFRun(); // v1.22.0 · 机场字段过滤器
         // S2: 门户显隐 + 各页增强
         syncDashboardClass();
         // 任何方式进入首页（含 SPA 跳转 / 登录后落点 #/）：门户未挂载前先压制原生内容，挂载成功自动解除
@@ -3171,6 +3514,8 @@
             mountGuest(); ensureGuestLoop();
         }
         else { teardownGuest(); }
+        // R6：登录门控续接（游客「登录后购买」的意图在登录完成后自动执行）
+        ensureIntentResume();
         // R5: 下单确认页余额支付提示（余额不足拦截）
         if (isConfirmPage() && readToken()) { payTip.ready = false; ensurePayTipLoop(); }
         else { removePayTip(); }
@@ -3225,10 +3570,11 @@
         var nodes = [];
         var n;
         while ((n = walker.nextNode())) {
-            if (n.nodeValue && (n.nodeValue.indexOf('¥') >= 0 || n.nodeValue.indexOf('￥') >= 0)) { nodes.push(n); }
+            if (n.nodeValue && (n.nodeValue.indexOf('¥') >= 0 || n.nodeValue.indexOf('￥') >= 0 || n.nodeValue.indexOf('CNY') >= 0)) { nodes.push(n); }
         }
         for (var i = 0; i < nodes.length; i++) {
-            nodes[i].nodeValue = nodes[i].nodeValue.split('¥').join('$').split('￥').join('$');
+            // v1.22.0：货币代码「CNY」一并替换为「USD」（SP-2026-10-12-v1.1.0 §P8 全站 $ 口径）
+            nodes[i].nodeValue = nodes[i].nodeValue.split('¥').join('$').split('￥').join('$').replace(/\bCNY\b/g, 'USD');
         }
         return nodes.length > 0;
     }
@@ -3243,6 +3589,7 @@
     function tryBoot() {
         if (booted) { return; }
         if (!document.body) { return; }
+        kcFFGuardRoute(); // v1.22.0：机场页直连兜底（#/node、#/traffic → #/dashboard）
         // 2026-10-11：货币兜底对**所有页面**常开（含游客页/登录页）——余额与金额一律以 $ 展示，不出现人民币符号
         ensureCurrencyGuard();
         if (!shouldInject()) {
@@ -3270,6 +3617,7 @@
         document.body.classList.add('kc-card-guard');
         document.body.classList.toggle('kc-dark', IS_DARK);
         ensureCurrencyGuard();
+        kcFFInit(); // v1.22.0 · 机场字段过滤器（心跳 + 观察器 + 首扫）
         mountTopbar();
         setupNavCategories();
         bindEvents();
@@ -3282,6 +3630,8 @@
         if (isPlanPage()) { ensurePlanCards(); }
         if (isConfirmPage() && readToken()) { ensurePayTipLoop(); }
         if (isOrderPage()) { ensureOrderPaint(); }
+        // R6：登录门控续接（登录刚完成时启动意图执行）
+        ensureIntentResume();
         // FEAT-007：通用压制解除时机——dashboard/plan/order 由各自增强完成时解除，
         // 其余会员页按「增强就绪」检查后解除（含硬超时兜底）
         releasePreAppWhenReady();

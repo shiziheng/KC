@@ -9,6 +9,249 @@
 
 ---
 
+## v1.24.0 · 2026-10-13 · 商品管理 MVP：一个页面配商品，保存即同步商城
+
+- 背景：用户反馈"配置商品太难"（跨 2 后台 4+ 页面、填技术码、配了不生效）。以产品专家视角把《商品配置体验重构》与《双模式定价与对外分销 API 设计》两份方案**精简为 MVP 并执行**：先解决"一个页面、一次保存、立即可买"。
+- 交付（KC 后台新增「商品管理」页，原生表单，无框架依赖）：
+  - **列表**：商品名（+ID）/ 售价（$ 与周期）/ 货源 / 状态（在售 + 商城显示）/ API 分销配置 / 编辑；一行一商品，全程无技术码。
+  - **编辑与新建（单表单）**：商品名称* / 计费周期（月付 / 一次性）/ 售价（美元）* / 货源（下拉：不绑·plus·pro_5x·pro_20x —— 与插件自动发卡白名单一致）/ 一句话卖点 / 商品说明 / 排序 / 在售与商城显示开关 / API 分销定价（加价幅度，配置存储，对外接口 v2 启用）。
+  - **「保存并同步商城」一次完成**：`xboard.v2_plan`（名称 / prices / 显示 / 可售 / kc_card / 说明）+ `kc_plans`（货源绑定 / API 配置）+ `kc_pricing_rules`（manual 价替换）+ `kc_listing_cards`（同步）+ **`v2_plugins.config.packages` 映射**（订阅类自动写 —— 新商品下单即可自动发卡）。
+  - 菜单收敛：「商品管理」取代原「商品与资费」「商品卡片」入口（两者菜单隐藏、页面保留直连）。
+- API（server.js 新增 2 条，均 `requireSecondaryAuth` 且幂等）：`GET /api/admin/products`（v2_plan × kc_plans 聚合列表）+ `POST /api/admin/products/save`（聚合保存）。
+- 数据（mysql-store.js）：`kc_plans` 新增 `api_enabled` / `api_markup_percent`（幂等 ALTER，配置占位列）。
+- 验证：`tools/_v124_verify.js` 端到端**全绿** —— 编辑预填（名称/售价/货源/卖点全对）→ 改价 15→16 → `v2_plan.prices={monthly:16}` + `kc_pricing_rules=1600` 双写 ✓ → 改回 15 ✓ → 新建测试商品 → `v2_plan(id=16)` / `kc_plans(xplan_16, mock_zovo/plus, api 12%)` / `packages_key=plus` / 资费 50 分 全部落位 ✓ → 测试数据清理（v2_plan + kc_plans + pricing + packages 键）✓；截图与报告 `logs/v124-verify/2026-10-13T00-48-02-720Z/`。
+- 部署：server.js + mysql-store.js + admin.html（均为挂载文件，重启 KC 容器加载）；验证后列表保持 10 商品原样（无脏数据）。
+- MVP 边界（明确留待后续版本）：3 步向导 / 报价模拟器（体验版）、对外 Open API（quote/orders/API 客户管理，UX-5/6）、成本同步（UX-4）——见两份方案文档。
+- 下一步：在 KC 后台「商品管理」实用：改一个商品的价格、或新建一个商品，保存后到商城商品页验证即时生效。
+
+### v1.23.1 · 2026-10-13 · 修复：新增套餐「元/月」残留 + 上游/资费入口链路修正
+
+- 背景：用户反馈两问题——①「新增套餐有『元/月』等明显问题」②「后台里上游管理、资费管理一个也没有」。以双站实测走查（Xboard 添加套餐弹窗 + KC 后台登录走查 + i18n 根源扫描）完成根因定位后修复。
+- **问题①（元/月残留）根因与修复**：
+  - 根因：价格后缀「元/月」来自 i18n 键 `subscribe.plan.columns.price_period.unit.month`（共 7 个 unit 键 × 2 份命名空间，值为「元/月/季/半年/年/两年/三年/次」）；上轮 V2.1 的「数字+元」正则只覆盖**同一文本节点**，而实际 DOM 拆分为 `['月付','$','15','元/月']` 多节点 → 未命中。
+  - 修复：i18n 覆盖 14 个 unit 键 → `/月 /季 /半年 /年 /两年 /三年 /次`；`settings.invite.commission_withdraw_limit.title` → 「提现单申请门槛($)」。
+  - 体验优化：隐藏「两年付 / 三年付」价格行（代充品类无超长周期商品；保留 月/季/半年/年/充值包）。
+  - 验证：价格节点序列 `月付 | $ | 15 | /月`（视觉「月付 $15/月」）；全站可见文本"元"字 0 残留（断言词典加固 `元/`）；添加套餐弹窗 label：套餐名称/标签/月付/季付/半年付/年付/充值包/套餐说明。
+- **问题②（上游/资费"一个也没有"）三层根因与修复**：
+  - 原因1（入口误导）：Xboard 后台「代充运营」链接原先指向 `:3100/business-admin`——独立轨道 Mock 运营台（冻结版，不含上游/资费）；已修正为 `:3100/admin`（KC 后台——上游/资费/卡片/权益的真正所在地）。
+  - 原因2（数据缺失）：`tools/migrate-upstreams.js` **从未成功执行过**——脚本经 mysql-store 连接，本机运行缺 DB_PORT（默认 3306 被拒）。修复脚本（自动加载 .env + 默认 3310，本机可跑）后回填成功：1 上游（`mock_zovo`）+ 12 条套餐目录；「上游管理」页现有完整数据（套餐数 12 / healthy）。
+  - 原因3（命名差异）：菜单更名对齐运营语言——「上游接入」→**「上游管理」**、「商品 SKU」→**「商品与资费」**（`public/admin.html` 8 处 + `server.js` 2 处，含页面标题与提示）。
+- 验证：`tools/check-admin-airport.js`（词典新增 `元/`）**33 PASS / 0 FAIL / 0 词典命中**；KC 后台实测：侧栏四菜单（上游管理/商品与资费/商品卡片/权益）+ 上游页数据 + 10 SKU 列表；价格视觉「$15/月」。
+- 部署：Xboard 壳层（blade 挂载即生效 + view:clear）；KC 容器重启（server.js 提示文案变更）；上游回填报告 `logs/migrate-upstreams-report.json`。
+- 下一步：用户在 KC 后台（`http://localhost:3100/admin`）复核「上游管理 / 商品与资费」两页；后续可考虑把 KC 后台运营四页的入口也注入 Xboard 后台壳层（不用跳转即达）。
+
+### v1.23.0 · 2026-10-12 · Xboard 管理端代充化：运行时过滤器（i18n 覆盖 + 菜单收敛 + 字段过滤）
+
+- 背景：继 v1.22.0 前台修复后，以运营管理员身份实测 **Xboard 管理端**（`/5fea4ca1`，17 页走查 + DOM 精探 + 编译包审计）——发现菜单分组 / 仪表盘流量卡 / 表格机场列 / 文案 / 货币 / 品牌共六类机场语义残留，本次全部处置。
+- 引擎（`resources/views/admin.blade.php` 壳层注入「KC-ADMIN-V2」三层过滤器；volume 单文件挂载，改本地即生效）：**① i18n 覆盖**（主模块执行前改写 `window.XBOARD_TRANSLATIONS['zh-CN']`）+ **② 菜单收敛**（路径黑/白名单 + 空组整组隐藏）+ **③ 字段过滤**（可见文案精确匹配）+ **④ 文案兜底**（品牌 / 货币）；只隐藏（display:none）不删除节点；心跳 1.5s + MutationObserver(250ms) + hashchange 三重自愈；幂等可重跑。
+- 落地清单：
+  - i18n：订阅管理→**商品管理**（侧栏组）、订阅套餐→**商品套餐**、订阅计划→**商品名称**、周期→**服务周期**（值映射 月付→30 天 / 一次性→单次 / 季→90 / 半年→180 / 年→365）、流量包→**充值包**、订阅→**当前商品**（用户列/编辑/筛选/弹窗）、支付/系统/邮件提醒描述中性化、套餐说明模板换为代充版。
+  - 菜单：优惠券 / 礼品卡 / 服务器 / 节点 / 权限组 / 路由 / 主题 / 插件 / 知识库隐藏；「节点管理」空组整组隐藏；保留原位注入「代充运营」运营入口链接。
+  - 表格列隐藏：权限组 / 在线设备 / 已用流量 / 总流量 / 下次重置时间 / **到期时间**（用户列表）。
+  - 表单行隐藏：流量 / 速度限制 / 设备限制 / 容量限制 / 流量重置方式 / 重置包 / 服务器分组 / 注册试用 / 订阅URL / 订阅链接 / 折抵金额。
+  - 页签隐藏：订阅设置 / 节点配置 / 订阅模板（系统设置页）。
+  - 卡片隐藏：月上传 / 月下载 / 节点流量排行 / 用户流量排行（仪表盘）。
+  - 弹窗区块与行菜单：订阅信息 / 流量信息区块隐藏；复制订阅URL / 重置UUID及订阅URL / 重置流量 / TA的流量记录隐藏。
+  - 文案兜底：品牌 Xboard→**KC 加速**（与前台登录卡白标一致）；货币 ¥→$（含全角 ￥ 与「数字+元」清理）；站点名称/描述经 `Setting::set('app_name'/'app_description')` 正规写入（清 Redis 缓存）。
+- 验证：新增断言工具 `tools/check-admin-airport.js`（真实登录 → 8 保留页 + 6 系统页签 + 行菜单 + 套餐编辑弹窗 → 真正可见文本采集（display:none/visibility 祖先链排除）→ 机场词典 + 33 项专项断言）——**33 PASS / 0 FAIL / 0 词典命中**（报告 `logs/admin-airport/2026-10-12T16-45-37-822Z/report.json`）。关键复验点：套餐弹窗机场字段全隐藏、「充值包」双行归位、¥→$ 与「元」清理、到期时间列消失、邮件提醒文案。
+- 部署：`admin.blade.php` 4,811 → 16,023 bytes（+ 基线备份 `.bak_pre` 与快照 `tools/xboard-patches/admin.blade.php`）；本地 = 容器（bind mount 同一文件）。审计用测试账号提权（is_admin 1→0）已还原。
+- 工具链：注入模板 `tools/_v123_admin_inject_script.html.tpl`（单一源）+ V2/V2.1/V2.2/V2.3 补丁脚本（均幂等、带语法校验与快照联动）。
+- 方法学备注：管理端截图**不用 captureBeyondViewport**（全页截图会触发重排 → React 重建表格 → 捕捉到过滤器自愈前的瞬间，产生「未生效」假象）；运行时实测（display 状态 + 手动对照实验）才是真相。
+- 下一步：`admin.blade.php` 在 Xboard 仓库未提交（M 状态）；KC 仓库本轮改动待提交；后端菜单策略与壳层收敛的完全统一（AdminMenuController 策略清单驱动壳层渲染）另开排期。
+
+### v1.22.0 · 2026-10-12 · 全站机场字段屏蔽与代充化替换（实测走查版）
+
+- 背景：用户反馈订单详情页残留机场字段（`类型/周期`、`产品流量`）。研发侧先做 headless 实测走查（全站 12 个可达面 + 下单全生命周期），产出 **9 项体验问题 + 8 项决策**（方案稿 `docs/方案/机场字段全站屏蔽与代充化替换-v1.1.0.md`），本次全部落实。
+- 引擎（`kc_theme_inject.html` 新增 S4 段）：**文案精确整段匹配的运行时字段过滤器**——行级（label:value）/ 列级（表格 th）/ 节点级（按钮）/ 卡片级（n-card 标题）；只隐藏不删除 Vue 节点；幂等（已达标跳过）；多触发自愈（boot + hashchange + 订单页 800ms×15 轮询 + 全局 1s 心跳 + MutationObserver childList 防抖 80ms，禁用 characterData）。
+- 落地清单（9 项问题全处置）：
+  - 订单详情：`类型/周期` →「**服务周期**」（值映射：月付→30 天 / 季付→90 / 半年付→180 / 年付→365 / 两年付→730 / 三年付→1095 / 一次性→单次）；`产品流量` →「**交付方式：卡密自动发放**」；「查看使用教程」按钮隐藏；`旧订阅折抵金额`/`折抵` 行隐藏。
+  - 订单列表：「周期」列 →「**服务周期**」+ 值映射（30 天 / 单次）。
+  - 个人中心：「**重置订阅信息**」整卡隐藏；「**通知**」卡（到期邮件提醒 / 流量邮件提醒）整卡隐藏。
+  - 菜单：头像下拉 + 移动抽屉移除「使用文档 / 节点状态 / 流量明细」三个机场入口。
+  - 路由：`#/node`、`#/traffic` 直连（含刷新）与 SPA 跳转 → 静默重定向 `#/dashboard`。
+  - 货币守护扩展：显示面独立「CNY」文本 → 「USD」（覆盖订单总额「$ 0.00 CNY」、钱包「24.44 CNY」场景）；并入既有 1.5s 货币心跳。
+  - 文案代充化三处：门户热门套餐卡按钮「立即订阅」→「立即办理」；充值面板提示去掉「与订阅」。
+- 验证：新增 L4 断言工具 `tools/check-airport-lexicon.js`（真正可见文本采集 + 机场词典 + 12 项专项断言）——**19 / 19 全 PASS**：全部页面 0 机场词命中；列表「服务周期」；详情「服务周期：30 天」「交付方式：卡密自动发放」；个人中心两卡消失（只剩 我的钱包 / 修改密码）；菜单三项消失；node/traffic 重定向生效；游客落地干净。
+- 部署：custom_html 257,123 → 276,884 字节，本地三源拼接与线上 md5 逐字节一致（`0a6cd3f2…`）；**连带部署 v1.14 主题增量**（优惠行 / 类型标 / 游客套餐区，此前因 Docker 故障滞留未上线）——实机核验：类型标已显示（商品页「代充」标）、游客浏览与订单/个人中心链路正常。
+- 工具与证据：`tools/_v122_ff_patch.js`（幂等补丁脚本，含重复注入检查）；走查证据 13 张截图 + 3 份报告（`logs/ff_trial/`）；断言报告 `logs/airport-lexicon/2026-10-12T15-22-18-964Z/report.json`。
+- 观察（记录不改）：已完成订单副标题「订单已支付并开通。」与底部「代充开通 · 待开通」存在轻微口径张力（native 文案，改动性价比低，暂缓）。
+
+### v1.21.0 · 2026-10-11 · 后台解耦 R7：老字段下掉评估报告 + 数据健康诊断
+
+- 评估报告：`docs/方案/老字段下掉评估-v1.0.0.md`（首版）。TL;DR：`xboard.v2_plan` ↔ `plus_papay.kc_plans+kc_pricing_rules+kc_listing_cards` **10/10 plans 全匹配**（2026-10-11 实测），数据层已具备下掉老字段的客观条件；但**主观条件**（插件切读法 + 前台切读法）尚未完成，**本期不实际下掉**。
+- API：`GET /api/admin/diag/legacy-fields` —— 后台一键查双轨差异（需 `requireSecondaryAuth`），返回 ready_to_drop_legacy 决策布尔 + 逐 plan 不一致列表。
+- 离线检查：`tools/check-legacy-readiness.js` —— 比对 v2_plan 与 kc_* 新表，输出 `logs/legacy-readiness.json`；exit code 0=ready / 1=有差异 / 2=FAIL；适合 CI/CD 接入。
+- 决策路径（评估稿 §五）：v1.21.0 稳定运行 ≥ 1 个小版本后，在 v1.22.0+ 启动 R7 续作（完成 BFF 代理 + 前台切读法后再 DROP COLUMN）。
+- 文档：VERSION.json→v1.21.0；产品全景/CHANGELOG/README 同步。
+- 自测：`check-legacy-readiness.js` PASS：10 matches / 0 mismatches / 0 kc_only / 0 legacy_only；`node --check` 全过。
+
+### v1.20.0 · 2026-10-11 · 后台解耦 R6：权益高级·事件型权益 + 动作钩子
+
+- 数据：KC 数据库新增 1 张表（`mysql-store.js` 自动建）—— `kc_entitlement_actions`（user × rule_code × action_code × handler × target_plan_code × params_json × status × result_json 动作流水）；索引 idx_user/idx_rule/idx_action。
+- API：
+  - `POST /api/integration/entitlement/event` —— 集成端点（X-Integration-Key 公开鉴权）。Body `{user_id, event_code, target_plan_code?, params?}`；按 `kc_entitlement_rules` 中 source='event' 的规则匹配（先精确 event_code，再回退到 '*' 通配），逐条执行 handler。
+  - `GET /api/admin/entitlements/actions?user_id=` —— 后台查询用户动作流水。
+  - 内置 handler：`audit_log`（仅写动作流水 status=success）/ `plan_switch`（写动作流水 status=skipped + result.note 标注"v1.20.0 仅记录计划不实切换；实切换留 v1.21+"，避免越权）。handler 选择通过 rule.note 中的 `handler=xxx` 配置；target 通过 `target=xxx` 读取。
+- 后台：权益页"按 user_id 查询"扩展为同时展示 grants + actions 两张表（事件动作流水带 status badge 与 result 摘要）。
+- 回填脚本：`tools/migrate-entitlements.js` 加 2 条 event 源 demo 规则（`plus_purchase_event_audit` audit_log + `plus_purchase_upgrade_intent` plan_switch）。
+- 文档：VERSION.json→v1.20.0；产品全景/CHANGELOG/README 同步。
+- 自测：`tools/_v120_r6_e2e.js` 端到端 PASS（6 阶段）：plan_purchased 事件精确匹配 2 条规则 + user_login 事件通配 1 条 + DB 3 行流水 + 鉴权失败 + 字段校验失败。`node --check` 全过。
+
+### v1.19.0 · 2026-10-11 · 后台解耦 R5：权益高级·插件协作自动发权益 + 退款回补
+
+- 集成端点（公开鉴权 X-Integration-Key）：
+  - `POST /api/integration/entitlement/issue-after-cdk` —— 插件发卡成功后回调，按 plan_code 查 status='active' AND source='purchase' AND trigger_plan_code=plan_code 的规则，给下单 user 自动下发 grant；多规则按 priority DESC；幂等（uk_user_rule_active + INSERT IGNORE）。
+  - `POST /api/integration/entitlement/refund` —— 退款/失败回补，按 grant_id + order_trade_no 幂等回滚一次扣次（mark note=REFUNDED + grant.remaining_uses + 1 + exhausted→active）。
+- 插件：`KcIntegration/Plugin.php` 在发卡成功处（`$result['ok']`）增加 `callKcEntitlementIssueAfterCdk` 调用，**失败仅日志不阻塞主路径**（订单已成功）；同步到快照 `tools/xboard-patches/KcIntegration/Plugin.php`（Xboard 仓库 `plugins/` 被 git 忽略，快照是唯一版本化备份）。
+- DB 补列：`kc_entitlement_uses` 补 `note VARCHAR(255)` 列（ALTER 容错处理兼容老部署）。
+- 回填脚本：`tools/migrate-entitlements.js` 加 1 条 purchase 源 demo 规则 `plus_purchase_off20_grant`（购买 plus 自动发 30 天有效期 8 折权益）。
+- 文档：VERSION.json→v1.19.0；产品全景/CHANGELOG/README 同步。
+- 自测：`tools/_v119_link_e2e.js` 端到端 PASS（9 阶段）：注册→下单→支付回调→发卡→issue-after-cdk→grant 落库（grant_id=3, source='purchase', source_ref=order:trade_no:cdk）→DB 一致性→refund→回补验证（remaining_uses 0→1, status exhausted→active）。`node --check` 全过；R5 标记 8 项全命中。
+
+### v1.18.0 · 2026-10-11 · 后台解耦 R4：权益 MVP（价格型）+ 自动发权益基础设施
+
+- 数据：KC 数据库新增 3 张表（`mysql-store.js` 自动建）—— `kc_entitlement_rules`（规则定义 code UNIQUE / discount_type 三类 × discount_value × 门槛 × 配额 × 有效期 × 优先级 × 适用范围 plan_scope × source/trigger_plan_code × 有效期）、`kc_entitlement_grants`（用户持有，uk_user_rule_active + INSERT IGNORE 防并发同 user 同规则多发）、`kc_entitlement_uses`（扣次流水，uk_grant_order 幂等防同 grant 同单重复扣次）。
+- API：6 条 `/api/admin/entitlements/*`（list/create/patch rules + /issue 发 grant + /revoke + /grants 查询 user 持有）。统一 `requireSecondaryAuth`，归一化函数 `ruleCodeNorm`/`ruleStatusNorm`/`discountTypeNorm`/`ruleNorm`；`entitlementGrantIssue` 公共函数（admin 与 R5 集成钩子共用入口）。
+- 价格引擎：`POST /api/pricing/quote` v1.18.0 起**启用 entitlement 分支**——查询 user 的 active grants，按 discount_type 计算最终价，与 manual/promotion 候选比价取低；snapshot_json 增加 `entitlement` 字段；返回新增 `applied_grant_id`。
+- 后台页：运营壳菜单新增「权益」顶级项（lucide-ticket-percent 图标）；卡片列表 + 状态过滤 + 新建/编辑/暂停/启用/发权益/撤销/按 user_id 查询；UI 集成于既有 design tokens。
+- 回填脚本：`tools/migrate-entitlements.js`（幂等可重跑，导入 2 条 demo 规则：`plus_member_off20` percent 20% + `pro_newuser_fixed50` fixed_cents 50 cents）。**不动** 插件钩子（订单触发自动发权益基础设施已留位，R5 接入插件协作）。
+- 文档：VERSION.json→v1.18.0；产品全景新增「权益」行 + 锚点 `feat:entitlements`；CHANGELOG 顶部追加；README 同步。
+- 自测：`node --check server.js` 与 `mysql-store.js` 通过；后台脚本 0 错误；`node tools/check-docs-sync.js` 15/15；权益相关 14 项 marker 全命中；3 张表已建 + 2 条规则已回填（rows=2/0/0）。
+
+### v1.17.0 · 2026-10-11 · 后台解耦 R3：商品展示层独立 + 双轨兜底
+
+**一句话概括**：把"商品"概念中"前台展示成什么样子"那部分从 v2_plan.kc_card 拆出 —— 后台新增「商品卡片」页基于 KC 视图 SKU 编辑，独立存 `kc_listing_cards`；提供"全部同步到 v2"一键双写兜底让插件立即读到新配置；**终极方案（插件改读 KC 侧）留给 R3 续作**。
+
+### 新增
+- KC 数据库新增 `kc_listing_cards` 表（plan_id PK + card_json + is_visible + listing_state + sort + updated_at；`mysql-store.js` 自动建）。
+- 后台 API 4 条（`/api/admin/listing-cards*`）：`GET 列表（含默认 card）`、`PUT 保存（upsert by plan_id）`、`POST 可见性切换`、`POST sync-to-v2 双写兜底（按 kc_plans.code='xplan_<v2id>' 映射回写 xboard.v2_plan.kc_card）`。
+- 后台页「商品卡片」（运营壳菜单顶级项 / `lucide-credit-card` 图标）：列表卡片（标题/副标题/类型标/优惠行/可见性摘要）+ 「编辑」弹窗（含标题/副标题/状态/排序/类型标/划线原价/促销文案/权益清单/提示行/底部服务链接）+ 「显示/隐藏」开关 + 顶部「全部同步到 v2」按钮。
+- 数据回填脚本 `tools/migrate-listing-cards.js`（幂等可重跑）：从 `xboard.v2_plan.kc_card` 回填到 `kc_listing_cards`，按 `kc_plans.code='xplan_<v2id>'` 建立 plan_id 映射；**不动** `v2_plan.kc_card`；报告落 `logs/migrate-listing-cards-report.json`。
+
+### 修改
+- 落地策略保守：**R3 完成后 KC 侧三页（上游接入 / 商品 SKU / 商品卡片）齐跑**，**未改插件读法** —— `PlanCardController` 仍读 `v2_plan.kc_card`；R3 续作时改插件读 KC 侧（按方案 SP-2026-10-11-v1.0.1 §7 M3 双轨读）。
+- 双轨兜底：后台顶部「全部同步到 v2」按钮调 `sync-to-v2` 把当前 kc_listing_cards 一次性写回 v2_plan.kc_card，**让插件立即读到新配置**（无需重启插件 / 容器）。
+
+### 验证
+- 静态：`node --check server.js` 通过；后台脚本 `new Function` 解析 0 错误；展示层相关 marker 全在（`listingStateNorm`、`/api/admin/listing-cards`、`sync-to-v2`、`kc_listing_cards`、`LISTING_CARDS_TABLE_SQL`、`loadListingCards` 等）。
+- 数据：`tools/migrate-listing-cards.js` 一次成功——10 张卡片插入（其中 1 张来自 v2_plan.kc_card 非空内容、9 张用默认模板）；幂等可重跑；映射零跳过（10/10）。
+- `docker restart kc-gpt-pay2-app` 后 KC 容器 2 秒恢复 200；`/api/integration/health` sellable=true 未受影响。
+- `node tools/check-docs-sync.js` 通过；`node tools/check-currency.js` 全绿（amount_cents → $ 守护兼容）。
+
+### 影响与风险
+- **未改插件读法**：当前生效配置仍是 v2_plan.kc_card；后台保存 kc_listing_cards 后必须点「全部同步到 v2」才生效（这是有意收紧的边界，下游流程可见可控）。
+- `sync-to-v2` 是写库操作（Xboard 库），有 confirm 确认；映射按 `code='xplan_<v2id>'` 解析，跳过无映射的（不回写）。
+- 后台三页 R1+R2+R3 独立运作，互不耦合。
+
+### 下一步
+- 用户确认后开 R3 续作（插件改读 KC 侧）：改 `PlanCardController::index()`，先读 `kc_listing_cards`（通过 KC API 或直连 plus_papay），无则回退 `v2_plan.kc_card`；同步快照 `tools/xboard-patches/KcIntegration/`。
+- 或进入 R4（权益 MVP）：`kc_entitlements*` 表 + 后台「权益」页 + 价格引擎权益分支。
+
+---
+
+## v1.16.0 · 2026-10-11 · 后台解耦 R2：资费层独立 + 价格引擎 quote
+
+**一句话概括**：把"商品"概念中承载"卖多少钱"的那部分抽离成独立配置面 —— 后台新增「商品 SKU」页，可视化管理 KC 视图 SKU（引用上游套餐键）与资费规则（manual/promotion/entitlement 三类来源 + priority + 有效期），支持整体替换与价格预览；新增 `POST /api/pricing/quote` 价格引擎，落单时固化 snapshot 保证退款可复算；R2 与 R1 同步保持 R3 才真正切换前台读法的保守边界。
+
+### 新增
+- KC 数据库新增 3 张表（`mysql-store.js` 自动建）：
+  - `kc_plans`：KC 视图 SKU（code UNIQUE、kc_type='recharge'/'account'/'entitlement'、upstream_code + plan_key 引用上游、status=active|paused|archived）；
+  - `kc_pricing_rules`：资费规则（plan_id + source + period + amount_cents 美分数 + priority + valid_from/until + enabled），按 priority DESC + 同优先级 manual>promotion>entitlement 排序；
+  - `kc_order_pricing_snapshot`：订单价格快照（trade_no UNIQUE、base/final cents、applied_source/rule_id、snapshot_json），`quote` 调用时按 trade_no 幂等 upsert，保证退款按当时规则金额走。
+- 后台 API 7 条（`/api/admin/plans*`）：`GET 列表`、`POST 新建（校验上游套餐键）`、`PATCH 更新`、`GET 资费规则`、`PUT 整体替换`、`POST 价格预览`、`POST /api/pricing/quote` 价格引擎（按 plan_code 入参）。
+- 后台页「商品 SKU」（运营壳菜单新增顶级项 / `lucide-package` 图标）：列表卡片（含类型标/状态/规则数/上游引用）+ 「新建 SKU」「暂停/启用」「资费规则」「整体替换」「价格预览」操作（统一弹窗，价格预览 inline 表格）。
+- 数据回填脚本 `tools/migrate-pricing.js`（幂等可重跑）：从 `xboard.v2_plan.prices` 与 `v2_plugins.config.packages` 迁移 10 个 SKU（订阅 1 + 充值 9）→ `kc_plans` + 10 条 manual 规则；**未改** `v2_plan.prices` 与 `kc_topup_amount`（R3 切换读法时再下架）；报告落 `logs/migrate-pricing-report.json`。
+- `priceQuote()` 函数（server.js 内部工具）：按 plan_code + 有效期内规则取最优命中（priority DESC → 同优先级 manual>promotion>entitlement），同时落库 snapshot。
+
+### 修改
+- 落地策略保守：**R2 仅 KC 侧独立管理 + 后台可视 + 价格引擎就绪**；**未改** 插件 `config.packages` 与前台商品页——R3 展示层时统一切读法（按方案 SP-2026-10-11-v1.0.1 §7 M3 双轨读）。
+- `PUT /api/admin/plans/:id/pricing` 当前拒绝 `source='entitlement'`（R4 启）；R2 仅 manual/promotion 走通规则。
+
+### 验证
+- 静态：`node --check server.js` 与 `node --check mysql-store.js` 通过；后台脚本 `new Function` 解析 0 错误；资费相关 9 项 marker 全在（`/api/admin/plans`、`/api/pricing/quote`、`kc_plans`、`kc_pricing_rules`、`kc_order_pricing_snapshot` 等）。
+- 数据：`tools/migrate-pricing.js` 一次成功——10 SKU + 10 manual 规则（订阅 plan 1 = 1500 cents/月 绑 mock_zovo/plus；9 个充值类 = once 周期绑 kc_topup_amount 直接写入）；幂等可重跑。
+- 真机部署：`docker restart kc-gpt-pay2-app` 让 `ensureReady` 跑一次建新表；KC 容器 2 秒恢复 200；`/api/integration/health` sellable=true 未受影响。
+- `node tools/check-docs-sync.js` 通过；`node tools/check-currency.js` 全绿（amount_cents → $ 守护兼容）。
+- **价格引擎 quote 端到端**：admin 登录与 quote 实测待人工执行（脚本路径见 `tools/_v115_link_e2e.js` 的 admin 凭据获取模式，**不随脚本写 .env**）。
+
+### 影响与风险
+- 仍是基础设施：**没有真正"调价生效"** —— R2 + R1 完成后 KC 后台三个新页齐跑（上游接入 / 商品 SKU），价格引擎 quote 已就绪，但插件 `order/save` 仍走原链路；R3 切换时由 BFF 代理接入。
+- R2 暂禁权益价（`PUT` 拒绝 `source='entitlement'`）；R4 启后去掉此校验。
+- 数据回填脚本需手动执行一次（幂等可重跑）；未做自动迁移以避免与 R1 顺序耦合。
+
+### 下一步
+- Docker 引擎恢复后：跑 `node tools/migrate-pricing.js`（已跑一次，10 SKU+10 规则）；admin 登录后实测 `POST /api/pricing/quote {plan_code:'xplan_1'}` → 期望 final_cents=1500、applied_source='manual'、snapshot 落库。
+- 用户确认后开 R3（展示层独立）：`kc_listing_cards` 表 + 插件 `PlanCardController` 改读新表 + 商品页卡片配置双轨。
+
+---
+
+## v1.15.0 · 2026-10-11 · 后台解耦 R1：上游接入层独立
+
+**一句话概括**：把"商品"概念中承载"上游是谁、卖什么"的那部分抽离成独立的后台配置面 —— 后台新增「上游接入」页，可视化管理上游身份与目录、暂停/启用、刷健康、目录导入（幂等）；为后续 R2 资费层 / R3 展示层独立铺路。换上游的方式从"改插件 config + 重打补丁"变为"后台新建 code / 暂停旧 code"。
+
+### 新增
+- KC 数据库（`plus_papay`）新增 3 张表（`mysql-store.js` 自动建）：
+  - `kc_upstreams`：上游身份（code UNIQUE / display_name / protocol='mock'/'rest'/'custom' / status='active'/'paused'/'archived' / base_url / api_key_ref / config_json / note）；
+  - `kc_upstream_plans`：上游目录（UNIQUE(upstream_code, upstream_plan_key)，含 sku_type='subscription'/'topup'/'credit'、period、upstream_price_cents、is_credit、requires_active_subscription、enabled）；
+  - `kc_upstream_health_snapshots`：健康快照（兼容 v1.11.3 supplier-health.js 字段；按 upstream_code 聚合最新一条）。
+- 后台 API 6 条（`/api/admin/upstreams`）：`GET 列表（含健康）`、`POST 新建`、`PATCH 更新（暂停/启用/改配置）`、`GET 目录`、`POST 目录导入（JSON 数组，upsert 幂等）`、`POST 健康刷新（Mock 探活，未真实调用上游）`。
+- 后台页「上游接入」（运营壳新增顶级菜单项 / `lucide-server-cog` 图标）：列表卡片（含状态徽章 / 协议 / 套餐数 / 健康）+ 「查看目录」展开表格 + 「暂停/启用」「刷健康」「新建」「导入目录」操作（统一弹窗）。
+- 数据回填脚本 `tools/migrate-upstreams.js`（幂等可重跑）：写入 `mock_zovo` 上游与 12 条 mock 目录（与 `zovocard-client.js` MOCK 一致），**不动** `plugins.config.packages`（R3 展示层时再切读法）；报告落 `logs/migrate-upstreams-report.json`。
+
+### 修改
+- 落地策略保守：**R1 仅 KC 侧独立管理 + 后台可视**，**未改动** `plugins.config.packages` 与前台套餐页——降低 R1 风险；R3 展示层时统一切插件读法（按方案 SP-2026-10-11-v1.0.1 §7 M3 双轨读）。
+
+### 验证
+- 静态：`node --check server.js` 与 `node --check mysql-store.js` 通过；后台脚本 `new Function` 解析 0 错误；上游相关 7 项 marker 全在（`UPSTREAMS_TABLE_SQL`、`/api/admin/upstreams`、`/plans/import`、`/health/refresh` 等）。
+- 数据：回填脚本可重跑（`INSERT ... ON DUPLICATE KEY UPDATE`），幂等；不动 Xboard 库表。
+- `node tools/check-docs-sync.js` 通过（v1.15.0 三处版本号一致）；`node tools/check-currency.js` 全绿（上游价展示走 `cents→$` 守护）。
+- **全链路端到端（KC↔Zovo(MOCK)↔Xboard）首次跑通**：`node tools/_v115_link_e2e.js` 一次通过——注册 Xboard 真实用户 → 建真实单（plan_id=1, month_price）→ 投递模拟到账回调（BEpusdt 同款 MD5 签名）→ 订单 `status=3`、插件 `status='issued'`、CDK 即时下发（`KC-4F4LEDEW33C52Z4`）、`integration_cdk_issue` 落行、`cdk_codes.type='自助'`；幂等复验通过（重发 cdk/issue → `reused=true`+同 CDK；重复 notify → 200 success 不重复发卡）；报告落 `logs/v115-link-e2e-report.json`。零真实扣款。
+
+### 影响与风险
+- 仍是基础设施：**没有真正"换上游"在线生效**，仅后台可视；切换流程等 R3（数据双轨切换）—— 这是有意收紧的边界。
+- 数据回填脚本需 `node tools/migrate-upstreams.js` 手动执行一次（幂等，可重跑）；未做成自动迁移以避免冷启动期多并发写。
+- `config_json` 字段暂留空（上游特定配置未来按需启用）。
+
+### 下一步
+- Docker 引擎恢复后：跑一次 `migrate-upstreams.js` → 后台打开「上游接入」页确认 mock_zovo + 12 目录；UI 截图归档。
+- 用户确认后开 R2（资费层）：`kc_plans` / `kc_pricing_rules` + 后台「商品 SKU」+ `pricing/quote` MVP。
+
+---
+
+## v1.14.0 · 2026-10-11 · 商品页游客浏览开放与优惠行、类型标配置化
+
+**一句话概括**：商品页对未登录游客开放浏览（游客与登录用户看同一套商品与卡片配置，只有购买动作需要登录）；商品卡新增「类型标」（右上角小标，文案与颜色可配）与「优惠行」（划线原价 + 促销文案），并给优惠行配了一键关闭的**全局开关**（关闭后全站优惠行立即消失、单卡文案保留）；底部服务链接（chips）能力保留但**默认不显示**；品牌水印按决策不做。
+
+### 新增
+- **游客浏览商品页**：未登录访问商品页不再只是落地页静态套餐，改为读取真实在售商品（免登录商品接口）+ 同一套卡片配置渲染完整套餐区；每张卡的按钮为「登录后购买」，点击引导登录并保留购买意图。
+- **类型标**（商品卡右上角）：后台可配文案与颜色（品牌绿 / 绿 / 橙 / 灰）；留空时按商品分类缺省（如代充），未配置即不显示。
+- **优惠行**（价格下方）：后台可配划线原价与促销文案，并带**单卡开关**（隐藏但保留文案）与**全局开关**。
+- **优惠行全局开关**：运营后台商品卡片配置页顶部一键切换，切换即存、无需再点保存；关闭后商品页与游客页所有优惠行立即隐藏。开关存 `v2_settings`，前台接口直读数据库下发（绕过插件配置 1 小时缓存，保存后下一次请求即生效）。
+- **卡片新字段**：`promo`（enabled / strike / text）、`type`（text / color）、`chips`（底部服务链接，默认空 = 不显示）；均进配置白名单，缺省安全。
+
+### 修改
+- 商品页与游客页两处优惠行渲染改为「全局开关 与 单卡开关」双条件；未配置开关的历史数据按开启处理，不出现空白行。
+- 商品卡片配置保存：后台表单暂不编辑「购买须知」时保留库中已有值，避免被白名单清洗丢弃。
+
+### 验证
+- 静态：`node --check server.js` 通过；主题与后台内嵌脚本 `new Function` 解析 0 错误；13 处改动全部命中目标锚点（0 失败），改动前已备份至 `_bak_v114_promo/`；货币守护 `node tools/check-currency.js` 全绿。
+- 插件快照已同步：`tools/xboard-patches/KcIntegration/Controllers/PlanCardController.php` 与本源逐行一致（差异仅为本次新增 6 行；Xboard 仓库 `plugins/` 整体被忽略，快照是插件内容的唯一版本化备份）。
+- 接口链路核对：游客商品接口 `GET /api/v1/guest/plan/fetch` 确认为 Xboard 原生免登录路由（`GuestRoute.php`），返回在售套餐；卡片配置接口 `GET /plan/kc-cards` 为插件公开路由，新增下发 `promo_row`。
+- 字段透传核对：插件侧对卡片配置整包下发、不做字段白名单，因此新增字段只需过 KC 侧白名单（已加）。
+- 运行时 E2E（游客浏览渲染、全局开关关闭后优惠行消失）待容器恢复后补跑 —— 见「影响与风险」。
+
+### 影响与风险
+- 本次改动尚未部署到运行中的 Xboard 容器：本机 Docker 引擎在改动期间不可用（Desktop 进程已拉起但引擎管道未就绪），**代码已改完并静态校验通过，部署与真机验证待引擎恢复后执行**。
+- 游客可看到完整商品价格与权益，属主动开放的营销信息；购买仍需登录，未引入任何用户数据暴露面。
+- 优惠行默认开启：运营需确保「划线原价」口径真实可用（历史未配置的商品不会凭空出现原价，仅显示已填文案）。
+- 「品牌水印」按产品决策不做；如后续要上需单独立项。
+
+### 下一步
+- 容器恢复后：部署主题与插件、跑一遍游客浏览与优惠行开关的实机验证，并回填本节「验证」。
+- 待用户安排：$1 真实充值测试与小额真实首单；收银台基准币文案的定价层决策。
+
+---
+
 ## v1.13.0 · 2026-10-11 · 客服工作台与全站美元显示守护
 
 **一句话概括**：新增「客服工作台」——客服一次输入（邮箱/用户ID/订单号）即可只读聚合查看用户余额、订单进度（含 KC 实时复核）、充值到账、卡密与售后状态，并附 4 张标准话术卡；同时把「全站金额一律美元（$）显示」落成硬约束（运行时兜底 + KC 后台清理 + 检查脚本 + 提交钩子）；并把「Xboard 容器补丁核查」并入部署/重建流程（缺失自动重打）。

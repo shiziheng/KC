@@ -283,6 +283,9 @@ class Plugin extends AbstractPlugin
                     'trade_no'  => $tradeNo,
                     'plan_type' => $planType,
                 ]);
+                // v1.19.0 · R5 自动发权益：调 KC 集成端点按 plan_code 触发 grant
+                // 失败仅日志，不阻塞主路径（订单已成功）
+                $this->callKcEntitlementIssueAfterCdk($tradeNo, (int) $order->user_id, (int) $order->plan_id, $result['cdk']);
                 return;
             }
 
@@ -500,6 +503,51 @@ class Plugin extends AbstractPlugin
         }
 
         return ['ok' => true, 'cdk' => $cdk, 'error' => ''];
+    }
+
+    /**
+     * v1.19.0 · R5 自动发权益（失败仅日志，不阻塞主路径）
+     * 入参：tradeNo, userId, planId, cdk
+     * 行为：调 KC POST /api/integration/entitlement/issue-after-cdk
+     */
+    protected function callKcEntitlementIssueAfterCdk(string $tradeNo, int $userId, int $planId, string $cdk): void
+    {
+        try {
+            $baseUrl = rtrim((string) $this->getConfig('kc_base_url', ''), '/');
+            $apiKey  = (string) $this->getConfig('integration_key', '');
+            if ($baseUrl === '' || $apiKey === '') {
+                return;
+            }
+            $timeout = (int) $this->getConfig('http_timeout', self::DEFAULT_TIMEOUT);
+            if ($timeout < 1 || $timeout > 5) {
+                $timeout = self::DEFAULT_TIMEOUT;
+            }
+            // plan_code 约定：xplan_<v2_plan.id>（与 R2 回填脚本一致）
+            $planCode = 'xplan_' . $planId;
+            $payload = [
+                'user_id'   => $userId,
+                'plan_code' => $planCode,
+                'trade_no'  => $tradeNo,
+                'cdk'       => $cdk,
+            ];
+            $response = Http::timeout($timeout)
+                ->withHeaders([
+                    'X-Integration-Key' => $apiKey,
+                    'Accept'            => 'application/json',
+                ])
+                ->post($baseUrl . '/api/integration/entitlement/issue-after-cdk', $payload);
+            Log::channel('daily')->info('[KcIntegration] 自动发权益回调', [
+                'trade_no' => $tradeNo,
+                'plan_code' => $planCode,
+                'status'   => $response->status(),
+                'body'     => mb_substr((string) $response->body(), 0, 300),
+            ]);
+        } catch (\Throwable $e) {
+            // 不上抛：发卡已成功，自动发权益失败仅记录
+            Log::channel('daily')->warning('[KcIntegration] 自动发权益回调异常: ' . $e->getMessage(), [
+                'trade_no' => $tradeNo,
+            ]);
+        }
     }
 
     /**

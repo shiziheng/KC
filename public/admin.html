@@ -1814,6 +1814,26 @@
                 <i data-lucide="terminal"></i>
                 <span>运行日志</span>
             </div>
+            <div class="nav-item" onclick="switchPage('plans', this)" data-page="plans" style="display:none">
+                <i data-lucide="package"></i>
+                <span>商品与资费</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('products', this)" data-page="products">
+                <i data-lucide="shopping-bag"></i>
+                <span>商品管理</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('listing_cards', this)" data-page="listing_cards" style="display:none">
+                <i data-lucide="credit-card"></i>
+                <span>商品卡片</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('entitlements', this)" data-page="entitlements">
+                <i data-lucide="ticket-percent"></i>
+                <span>权益</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('upstreams', this)" data-page="upstreams">
+                <i data-lucide="server-cog"></i>
+                <span>上游管理</span>
+            </div>
             <div class="nav-item" onclick="switchPage('admin_login_logs', this)" data-page="admin_login_logs">
                 <i data-lucide="shield-check"></i>
                 <span>登录日志</span>
@@ -3289,6 +3309,182 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             </div>
         </div>
 
+        <div id="upstreams" class="page-view">
+            <div class="page-header">
+                <h1>上游管理</h1>
+                <p>管理上游供应商身份、目录与健康度（v1.15.0；SP-2026-10-11-v1.0.1 §R1）。
+                  <span style="color:var(--text-dim); font-size:12px; margin-left:8px;">
+                    切换上游：新增 code 并暂停旧上游；套餐键映射迁移留待 R3 展示层。
+                  </span>
+                </p>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 class="panel-title">上游列表</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="loadUpstreamsList()">
+                            <i data-lucide="refresh-cw"></i> 刷新
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="openNewUpstreamDialog()">
+                            <i data-lucide="plus"></i> 新建上游
+                        </button>
+                    </div>
+                </div>
+                <div id="upstreams-list" style="padding: 0 24px 24px;">
+                    <div style="color: var(--text-dim); padding: 20px 0; text-align: center;">加载中...</div>
+                </div>
+            </div>
+
+            <div class="panel" id="upstream-detail-panel" style="display: none;">
+                <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 class="panel-title" id="upstream-detail-title">上游目录</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="openImportPlansDialog(document.getElementById('upstream-detail-title').getAttribute('data-code'))">
+                            <i data-lucide="upload"></i> 导入目录
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="hideUpstreamDetail()">
+                            <i data-lucide="x"></i> 收起
+                        </button>
+                    </div>
+                </div>
+                <div id="upstream-plans-list" style="padding: 0 24px 24px;"></div>
+            </div>
+        </div>
+
+        <div id="upstream-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+            <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:520px; width:90%; box-shadow:var(--shadow-lg);">
+                <h3 id="upstream-dialog-title" style="margin:0 0 16px; font-size:18px;">新建上游</h3>
+                <div id="upstream-dialog-body"></div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeUpstreamDialog()">取消</button>
+                    <button type="button" class="btn btn-primary" id="upstream-dialog-ok" onclick="confirmUpstreamDialog()">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="products" class="page-view">
+            <h1>商品管理</h1>
+            <p style="color:var(--text-dim); margin:8px 0 16px;">商城商品一站式配置：名称 / 价格 / 货源 / 展示 —— 保存即同步商城，立即可见可买。</p>
+            <div class="panel">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">商品列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadProductsList()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openProductDialog(null)">+ 新建商品</button>
+                </div>
+                <div id="products-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div></div>
+            </div>
+
+            <div id="product-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:680px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="product-dialog-title" style="margin:0 0 16px; font-size:18px;">编辑商品</h3>
+                    <div id="product-dialog-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeProductDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="product-dialog-ok" onclick="saveProductDialog()">保存并同步商城</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="plans" class="page-view">
+            <div class="page-header">
+                <h1>商品与资费</h1>
+                <p>KC 视图的 SKU 配置面（v1.16.0；SP-2026-10-11-v1.0.1 §R2）。每个 SKU 引用上游套餐键，规则化定价，与 v2_plan.prices 解耦。
+                  <span style="color:var(--text-dim); font-size:12px; margin-left:8px;">
+                    R3 起由前台商品页/插件统一切换读法；R2 与 R1 同步在 KC 后台可视，<strong>未改</strong>前台。
+                  </span>
+                </p>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 class="panel-title">SKU 列表</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="loadPlansList()">
+                            <i data-lucide="refresh-cw"></i> 刷新
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="openNewPlanDialog()">
+                            <i data-lucide="plus"></i> 新建 SKU
+                        </button>
+                    </div>
+                </div>
+                <div id="plans-list" style="padding: 0 24px 24px;">
+                    <div style="color: var(--text-dim); padding: 20px 0; text-align: center;">加载中...</div>
+                </div>
+            </div>
+
+            <div class="panel" id="plan-pricing-panel" style="display: none;">
+                <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 class="panel-title" id="plan-pricing-title">资费规则</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="previewPlanPricing(document.getElementById('plan-pricing-title').getAttribute('data-id'))">
+                            <i data-lucide="zap"></i> 价格预览
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="openPricingEditDialog(document.getElementById('plan-pricing-title').getAttribute('data-id'))">
+                            <i data-lucide="edit-3"></i> 整体替换
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="hidePlanPricing()">
+                            <i data-lucide="x"></i> 收起
+                        </button>
+                    </div>
+                </div>
+                <div id="plan-pricing-list" style="padding: 0 24px 24px;"></div>
+                <div id="plan-pricing-preview" style="padding: 0 24px 24px; display: none;"></div>
+            </div>
+        </div>
+
+        <div id="plans-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+            <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:720px; width:90%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                <h3 id="plans-dialog-title" style="margin:0 0 16px; font-size:18px;">新建 SKU</h3>
+                <div id="plans-dialog-body"></div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+                    <button type="button" class="btn btn-secondary" onclick="closePlansDialog()">取消</button>
+                    <button type="button" class="btn btn-primary" id="plans-dialog-ok" onclick="confirmPlansDialog()">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="listing_cards" class="page-view">
+            <div class="page-header">
+                <h1>商品卡片</h1>
+                <p>v1.17.0 展示层配置（SP-2026-10-11-v1.0.1 §R3）。卡片内容存 KC 侧 <code>kc_listing_cards</code>，与 v2_plan.kc_card 解耦；可通过「同步到 v2」双写让插件立即读到新配置。
+                  <span style="color:var(--text-dim); font-size:12px; margin-left:8px;">
+                    ⚠ 终极方案是改插件读法（本版本未做，留给 R3 续作）；当前双轨兜底。
+                  </span>
+                </p>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 class="panel-title">卡片列表</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="loadListingCards()">
+                            <i data-lucide="refresh-cw"></i> 刷新
+                        </button>
+                        <button type="button" class="btn btn-primary" onclick="syncListingCardsToV2()">
+                            <i data-lucide="upload-cloud"></i> 全部同步到 v2
+                        </button>
+                    </div>
+                </div>
+                <div id="listing-cards-list" style="padding: 0 24px 24px;">
+                    <div style="color: var(--text-dim); padding: 20px 0; text-align: center;">加载中...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="listing-card-dialog-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+            <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:760px; width:90%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                <h3 id="listing-card-dialog-title" style="margin:0 0 16px; font-size:18px;">编辑卡片</h3>
+                <div id="listing-card-dialog-body"></div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeListingCardDialog()">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmListingCardDialog()">保存</button>
+                </div>
+            </div>
+        </div>
+
         <div id="admin_login_logs" class="page-view">
             <div class="page-header">
                 <h1>后台登录日志</h1>
@@ -3320,6 +3516,38 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <div id="entitlements" class="page-view">
+            <div class="page-header">
+                <h1>权益</h1>
+                <p>v1.18.0 权益 MVP（SP-2026-10-11-v1.0.1 §R4）。规则存 <code>kc_entitlement_rules</code>，grants 存 <code>kc_entitlement_grants</code>，扣次流水存 <code>kc_entitlement_uses</code>；价格引擎 quote 已支持权益分支（manual/promotion 与 entitlement 比价取低）。</p>
+            </div>
+
+            <div class="card">
+                <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+                    <button class="btn btn-primary" onclick="openNewEntitlementDialog()"><i data-lucide="plus"></i> 新建规则</button>
+                    <button class="btn" onclick="loadEntitlementsList()"><i data-lucide="refresh-cw"></i> 刷新</button>
+                    <span style="margin-left:auto; color:var(--text-dim); font-size:12px;">状态过滤：</span>
+                    <select id="ent_status_filter" onchange="loadEntitlementsList()" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px;">
+                        <option value="">全部</option>
+                        <option value="active">active</option>
+                        <option value="draft">draft</option>
+                        <option value="paused">paused</option>
+                        <option value="expired">expired</option>
+                    </select>
+                </div>
+                <div id="ent_rules_list"><p style="color:var(--text-dim);">加载中...</p></div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <h3 style="margin:0 0 12px 0; font-size:16px;">用户持有权益查询</h3>
+                <div style="display:flex; gap:8px; margin-bottom:12px;">
+                    <input type="number" id="ent_lookup_user_id" placeholder="Xboard user_id" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; width:200px;">
+                    <button class="btn" onclick="loadEntitlementGrants()"><i data-lucide="search"></i> 查询</button>
+                </div>
+                <div id="ent_grants_list"><p style="color:var(--text-dim);">输入 user_id 查询该用户持有的 grants 与历史使用流水。</p></div>
             </div>
         </div>
     </main>
@@ -4968,6 +5196,36 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (pId === 'cdks') {
                 loadCdkList().catch((error) => {
                     console.error('Failed to load CDK list', error);
+                });
+            }
+
+            if (pId === 'upstreams') {
+                loadUpstreamsList().catch((error) => {
+                    console.error('Failed to load upstreams list', error);
+                });
+            }
+
+            if (pId === 'products') {
+                loadProductsList().catch((error) => {
+                    console.error('Failed to load products list', error);
+                });
+            }
+
+            if (pId === 'plans') {
+                loadPlansList().catch((error) => {
+                    console.error('Failed to load plans list', error);
+                });
+            }
+
+            if (pId === 'listing_cards') {
+                loadListingCards().catch((error) => {
+                    console.error('Failed to load listing cards', error);
+                });
+            }
+
+            if (pId === 'entitlements') {
+                loadEntitlementsList().catch((error) => {
+                    console.error('Failed to load entitlements list', error);
                 });
             }
 
@@ -8202,6 +8460,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         let ccActiveId = null;
         let ccCategories = [];
         let ccFaq = [];
+        let ccPromoRowEnabled = true;
         const CC_STATE_LABEL = { onsale: '在售', featured: '主推', recommend: '推荐', soon: '未开放' };
 
         function ccCategoryOptions() {
@@ -8316,9 +8575,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 badge: { text: '', pos: 'left', color: 'brand' },
                 title: '', subtitle: '',
                 price: { mode: 'auto', value: null, unit: '/月', tag: '' },
-                promo: { strike: '', text: '' },
+                promo: { enabled: true, strike: '', text: '' },
+                type: { text: '', color: 'brand' },
                 features: [], guarantees: [], tip: '',
-                button: { text: '立即订阅', style: 'solid' }
+                button: { text: '立即订阅', style: 'solid' },
+                chips: []
             };
         }
 
@@ -8352,6 +8613,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             return '<div class="form-group" style="margin-bottom:10px;"><label style="font-size:12px;">' + label + '</label>' +
                 '<textarea class="asset-input" id="' + id + '" rows="4" placeholder="' + escapeHtml(ph || '') + '" style="font-size:13px;line-height:1.7;">' + escapeHtml(text) + '</textarea></div>';
         }
+        function ccChipsToText(chips) {
+            return (Array.isArray(chips) ? chips : []).map(function (x) {
+                if (!x || !x.text) return '';
+                return String(x.text) + (x.href ? '|' + String(x.href) : '');
+            }).filter(Boolean).join('\n');
+        }
 
         async function loadCardConfig() {
             try {
@@ -8361,6 +8628,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 ccPlans = data.plans || [];
                 ccCategories = data.categories || [];
                 ccFaq = data.faq || [];
+                ccPromoRowEnabled = !(data.promo_row && data.promo_row.enabled === false);
                 renderCategoryEditor();
                 renderFaqEditor();
                 renderCardPlans();
@@ -8406,6 +8674,15 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 titleEl.textContent = '编辑「' + plan.name + '」的卡片内容' + (plan.configured ? '' : '（当前未配置，使用默认模板）');
             }
             const html =
+                '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;margin-bottom:12px;border:1px solid var(--primary);border-radius:8px;background:rgba(13,148,136,.08);">' +
+                    '<span style="font-size:13px;font-weight:600;">优惠行全局开关</span>' +
+                    '<span style="font-size:11px;color:var(--text-dim);">一键关闭后，商品页与游客页所有优惠行立即隐藏（单卡文案保留）</span>' +
+                    '<select id="cc_promo_row_enabled" class="asset-input" style="width:auto;min-width:120px;padding:4px 8px;font-size:12px;" onchange="savePromoRow()">' +
+                        '<option value="on"' + (ccPromoRowEnabled ? ' selected' : '') + '>开启</option>' +
+                        '<option value="off"' + (ccPromoRowEnabled ? '' : ' selected') + '>关闭</option>' +
+                    '</select>' +
+                    '<span id="cc_promo_row_tip" style="font-size:11px;color:var(--text-dim);"></span>' +
+                '</div>' +
                 '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
                     ccInput('cc_title', '标题（留空取套餐名）', card.title, plan.name) +
                     ccInput('cc_subtitle', '副标题（一句话适用人群）', card.subtitle, '日常对话、写作与轻度编程') +
@@ -8424,12 +8701,20 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
                     ccInput('cc_price_unit', '价格单位', card.price.unit, '/月') +
                     ccInput('cc_price_tag', '价格标签', card.price.tag, '券后价') +
-                    ccInput('cc_promo_strike', '划线原价', card.promo.strike, '$120') +
+                    ccInput('cc_promo_strike', '划线原价（优惠行）', card.promo.strike, '$20') +
                 '</div>' +
-                ccInput('cc_promo_text', '促销文案', card.promo.text, '新客领券立减 $20') +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                    ccInput('cc_promo_text', '促销文案（优惠行）', card.promo.text, '日常优惠 · 省 $5') +
+                    ccSelect('cc_promo_enabled', '优惠行开关', (card.promo.enabled === false ? 'off' : 'on'), [['on', '显示'], ['off', '隐藏（保留文案）']]) +
+                '</div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                    ccInput('cc_type_text', '类型标文案（右上角，留空按分类缺省）', card.type && card.type.text, '代充') +
+                    ccSelect('cc_type_color', '类型标颜色', (card.type && card.type.color) || 'brand', [['brand', '品牌绿'], ['green', '绿'], ['amber', '橙'], ['gray', '灰']]) +
+                '</div>' +
                 ccTextarea('cc_features', '权益清单（每行一条，最多 8 条）', card.features, 'GPT-5.5 全模型可用\n高级数据分析与绘图\nDALL·E 图像生成') +
                 ccTextarea('cc_guarantees', '保障行（每行一条，最多 4 条）', card.guarantees, '失败全额退款\n安全省心') +
                 ccInput('cc_tip', '提示行（ⓘ 后的文案）', card.tip, '充值时效以订单页提示为准') +
+                ccTextarea('cc_chips', '底部服务链接（每行：文案|链接；留空不显示）', ccChipsToText(card.chips), '查看常见问题|#faq\n联系客服|#/ticket') +
                 '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
                     ccInput('cc_button_text', '按钮文案', card.button.text, '去支付') +
                     ccSelect('cc_button_style', '按钮样式', card.button.style, [['solid', '实心'], ['outline', '描边'], ['ghost', '灰色（未开放）']]) +
@@ -8448,10 +8733,37 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             renderCardPreview();
         }
 
+        // 优惠行全局开关：切换即存（不依赖「保存并生效」），保证随时能关
+        async function savePromoRow() {
+            const el = document.getElementById('cc_promo_row_enabled');
+            const tip = document.getElementById('cc_promo_row_tip');
+            if (!el) return;
+            const enabled = el.value !== 'off';
+            try {
+                const res = await authFetch('/api/admin/card-config/promo-row', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ promo_row: { enabled: enabled } })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                ccPromoRowEnabled = enabled;
+                if (tip) { tip.textContent = enabled ? '已开启' : '已全局关闭'; tip.style.color = enabled ? '' : '#e05252'; }
+                renderCardPreview();
+            } catch (error) {
+                if (tip) { tip.textContent = error.message || '保存失败'; tip.style.color = '#e05252'; }
+                el.value = ccPromoRowEnabled ? 'on' : 'off';
+            }
+        }
+
         function collectCardForm() {
             const v = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
             const lines = function (id) { return v(id).split('\n').map(function (s) { return s.trim(); }).filter(Boolean); };
             const priceVal = parseFloat(v('cc_price_value'));
+            const chips = v('cc_chips').split('\n').map(function (s) { return s.trim(); }).filter(Boolean).map(function (line) {
+                const i = line.indexOf('|');
+                return i > 0 ? { text: line.slice(0, i).trim(), href: line.slice(i + 1).trim() } : { text: line, href: '' };
+            }).filter(function (x) { return x.text; }).slice(0, 4);
             return {
                 category: v('cc_category') || 'recharge',
                 state: v('cc_state') || 'onsale',
@@ -8464,11 +8776,13 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     unit: v('cc_price_unit') || '/月',
                     tag: v('cc_price_tag')
                 },
-                promo: { strike: v('cc_promo_strike'), text: v('cc_promo_text') },
+                promo: { enabled: v('cc_promo_enabled') !== 'off', strike: v('cc_promo_strike'), text: v('cc_promo_text') },
+                type: { text: v('cc_type_text'), color: v('cc_type_color') || 'brand' },
                 features: lines('cc_features'),
                 guarantees: lines('cc_guarantees'),
                 tip: v('cc_tip'),
-                button: { text: v('cc_button_text') || '立即订阅', style: v('cc_button_style') || 'solid' }
+                button: { text: v('cc_button_text') || '立即订阅', style: v('cc_button_style') || 'solid' },
+                chips: chips
             };
         }
 
@@ -8484,10 +8798,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const badge = card.badge.text
                 ? '<span style="position:absolute;top:-9px;' + (card.badge.pos === 'right' ? 'right' : 'left') + ':14px;background:' + (BADGE_COLOR[card.badge.color] || '#0F6E56') + ';color:#fff;font-size:10px;border-radius:999px;padding:2px 9px;">' + escapeHtml(card.badge.text) + '</span>'
                 : '';
+            const typeChip = (card.type && card.type.text)
+                ? '<span style="position:absolute;top:-9px;' + (card.badge.pos === 'right' ? 'left' : 'right') + ':14px;background:rgba(13,148,136,.12);color:#0F6E56;font-size:10px;border-radius:999px;padding:2px 9px;">' + escapeHtml(card.type.text) + '</span>'
+                : '';
             const priceTag = card.price.tag
                 ? '<span style="background:#FAC775;color:#633806;font-size:10px;border-radius:4px;padding:1px 6px;">' + escapeHtml(card.price.tag) + '</span>'
                 : '';
-            const promo = (card.promo.strike || card.promo.text)
+            // 全局开关关闭时，预览也不显示优惠行（与前台一致）
+            const promo = ccPromoRowEnabled && (card.promo.strike || card.promo.text) && card.promo.enabled !== false
                 ? '<div style="font-size:10.5px;opacity:.72;margin-top:4px;">' +
                     (card.promo.strike ? '<span style="text-decoration:line-through;">' + escapeHtml(card.promo.strike) + '</span> ' : '') +
                     '<span style="color:#A32D2D;">' + escapeHtml(card.promo.text) + '</span></div>'
@@ -8504,7 +8822,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 : (btnKind === 'outline' ? 'background:#E1F5EE;color:#0F6E56;border:1px solid #1D9E75;' : 'background:transparent;color:#888780;border:1px solid #B4B2A9;');
             box.innerHTML =
                 '<div style="position:relative;border:' + (isMain ? '2px solid #1D9E75' : '1px solid rgba(128,128,128,.35)') + ';border-radius:12px;padding:14px;background:' + (isMain ? '#E1F5EE' : 'transparent') + (isSoon ? ';opacity:.72' : '') + ';">' +
-                    badge +
+                    badge + typeChip +
                     '<div style="font-size:15px;font-weight:600;">' + escapeHtml(card.title || plan.name) + '</div>' +
                     (card.subtitle ? '<div style="font-size:11px;opacity:.7;margin:3px 0 8px;">' + escapeHtml(card.subtitle) + '</div>' : '<div style="height:8px;"></div>') +
                     '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;"><span style="font-size:22px;font-weight:700;color:' + (isSoon ? '#888780' : '#0F6E56') + ';">' + escapeHtml(ccPriceText(plan, card)) + '</span>' + priceTag + '</div>' +
@@ -8513,6 +8831,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     feats + guars +
                     (card.tip ? '<div style="font-size:10.5px;opacity:.7;margin-top:7px;">ⓘ ' + escapeHtml(card.tip) + '</div>' : '') +
                     '<div style="' + btnCss + 'text-align:center;border-radius:8px;padding:8px;font-size:12px;font-weight:600;margin-top:10px;">' + escapeHtml(card.button.text || '立即订阅') + ' →</div>' +
+                    (card.chips && card.chips.length ? '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;">' + card.chips.map(function (x) { return '<span style="font-size:10px;border:1px solid rgba(128,128,128,.4);border-radius:999px;padding:2px 8px;opacity:.8;">' + escapeHtml(x.text) + '</span>'; }).join('') + '</div>' : '') +
                 '</div>';
         }
 
@@ -8980,6 +9299,942 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 showMessage(e.message || '清空失败', 'error');
             }
             lucide.createIcons();
+        }
+
+        // ===================== v1.17.0 · 商品展示层卡片（SP-2026-10-11-v1.0.1 §R3） =====================
+        let listingCardsCache = [];
+        async function loadListingCards() {
+            const box = document.getElementById('listing-cards-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/listing-cards');
+                const data = await res.json();
+                if (!res.ok || data.success === false) throw new Error(data.message || '加载失败');
+                listingCardsCache = data.items || [];
+                if (!listingCardsCache.length) {
+                    box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无 SKU（请先在「商品与资费」页创建）</div>';
+                    return;
+                }
+                box.innerHTML = listingCardsCache.map(renderListingCardRow).join('');
+                if (window.lucide) lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+        function renderListingCardRow(r) {
+            const c = r.card || {};
+            const stateBadge = {
+                onsale: '<span style="background:var(--success-soft);color:var(--success);padding:2px 8px;border-radius:10px;font-size:11px;">在售</span>',
+                featured: '<span style="background:#fef3c7;color:#a16207;padding:2px 8px;border-radius:10px;font-size:11px;">主推</span>',
+                soon: '<span style="background:#e5e7eb;color:var(--text-dim);padding:2px 8px;border-radius:10px;font-size:11px;">未开放</span>',
+                soldout: '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:11px;">已售罄</span>',
+                manual: '<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:11px;">人工</span>'
+            }[r.listing_state] || '';
+            const visChip = r.is_visible
+                ? '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;font-size:11px;">可见</span>'
+                : '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:11px;">隐藏</span>';
+            const typeText = (c.type && c.type.text) || '';
+            const typeBadge = typeText ? '<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:11px;">' + escapeHtml(typeText) + '</span>' : '';
+            return '<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;background:var(--surface);">' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+                    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                        '<span style="font-weight:600;font-size:14px;">' + escapeHtml(c.title || r.plan_name || ('SKU #' + r.plan_id)) + '</span>' +
+                        '<code style="background:var(--surface-soft);padding:2px 6px;border-radius:4px;font-size:11px;color:var(--text-dim);">' + escapeHtml(r.plan_code || ('id=' + r.plan_id)) + '</code>' +
+                        stateBadge + visChip + typeBadge +
+                        (c.subtitle ? '<span style="font-size:11px;color:var(--text-dim);">' + escapeHtml(c.subtitle) + '</span>' : '') +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                        '<button type="button" class="btn btn-secondary" onclick="openListingCardEditDialog(' + r.plan_id + ')" style="font-size:12px;padding:4px 10px;"><i data-lucide="edit-3"></i> 编辑</button>' +
+                        '<button type="button" class="btn btn-secondary" onclick="toggleListingVisibility(' + r.plan_id + ',' + (r.is_visible ? 'false' : 'true') + ')" style="font-size:12px;padding:4px 10px;"><i data-lucide="' + (r.is_visible ? 'eye-off' : 'eye') + '"></i> ' + (r.is_visible ? '隐藏' : '显示') + '</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+        }
+        async function toggleListingVisibility(plan_id, next) {
+            try {
+                const res = await authFetch('/api/admin/listing-cards/' + plan_id + '/visibility', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_visible: next === 'true' })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '切换失败');
+                showMessage('已切换', 'success');
+                loadListingCards();
+            } catch (e) { showMessage(e.message || '切换失败', 'error'); }
+        }
+        async function openListingCardEditDialog(plan_id) {
+            const cur = listingCardsCache.find(function (x) { return x.plan_id === plan_id; });
+            if (!cur) { showMessage('未找到卡片', 'error'); return; }
+            const c = cur.card || {};
+            document.getElementById('listing-card-dialog-title').textContent = '编辑卡片 · ' + (cur.plan_code || ('SKU #' + plan_id));
+            document.getElementById('listing-card-dialog-body').innerHTML =
+                '<div style="display:flex;flex-direction:column;gap:12px;">' +
+                    '<label style="font-size:12px;color:var(--text-dim);">标题<input id="lc_title" class="asset-input" value="' + escapeHtml(c.title || '') + '" placeholder="留空取套餐名"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">副标题<input id="lc_subtitle" class="asset-input" value="' + escapeHtml(c.subtitle || '') + '"></label>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px;">' +
+                        '<label style="font-size:12px;color:var(--text-dim);">状态<select id="lc_state" class="asset-input">' +
+                            ['onsale','featured','soon','soldout','manual'].map(function (s) { return '<option value="' + s + '"' + (c.state === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+                        '</select></label>' +
+                        '<label style="font-size:12px;color:var(--text-dim);">排序（数字小→前）<input id="lc_sort" class="asset-input" type="number" value="' + (cur.sort || 0) + '"></label>' +
+                        '<label style="font-size:12px;color:var(--text-dim);">可见<select id="lc_visible" class="asset-input">' +
+                            '<option value="true"' + (cur.is_visible ? ' selected' : '') + '>显示</option>' +
+                            '<option value="false"' + (!cur.is_visible ? ' selected' : '') + '>隐藏</option>' +
+                        '</select></label>' +
+                    '</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                        '<label style="font-size:12px;color:var(--text-dim);">类型标文案<input id="lc_type_text" class="asset-input" value="' + escapeHtml((c.type && c.type.text) || '') + '" placeholder="留空按分类缺省"></label>' +
+                        '<label style="font-size:12px;color:var(--text-dim);">类型标颜色<select id="lc_type_color" class="asset-input">' +
+                            ['brand','green','amber','gray'].map(function (s) { return '<option value="' + s + '"' + (((c.type && c.type.color) || 'brand') === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+                        '</select></label>' +
+                    '</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;">' +
+                        '<label style="font-size:12px;color:var(--text-dim);">划线原价<input id="lc_strike" class="asset-input" value="' + escapeHtml((c.promo && c.promo.strike) || '') + '" placeholder="$20"></label>' +
+                        '<label style="font-size:12px;color:var(--text-dim);">促销文案<input id="lc_promo_text" class="asset-input" value="' + escapeHtml((c.promo && c.promo.text) || '') + '" placeholder="日常优惠 · 省 $5"></label>' +
+                    '</div>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">权益清单（每行一条，最多 8 条）<textarea id="lc_features" class="asset-input" rows="4">' + escapeHtml(((c.features || []).join('\n'))) + '</textarea></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">提示行<textarea id="lc_tip" class="asset-input" rows="2">' + escapeHtml(c.tip || '') + '</textarea></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">底部服务链接（每行：文案|链接；留空不显示）<textarea id="lc_chips" class="asset-input" rows="2">' + escapeHtml((c.chips || []).map(function (x) { return (x.text || '') + (x.href ? '|' + x.href : ''); }).join('\n')) + '</textarea></label>' +
+                    '<div style="font-size:11px;color:var(--text-dim);">⚠ 保存后请到本页顶部点「全部同步到 v2」让插件立即读到新配置（双轨期兜底）。</div>' +
+                '</div>';
+            document.getElementById('listing-card-dialog-backdrop').setAttribute('data-plan-id', String(plan_id));
+            document.getElementById('listing-card-dialog-backdrop').style.display = 'flex';
+        }
+        function closeListingCardDialog() { document.getElementById('listing-card-dialog-backdrop').style.display = 'none'; }
+        async function confirmListingCardDialog() {
+            const plan_id = Number(document.getElementById('listing-card-dialog-backdrop').getAttribute('data-plan-id'));
+            if (!plan_id) { showMessage('plan_id 缺失', 'error'); return; }
+            const cur = listingCardsCache.find(function (x) { return x.plan_id === plan_id; }) || {};
+            const c = cur.card || {};
+            const chips = document.getElementById('lc_chips').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean).map(function (line) {
+                const i = line.indexOf('|');
+                return i > 0 ? { text: line.slice(0, i).trim(), href: line.slice(i + 1).trim() } : { text: line, href: '' };
+            }).filter(function (x) { return x.text; });
+            const card = {
+                title: document.getElementById('lc_title').value.trim() || c.title || '',
+                subtitle: document.getElementById('lc_subtitle').value.trim(),
+                state: document.getElementById('lc_state').value,
+                price: c.price || { mode: 'auto', value: null, unit: '/月', tag: '' },
+                badge: c.badge || { text: '', pos: 'left', color: 'brand' },
+                type: {
+                    text: document.getElementById('lc_type_text').value.trim(),
+                    color: document.getElementById('lc_type_color').value
+                },
+                promo: {
+                    enabled: c.promo ? (c.promo.enabled !== false) : true,
+                    strike: document.getElementById('lc_strike').value.trim(),
+                    text: document.getElementById('lc_promo_text').value.trim()
+                },
+                features: document.getElementById('lc_features').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 8),
+                guarantees: c.guarantees || [],
+                tip: document.getElementById('lc_tip').value.trim(),
+                button: c.button || { text: '立即订阅', style: 'solid' },
+                chips: chips,
+                category: c.category || 'recharge',
+                rules: c.rules || null
+            };
+            const body = {
+                card: card,
+                is_visible: document.getElementById('lc_visible').value === 'true',
+                listing_state: document.getElementById('lc_state').value,
+                sort: parseInt(document.getElementById('lc_sort').value) || 0
+            };
+            try {
+                const res = await authFetch('/api/admin/listing-cards/' + plan_id, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                showMessage('已保存（前台刷新即生效）', 'success');
+                closeListingCardDialog();
+                loadListingCards();
+            } catch (e) { showMessage(e.message || '保存失败', 'error'); }
+        }
+        async function syncListingCardsToV2() {
+            if (!confirm('将 KC 侧所有 kc_listing_cards 同步到 xboard.v2_plan.kc_card（双轨兜底）？')) return;
+            try {
+                const r = await authFetch('/api/admin/listing-cards/sync-to-v2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                const data = await r.json();
+                if (!r.ok || !data.success) throw new Error(data.message || '同步失败');
+                showMessage('已同步 ' + (data.synced || 0) + ' 张（跳过 ' + (data.skipped || 0) + '）', 'success');
+            } catch (e) { showMessage(e.message || '同步失败', 'error'); }
+        }
+
+        // ===================== v1.24.0 · 商品管理 MVP（一个页面配商品，保存即同步商城） =====================
+        let _productsCache = [];
+
+        async function loadProductsList() {
+            const box = document.getElementById('products-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/products');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '加载失败');
+                _productsCache = data.data || [];
+                if (!_productsCache.length) {
+                    box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无商品，点右上「新建商品」开始</div>';
+                    return;
+                }
+                const rows = _productsCache.map(function (p) {
+                    const priceText = '$' + Number(p.price).toFixed(2) + (p.period === 'onetime' ? '' : ' /月');
+                    const periodText = p.period === 'onetime' ? '一次性' : '月付';
+                    const statusPill = p.sell
+                        ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;">在售</span>'
+                        : '<span style="background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:10px;font-size:11px;">已下架</span>';
+                    const showPill = p.show
+                        ? '<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-size:11px;">商城显示</span>'
+                        : '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:10px;font-size:11px;">隐藏</span>';
+                    const srcText = p.upstream_plan_key
+                        ? (escapeHtml(p.upstream_code || 'mock_zovo') + ' / ' + escapeHtml(p.upstream_plan_key))
+                        : (p.is_topup ? '余额充值（不绑货源）' : '<span style="color:#b45309;">未绑货源</span>');
+                    const apiText = p.api_enabled ? ('API 加价 ' + p.api_markup_percent + '%') : '—';
+                    return '<tr>' +
+                        '<td><b>' + escapeHtml(p.name) + '</b><div style="color:var(--text-dim);font-size:11px;">ID ' + p.plan_id + '</div></td>' +
+                        '<td>' + priceText + '<div style="color:var(--text-dim);font-size:11px;">' + periodText + '</div></td>' +
+                        '<td style="font-size:12px;">' + srcText + '</td>' +
+                        '<td>' + statusPill + ' ' + showPill + '</td>' +
+                        '<td style="font-size:12px;">' + apiText + '</td>' +
+                        '<td><button type="button" class="btn" style="padding:4px 12px; font-size:12px;" onclick="openProductDialog(' + p.plan_id + ')">编辑</button></td>' +
+                        '</tr>';
+                }).join('');
+                box.innerHTML = '<table class="kc-table"><thead><tr>' +
+                    '<th>商品</th><th>售价</th><th>货源</th><th>状态</th><th>API 分销</th><th>操作</th>' +
+                    '</tr></thead><tbody>' + rows + '</tbody></table>';
+                if (window.lucide && lucide.createIcons) lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+
+        function openProductDialog(planId) {
+            const cur = planId ? _productsCache.find(function (x) { return x.plan_id === planId; }) : null;
+            document.getElementById('product-dialog-title').textContent = cur ? ('编辑商品 · ' + cur.name) : '新建商品';
+            const upstreamOptions = [
+                { k: '', t: '不绑货源（余额充值类）' },
+                { k: 'plus', t: 'ChatGPT Plus（月付）· ZovoCard' },
+                { k: 'pro_5x', t: 'ChatGPT Pro (5x)（月付）· ZovoCard' },
+                { k: 'pro_20x', t: 'ChatGPT Pro (20x)（月付）· ZovoCard' }
+            ].map(function (o) {
+                const sel = cur ? (cur.upstream_plan_key === o.k) : (o.k === '');
+                return '<option value="' + o.k + '"' + (sel ? ' selected' : '') + '>' + o.t + '</option>';
+            }).join('');
+            const p = cur || { name: '', price: '', period: 'monthly', content: '', subtitle: '', show: true, sell: true, sort: 999, upstream_plan_key: '', api_enabled: false, api_markup_percent: 15, is_topup: false };
+            const inputStyle = 'width:100%; margin-top:4px;';
+            document.getElementById('product-dialog-body').innerHTML =
+                '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 16px;">' +
+                '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">商品名称 *<input id="pd-name" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.name || '') + '" placeholder="如：ChatGPT Plus 一个月"></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">计费周期<select id="pd-period" class="asset-input" style="' + inputStyle + '"><option value="monthly"' + (p.period !== 'onetime' ? ' selected' : '') + '>月付</option><option value="onetime"' + (p.period === 'onetime' ? ' selected' : '') + '>一次性</option></select></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">售价（美元）*<input id="pd-price" class="asset-input" style="' + inputStyle + '" type="number" step="0.01" min="0" value="' + (p.price || '') + '" placeholder="如 15.00"></label>' +
+                '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">货源（上游商品）<select id="pd-upstream" class="asset-input" style="' + inputStyle + '">' + upstreamOptions + '</select></label>' +
+                '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">一句话卖点（商城卡片副标题）<input id="pd-subtitle" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.subtitle || '') + '" placeholder="官方渠道直充，支付后自动发放卡密"></label>' +
+                '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">商品说明<input id="pd-content" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.content || '') + '" placeholder="如：官方 ChatGPT Plus 代充，1 个月有效期"></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">排序（越小越靠前）<input id="pd-sort" class="asset-input" style="' + inputStyle + '" type="number" value="' + (p.sort == null ? 999 : p.sort) + '"></label>' +
+                '<div style="font-size:12px; color:var(--text-dim);">状态<div style="display:flex; gap:14px; margin-top:8px;"><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-sell"' + (p.sell ? ' checked' : '') + '> 在售</label><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-show"' + (p.show ? ' checked' : '') + '> 商城显示</label></div></div>' +
+                '<div style="grid-column:1 / -1; border-top:1px dashed var(--border, #e2e8f0); padding-top:12px; font-size:12px; color:var(--text-dim);">' +
+                '<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pd-api"' + (p.api_enabled ? ' checked' : '') + '> 开启 API 分销定价（仅存配置，对外报价接口后续版本启用）</label>' +
+                '<div style="margin-top:8px;">加价幅度：<input id="pd-mkv" class="asset-input" style="width:90px;" type="number" step="0.1" min="0" value="' + (p.api_markup_percent || 15) + '">%（对外报价 = 上游成本 × (1 + 幅度)）</div>' +
+                '</div>' +
+                '</div>';
+            document.getElementById('product-dialog-backdrop').setAttribute('data-plan-id', planId ? String(planId) : '');
+            document.getElementById('product-dialog-backdrop').style.display = 'flex';
+        }
+
+        function closeProductDialog() {
+            document.getElementById('product-dialog-backdrop').style.display = 'none';
+        }
+
+        async function saveProductDialog() {
+            const planId = Number(document.getElementById('product-dialog-backdrop').getAttribute('data-plan-id') || 0);
+            const body = {
+                plan_id: planId || undefined,
+                name: document.getElementById('pd-name').value.trim(),
+                period: document.getElementById('pd-period').value,
+                price: Number(document.getElementById('pd-price').value),
+                upstream_plan_key: document.getElementById('pd-upstream').value,
+                upstream_code: document.getElementById('pd-upstream').value ? 'mock_zovo' : '',
+                subtitle: document.getElementById('pd-subtitle').value.trim(),
+                content: document.getElementById('pd-content').value.trim(),
+                sort: Number(document.getElementById('pd-sort').value),
+                sell: document.getElementById('pd-sell').checked,
+                show: document.getElementById('pd-show').checked,
+                api_enabled: document.getElementById('pd-api').checked,
+                api_markup_percent: Number(document.getElementById('pd-mkv').value) || 0
+            };
+            if (!body.name) { showMessage('请填写商品名称', 'error'); return; }
+            if (!(body.price > 0)) { showMessage('售价必须大于 0', 'error'); return; }
+            const okBtn = document.getElementById('product-dialog-ok');
+            okBtn.disabled = true; okBtn.textContent = '保存中...';
+            try {
+                const res = await authFetch('/api/admin/products/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                showMessage(data.message || '已保存并同步商城', 'success');
+                closeProductDialog();
+                loadProductsList();
+            } catch (e) {
+                showMessage(e.message || '保存失败', 'error');
+            } finally {
+                okBtn.disabled = false; okBtn.textContent = '保存并同步商城';
+            }
+        }
+
+        // ===================== v1.16.0 · 商品与资费（SP-2026-10-11-v1.0.1 §R2） =====================
+        let plansDataCache = [];
+        async function loadPlansList() {
+            const box = document.getElementById('plans-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/plans');
+                const data = await res.json();
+                if (!res.ok || !data.success === false && !data.items) throw new Error((data && data.message) || '加载失败');
+                plansDataCache = data.items || [];
+                if (!plansDataCache.length) {
+                    box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无 SKU（请运行 <code>tools/migrate-pricing.js</code> 或「新建 SKU」）</div>';
+                    return;
+                }
+                box.innerHTML = plansDataCache.map(renderPlanCard).join('');
+                if (window.lucide) lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+        function renderPlanCard(s) {
+            const typeBadge = {
+                recharge: '<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:11px;">代充</span>',
+                account: '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;font-size:11px;">成品号</span>',
+                entitlement: '<span style="background:#fef3c7;color:#a16207;padding:2px 8px;border-radius:10px;font-size:11px;">权益</span>'
+            }[s.kc_type] || '';
+            const statusBadge = s.status === 'active'
+                ? '<span style="background:var(--success-soft);color:var(--success);padding:2px 8px;border-radius:10px;font-size:11px;">已启用</span>'
+                : s.status === 'paused'
+                ? '<span style="background:var(--warning-soft);color:var(--warning);padding:2px 8px;border-radius:10px;font-size:11px;">已暂停</span>'
+                : '<span style="background:#e5e7eb;color:var(--text-dim);padding:2px 8px;border-radius:10px;font-size:11px;">已归档</span>';
+            const upstreamChip = (s.upstream_code || s.upstream_plan_key)
+                ? '<code style="background:var(--surface-soft);padding:2px 6px;border-radius:4px;font-size:11px;color:var(--text-dim);">' + escapeHtml(s.upstream_code) + ' / ' + escapeHtml(s.upstream_plan_key) + '</code>'
+                : '<span style="font-size:11px;color:var(--text-dim);">未绑定上游</span>';
+            return '<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;background:var(--surface);">' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+                    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                        '<span style="font-weight:600;font-size:14px;">' + escapeHtml(s.display_name) + '</span>' +
+                        '<code style="background:var(--surface-soft);padding:2px 6px;border-radius:4px;font-size:11px;color:var(--text-dim);">' + escapeHtml(s.code) + '</code>' +
+                        typeBadge + statusBadge +
+                        '<span style="font-size:11px;color:var(--text-dim);">规则数: ' + (s.rule_count || 0) + '</span>' +
+                        upstreamChip +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                        '<button type="button" class="btn btn-secondary" onclick="openPlanPricing(' + s.id + ',\'' + escapeHtml(s.code) + '\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="list"></i> 资费规则</button>' +
+                        (s.status === 'active'
+                            ? '<button type="button" class="btn btn-secondary" onclick="togglePlanStatus(' + s.id + ', \'paused\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="pause"></i> 暂停</button>'
+                            : s.status === 'paused'
+                            ? '<button type="button" class="btn btn-secondary" onclick="togglePlanStatus(' + s.id + ', \'active\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="play"></i> 启用</button>'
+                            : '') +
+                    '</div>' +
+                '</div>' +
+                (s.note ? '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">' + escapeHtml(s.note) + '</div>' : '') +
+            '</div>';
+        }
+        async function openPlanPricing(id, code) {
+            const panel = document.getElementById('plan-pricing-panel');
+            const title = document.getElementById('plan-pricing-title');
+            const list = document.getElementById('plan-pricing-list');
+            if (!panel) return;
+            title.textContent = code + ' · 资费规则';
+            title.setAttribute('data-id', id);
+            list.innerHTML = '<div style="color:var(--text-dim);padding:12px 0;">加载中...</div>';
+            panel.style.display = '';
+            try {
+                const res = await authFetch('/api/admin/plans/' + id + '/pricing');
+                const data = await res.json();
+                if (!res.ok || data.success === false) throw new Error(data.message || '加载失败');
+                const rules = data.items || [];
+                if (!rules.length) {
+                    list.innerHTML = '<div style="color:var(--text-dim);padding:12px 0;">无资费规则（请「整体替换」新增）</div>';
+                    return;
+                }
+                list.innerHTML = '<table style="width:100%;font-size:13px;border-collapse:collapse;">' +
+                    '<thead><tr style="background:var(--surface-soft);text-align:left;">' +
+                        '<th style="padding:8px;">来源</th><th>周期</th><th>售价</th><th>优先级</th><th>有效期</th><th>启用</th><th>备注</th>' +
+                    '</tr></thead><tbody>' +
+                    rules.map(function (r) {
+                        return '<tr style="border-top:1px solid var(--divider);">' +
+                            '<td style="padding:8px;">' + escapeHtml(r.source) + '</td>' +
+                            '<td>' + escapeHtml(r.period) + '</td>' +
+                            '<td>$' + (r.amount_cents / 100).toFixed(2) + '</td>' +
+                            '<td>' + r.priority + '</td>' +
+                            '<td style="font-size:11px;color:var(--text-dim);">' + (r.valid_from || '—') + ' ~ ' + (r.valid_until || '—') + '</td>' +
+                            '<td>' + (r.enabled ? '<span style="color:var(--success);">✓</span>' : '<span style="color:var(--text-dim);">—</span>') + '</td>' +
+                            '<td style="font-size:11px;color:var(--text-dim);">' + escapeHtml(r.note || '') + '</td>' +
+                        '</tr>';
+                    }).join('') + '</tbody></table>';
+            } catch (e) {
+                list.innerHTML = '<div style="color:#e05252;padding:12px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+            // 收起预览
+            document.getElementById('plan-pricing-preview').style.display = 'none';
+        }
+        function hidePlanPricing() { document.getElementById('plan-pricing-panel').style.display = 'none'; }
+        async function togglePlanStatus(id, next) {
+            try {
+                const res = await authFetch('/api/admin/plans/' + id, {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '操作失败');
+                showMessage('已' + (next === 'paused' ? '暂停' : '启用'), 'success');
+                loadPlansList();
+            } catch (e) { showMessage(e.message || '操作失败', 'error'); }
+        }
+        async function previewPlanPricing(id) {
+            try {
+                const res = await authFetch('/api/admin/plans/' + id + '/pricing/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                const data = await res.json();
+                const box = document.getElementById('plan-pricing-preview');
+                box.style.display = '';
+                if (!res.ok || !data.success) { box.innerHTML = '<div style="color:#e05252;">' + escapeHtml(data.message || '预览失败') + '</div>'; return; }
+                const f = data.final;
+                const lines = data.breakdown.map(function (b) {
+                    return '<tr style="border-top:1px solid var(--divider);">' +
+                        '<td style="padding:6px 8px;">' + escapeHtml(b.source) + (f && f.amount_cents === b.amount_cents && f.source === b.source ? ' <span style="color:var(--success);font-size:11px;">(命中)</span>' : '') + '</td>' +
+                        '<td>' + escapeHtml(b.period) + '</td>' +
+                        '<td>$' + (b.amount_cents / 100).toFixed(2) + '</td>' +
+                        '<td>' + b.priority + '</td>' +
+                        '<td style="font-size:11px;color:var(--text-dim);">' + (b.valid_from || '—') + ' ~ ' + (b.valid_until || '—') + '</td>' +
+                        '<td>' + (b.enabled ? '✓' : '—') + '</td>' +
+                    '</tr>';
+                }).join('');
+                box.innerHTML = '<div style="font-weight:600;font-size:13px;margin-bottom:8px;">价格预览（最高 priority + enabled 命中）</div>' +
+                    (f ? '<div style="background:var(--success-soft);color:var(--success);padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:14px;">最终售价：<strong>$' + (f.amount_cents / 100).toFixed(2) + '</strong> · 来源 ' + escapeHtml(f.source) + ' · 周期 ' + escapeHtml(f.period) + '</div>' : '<div style="background:var(--warning-soft);color:var(--warning);padding:10px 14px;border-radius:8px;margin-bottom:12px;">无可用资费规则</div>') +
+                    '<table style="width:100%;font-size:12px;border-collapse:collapse;">' +
+                    '<thead><tr style="background:var(--surface-soft);text-align:left;"><th style="padding:6px 8px;">来源</th><th>周期</th><th>售价</th><th>优先级</th><th>有效期</th><th>启用</th></tr></thead><tbody>' + lines + '</tbody></table>';
+            } catch (e) { showMessage(e.message || '预览失败', 'error'); }
+        }
+        function openNewPlanDialog() {
+            document.getElementById('plans-dialog-title').textContent = '新建 SKU';
+            document.getElementById('plans-dialog-body').innerHTML =
+                '<div style="display:flex;flex-direction:column;gap:12px;">' +
+                    '<label style="font-size:12px;color:var(--text-dim);">code（唯一，小写字母/数字/下划线）<input id="pl_code" class="asset-input" placeholder="如 plus_m / topup_500"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">display_name（显示名）<input id="pl_name" class="asset-input" placeholder="如 Plus 月卡 / 充值 $14"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">类型<select id="pl_type" class="asset-input"><option value="recharge">代充</option><option value="account">成品号</option><option value="entitlement">权益</option></select></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">上游 code（可空，留空=未绑定）<input id="pl_uc" class="asset-input" placeholder="如 mock_zovo"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">上游套餐键（可空）<input id="pl_uk" class="asset-input" placeholder="如 plus"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">备注<textarea id="pl_note" class="asset-input" rows="2"></textarea></label>' +
+                    '<div style="font-size:11px;color:var(--text-dim);">⚠ 上游套餐键必须存在于「上游管理」目录中；新建后用「资费规则 → 整体替换」配置价。</div>' +
+                '</div>';
+            const ok = document.getElementById('plans-dialog-ok');
+            ok.setAttribute('data-mode', 'create');
+            ok.removeAttribute('data-id');
+            document.getElementById('plans-dialog-backdrop').style.display = 'flex';
+        }
+        async function openPricingEditDialog(id) {
+            const code = (plansDataCache.find(function (x) { return x.id === id; }) || {}).code || '';
+            document.getElementById('plans-dialog-title').textContent = '整体替换资费 · ' + code;
+            let current = [];
+            try {
+                const res = await authFetch('/api/admin/plans/' + id + '/pricing');
+                const data = await res.json();
+                current = data.items || [];
+            } catch (e) { current = []; }
+            document.getElementById('plans-dialog-body').innerHTML =
+                '<div style="display:flex;flex-direction:column;gap:10px;">' +
+                    '<div style="font-size:12px;color:var(--text-dim);">每行一条规则 JSON（先删后插；snapshot 历史不受影响）。R2 暂不支持 <code>entitlement</code> 来源（R4 起开放）。</div>' +
+                    '<textarea id="pl_rules_payload" class="asset-input" rows="12" style="font-family:monospace;font-size:12px;line-height:1.6;">' +
+                    escapeHtml(JSON.stringify(current.length ? current : [{ source: 'manual', period: 'month', amount_cents: 1500, priority: 0, enabled: true }], null, 2)) +
+                    '</textarea>' +
+                '</div>';
+            const ok = document.getElementById('plans-dialog-ok');
+            ok.setAttribute('data-mode', 'pricing');
+            ok.setAttribute('data-id', id);
+            document.getElementById('plans-dialog-backdrop').style.display = 'flex';
+        }
+        function closePlansDialog() {
+            document.getElementById('plans-dialog-backdrop').style.display = 'none';
+        }
+        async function confirmPlansDialog() {
+            const ok = document.getElementById('plans-dialog-ok');
+            const mode = ok.getAttribute('data-mode');
+            try {
+                if (mode === 'create') {
+                    const body = {
+                        code: document.getElementById('pl_code').value.trim(),
+                        display_name: document.getElementById('pl_name').value.trim(),
+                        kc_type: document.getElementById('pl_type').value,
+                        upstream_code: document.getElementById('pl_uc').value.trim(),
+                        upstream_plan_key: document.getElementById('pl_uk').value.trim(),
+                        note: document.getElementById('pl_note').value.trim()
+                    };
+                    const res = await authFetch('/api/admin/plans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                    showMessage('SKU 已创建：' + body.code, 'success');
+                    closePlansDialog();
+                    loadPlansList();
+                } else if (mode === 'pricing') {
+                    const id = ok.getAttribute('data-id');
+                    let rules = [];
+                    try { rules = JSON.parse(document.getElementById('pl_rules_payload').value); }
+                    catch (e) { showMessage('JSON 解析失败：' + e.message, 'error'); return; }
+                    if (!Array.isArray(rules)) { showMessage('rules 必须是数组', 'error'); return; }
+                    const res = await authFetch('/api/admin/plans/' + id + '/pricing', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || '替换失败');
+                    showMessage('资费已替换（' + rules.length + ' 条）', 'success');
+                    closePlansDialog();
+                    loadPlansList();
+                    openPlanPricing(id, (plansDataCache.find(function (x) { return x.id === Number(id); }) || {}).code || '');
+                }
+            } catch (e) { showMessage(e.message || '操作失败', 'error'); }
+        }
+
+        // ===================== v1.15.0 · 上游管理（SP-2026-10-11-v1.0.1 §R1） =====================
+        async function loadUpstreamsList() {
+            const box = document.getElementById('upstreams-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/upstreams');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '加载失败');
+                const list = data.upstreams || [];
+                if (!list.length) {
+                    box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无上游（请运行 <code>tools/migrate-upstreams.js</code> 或「新建上游」）</div>';
+                    return;
+                }
+                box.innerHTML = list.map(renderUpstreamCard).join('');
+                if (window.lucide) lucide.createIcons();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+        function renderUpstreamCard(u) {
+            const h = u.health || {};
+            const state = h.state || 'unknown';
+            const stateColor = state === 'healthy' ? 'var(--success)' : state === 'paused' ? 'var(--warning)' : state === 'archived' ? 'var(--text-dim)' : 'var(--error)';
+            const statusBadge = u.status === 'active'
+                ? '<span style="background:var(--success-soft);color:var(--success);padding:2px 8px;border-radius:10px;font-size:11px;">已启用</span>'
+                : u.status === 'paused'
+                ? '<span style="background:var(--warning-soft);color:var(--warning);padding:2px 8px;border-radius:10px;font-size:11px;">已暂停</span>'
+                : '<span style="background:#e5e7eb;color:var(--text-dim);padding:2px 8px;border-radius:10px;font-size:11px;">已归档</span>';
+            return '<div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;background:var(--surface);">' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+                    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                        '<span style="font-weight:600;font-size:14px;">' + escapeHtml(u.display_name) + '</span>' +
+                        '<code style="background:var(--surface-soft);padding:2px 6px;border-radius:4px;font-size:11px;color:var(--text-dim);">' + escapeHtml(u.code) + '</code>' +
+                        statusBadge +
+                        '<span style="font-size:11px;color:var(--text-dim);">协议: ' + escapeHtml(u.protocol) + '</span>' +
+                        '<span style="font-size:11px;color:var(--text-dim);">套餐数: ' + (u.plan_count || 0) + '</span>' +
+                        '<span style="font-size:11px;color:' + stateColor + ';">健康: ' + escapeHtml(state) + (h.reason ? ' · ' + escapeHtml(h.reason) : '') + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                        '<button type="button" class="btn btn-secondary" onclick="openUpstreamDetail(\'' + escapeHtml(u.code) + '\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="list"></i> 查看目录</button>' +
+                        (u.status === 'active'
+                            ? '<button type="button" class="btn btn-secondary" onclick="toggleUpstreamStatus(\'' + escapeHtml(u.code) + '\', \'paused\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="pause"></i> 暂停</button>'
+                            : u.status === 'paused'
+                            ? '<button type="button" class="btn btn-secondary" onclick="toggleUpstreamStatus(\'' + escapeHtml(u.code) + '\', \'active\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="play"></i> 启用</button>'
+                            : '') +
+                        '<button type="button" class="btn btn-secondary" onclick="refreshUpstreamHealth(\'' + escapeHtml(u.code) + '\')" style="font-size:12px;padding:4px 10px;"><i data-lucide="activity"></i> 刷健康</button>' +
+                    '</div>' +
+                '</div>' +
+                (u.note ? '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">' + escapeHtml(u.note) + '</div>' : '') +
+            '</div>';
+        }
+        async function openUpstreamDetail(code) {
+            const panel = document.getElementById('upstream-detail-panel');
+            const title = document.getElementById('upstream-detail-title');
+            const list = document.getElementById('upstream-plans-list');
+            if (!panel) return;
+            title.textContent = code + ' · 上游目录';
+            title.setAttribute('data-code', code);
+            list.innerHTML = '<div style="color:var(--text-dim);padding:12px 0;">加载中...</div>';
+            panel.style.display = '';
+            try {
+                const res = await authFetch('/api/admin/upstreams/' + encodeURIComponent(code) + '/plans');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '加载失败');
+                const plans = data.plans || [];
+                if (!plans.length) {
+                    list.innerHTML = '<div style="color:var(--text-dim);padding:12px 0;">该上游暂无目录（请用「导入目录」或运行 <code>tools/migrate-upstreams.js</code>）</div>';
+                    return;
+                }
+                list.innerHTML = '<table style="width:100%;font-size:13px;border-collapse:collapse;">' +
+                    '<thead><tr style="background:var(--surface-soft);text-align:left;">' +
+                        '<th style="padding:8px;">套餐键</th><th>名称</th><th>类型</th><th>周期</th><th>上游价</th><th>启用</th><th>备注</th>' +
+                    '</tr></thead><tbody>' +
+                    plans.map(function (p) {
+                        const tags = [];
+                        if (p.is_credit) tags.push('credit');
+                        if (p.requires_active_subscription) tags.push('需订阅');
+                        return '<tr style="border-top:1px solid var(--divider);">' +
+                            '<td style="padding:8px;"><code style="font-size:12px;">' + escapeHtml(p.upstream_plan_key) + '</code></td>' +
+                            '<td>' + escapeHtml(p.display_name) + '</td>' +
+                            '<td>' + escapeHtml(p.sku_type) + (tags.length ? ' · ' + escapeHtml(tags.join(' · ')) : '') + '</td>' +
+                            '<td>' + escapeHtml(p.period) + '</td>' +
+                            '<td>' + (p.upstream_price_cents ? '$' + (p.upstream_price_cents / 100).toFixed(2) : '—') + '</td>' +
+                            '<td>' + (p.enabled ? '<span style="color:var(--success);">✓</span>' : '<span style="color:var(--text-dim);">—</span>') + '</td>' +
+                            '<td style="color:var(--text-dim);font-size:11px;">' + escapeHtml(p.note || '') + '</td>' +
+                        '</tr>';
+                    }).join('') + '</tbody></table>';
+                if (window.lucide) lucide.createIcons();
+            } catch (e) {
+                list.innerHTML = '<div style="color:#e05252;padding:12px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+        function hideUpstreamDetail() {
+            const p = document.getElementById('upstream-detail-panel');
+            if (p) p.style.display = 'none';
+        }
+        async function toggleUpstreamStatus(code, next) {
+            try {
+                const res = await authFetch('/api/admin/upstreams/' + encodeURIComponent(code), {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '操作失败');
+                showMessage('已' + (next === 'paused' ? '暂停' : '启用') + '：' + code, 'success');
+                loadUpstreamsList();
+            } catch (e) { showMessage(e.message || '操作失败', 'error'); }
+        }
+        async function refreshUpstreamHealth(code) {
+            try {
+                const res = await authFetch('/api/admin/upstreams/' + encodeURIComponent(code) + '/health/refresh', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || '刷新失败');
+                showMessage('健康已刷新：' + (data.state || 'unknown'), 'success');
+                loadUpstreamsList();
+            } catch (e) { showMessage(e.message || '刷新失败', 'error'); }
+        }
+        function openNewUpstreamDialog() {
+            document.getElementById('upstream-dialog-title').textContent = '新建上游';
+            document.getElementById('upstream-dialog-body').innerHTML =
+                '<div style="display:flex;flex-direction:column;gap:12px;">' +
+                    '<label style="font-size:12px;color:var(--text-dim);">code（唯一，仅小写字母/数字/下划线）<input id="up_code" class="asset-input" placeholder="如 zovo / epay / mock_zovo2"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">display_name（显示名）<input id="up_name" class="asset-input" placeholder="如 ZovoCard / 易支付"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">protocol（协议）<select id="up_protocol" class="asset-input"><option value="mock" selected>mock</option><option value="rest">rest</option><option value="custom">custom</option></select></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">base_url（可空）<input id="up_base" class="asset-input" placeholder="https://..."></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">api_key_ref（环境变量名，密钥放 .env）<input id="up_keyref" class="asset-input" placeholder="如 ZOVOCARD_API_KEY"></label>' +
+                    '<label style="font-size:12px;color:var(--text-dim);">note（备注）<input id="up_note" class="asset-input" placeholder="可选"></label>' +
+                '</div>';
+            const ok = document.getElementById('upstream-dialog-ok');
+            ok.setAttribute('data-mode', 'create');
+            ok.removeAttribute('data-code');
+            document.getElementById('upstream-dialog-backdrop').style.display = 'flex';
+        }
+        function openImportPlansDialog(code) {
+            document.getElementById('upstream-dialog-title').textContent = '导入目录 · ' + code;
+            document.getElementById('upstream-dialog-body').innerHTML =
+                '<div style="display:flex;flex-direction:column;gap:10px;">' +
+                    '<div style="font-size:12px;color:var(--text-dim);">粘贴 JSON 数组（每条含 <code>upstream_plan_key</code> / <code>display_name</code> / <code>sku_type</code> / <code>period</code> / <code>upstream_price_cents</code> / <code>currency</code> / <code>is_credit</code> / <code>requires_active_subscription</code> / <code>enabled</code>）；upsert 幂等，可重跑。</div>' +
+                    '<textarea id="up_import_payload" class="asset-input" rows="10" style="font-family:monospace;font-size:12px;line-height:1.6;">[{"upstream_plan_key":"plus","display_name":"ChatGPT Plus","sku_type":"subscription","period":"month","upstream_price_cents":2000,"currency":"USD","is_credit":false,"requires_active_subscription":false,"enabled":true}]</textarea>' +
+                '</div>';
+            const ok = document.getElementById('upstream-dialog-ok');
+            ok.setAttribute('data-mode', 'import');
+            ok.setAttribute('data-code', code);
+            document.getElementById('upstream-dialog-backdrop').style.display = 'flex';
+        }
+        function closeUpstreamDialog() {
+            document.getElementById('upstream-dialog-backdrop').style.display = 'none';
+        }
+        async function confirmUpstreamDialog() {
+            const ok = document.getElementById('upstream-dialog-ok');
+            const mode = ok.getAttribute('data-mode');
+            if (mode === 'create') {
+                const body = {
+                    code: document.getElementById('up_code').value.trim(),
+                    display_name: document.getElementById('up_name').value.trim(),
+                    protocol: document.getElementById('up_protocol').value,
+                    base_url: document.getElementById('up_base').value.trim(),
+                    api_key_ref: document.getElementById('up_keyref').value.trim(),
+                    note: document.getElementById('up_note').value.trim()
+                };
+                try {
+                    const res = await authFetch('/api/admin/upstreams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || '保存失败');
+                    showMessage('上游已创建：' + body.code, 'success');
+                    closeUpstreamDialog();
+                    loadUpstreamsList();
+                } catch (e) { showMessage(e.message || '保存失败', 'error'); }
+            } else if (mode === 'import') {
+                const code = ok.getAttribute('data-code');
+                let plans = [];
+                try { plans = JSON.parse(document.getElementById('up_import_payload').value); }
+                catch (e) { showMessage('JSON 解析失败：' + e.message, 'error'); return; }
+                try {
+                    const res = await authFetch('/api/admin/upstreams/' + encodeURIComponent(code) + '/plans/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plans }) });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.message || '导入失败');
+                    showMessage('已导入 ' + (data.processed || 0) + ' 条', 'success');
+                    closeUpstreamDialog();
+                    loadUpstreamsList();
+                    openUpstreamDetail(code);
+                } catch (e) { showMessage(e.message || '导入失败', 'error'); }
+            }
+        }
+
+        // ===================== v1.18.0 · 权益 MVP（SP-2026-10-11-v1.0.1 §R4） =====================
+        const ENT_DISCOUNT_LABELS = { percent: '百分比', fixed_cents: '减固定金额(cents)', fixed_price_cents: '一口价(cents)' };
+        const ENT_SOURCE_LABELS = { manual: '人工', purchase: '购买商品触发', event: '事件触发' };
+        const ENT_STATUS_LABELS = { draft: '草稿', active: '启用', paused: '暂停', expired: '过期', active_rule: '启用' };
+        let _entCurrent = [];
+
+        function _escAttr(s) { return String(s || '').replace(/"/g, '"').replace(/</g, '<'); }
+
+        async function loadEntitlementsList() {
+            try {
+                const status = document.getElementById('ent_status_filter').value;
+                const url = '/api/admin/entitlements/rules' + (status ? '?status=' + encodeURIComponent(status) : '');
+                const r = await authFetch(url);
+                const list = (r && r.data) || [];
+                _entCurrent = list;
+                renderEntitlements(list);
+            } catch (e) {
+                document.getElementById('ent_rules_list').innerHTML = '<p style="color:var(--text-dim);">加载失败：' + (e.message || e) + '</p>';
+            }
+        }
+
+        function renderEntitlements(list) {
+            if (!list.length) { document.getElementById('ent_rules_list').innerHTML = '<p style="color:var(--text-dim);">暂无规则。点「新建规则」开始。</p>'; return; }
+            const html = ['<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:12px;">'];
+            for (const r of list) {
+                const statusBadge = r.status === 'active' ? '<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">active</span>'
+                    : r.status === 'paused' ? '<span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">paused</span>'
+                    : r.status === 'draft' ? '<span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">draft</span>'
+                    : '<span style="background:#94a3b8;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + r.status + '</span>';
+                const scope = Array.isArray(r.plan_scope) ? (r.plan_scope.length ? r.plan_scope.join(', ') : '<em>全部 plan</em>') : '';
+                html.push(
+                    '<div class="card" style="background:var(--bg-card-2);">' +
+                        '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">' +
+                            '<strong style="font-size:14px;">' + escapeHtml(r.display_name || r.code) + '</strong>' +
+                            statusBadge +
+                        '</div>' +
+                        '<div style="font-size:12px; color:var(--text-dim); margin-bottom:4px;">code: <code>' + escapeHtml(r.code) + '</code></div>' +
+                        '<div style="font-size:13px; line-height:1.6;">' +
+                            '<div>折扣类型：<b>' + (ENT_DISCOUNT_LABELS[r.discount_type] || r.discount_type) + '</b>' +
+                                (r.discount_type === 'percent' ? ' · ' + r.discount_value + '% 减' : ' · ' + r.discount_value + ' cents') + '</div>' +
+                            '<div>配额：' + r.grant_uses + ' 次 · 有效期 ' + r.grant_period_days + ' 天</div>' +
+                            '<div>门槛：' + (r.min_order_cents > 0 ? '$' + (r.min_order_cents / 100).toFixed(2) : '不限') + '</div>' +
+                            '<div>优先级：' + r.priority + '</div>' +
+                            '<div>适用范围：' + scope + '</div>' +
+                            '<div>来源：' + (ENT_SOURCE_LABELS[r.source] || r.source) + (r.trigger_plan_code ? ' → ' + escapeHtml(r.trigger_plan_code) : '') + '</div>' +
+                        '</div>' +
+                        (r.note ? '<div style="margin-top:8px; font-size:12px; color:var(--text-dim);">' + escapeHtml(r.note) + '</div>' : '') +
+                        '<div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">' +
+                            '<button class="btn" style="padding:4px 10px; font-size:12px;" onclick="openEntitlementIssueDialog(\'' + _escAttr(r.code) + '\')"><i data-lucide="user-plus"></i> 发权益</button>' +
+                            '<button class="btn" style="padding:4px 10px; font-size:12px;" onclick="openEntitlementEditDialog(\'' + _escAttr(r.code) + '\')"><i data-lucide="edit-2"></i> 编辑</button>' +
+                            '<button class="btn" style="padding:4px 10px; font-size:12px;" onclick="toggleEntitlementStatus(\'' + _escAttr(r.code) + '\', \'' + r.status + '\')">' +
+                                (r.status === 'active' ? '<i data-lucide="pause"></i> 暂停' : '<i data-lucide="play"></i> 启用') +
+                            '</button>' +
+                        '</div>' +
+                    '</div>'
+                );
+            }
+            html.push('</div>');
+            document.getElementById('ent_rules_list').innerHTML = html.join('');
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+
+        async function toggleEntitlementStatus(code, currentStatus) {
+            const next = currentStatus === 'active' ? 'paused' : 'active';
+            try {
+                await authFetch('/api/admin/entitlements/rules/' + encodeURIComponent(code), { method: 'PATCH', body: JSON.stringify({ code, status: next }) });
+                showMessage('已' + (next === 'active' ? '启用' : '暂停'), 'success');
+                loadEntitlementsList();
+            } catch (e) { showMessage(e.message || '切换失败', 'error'); }
+        }
+
+        function openNewEntitlementDialog() {
+            const html =
+                '<div class="dialog-backdrop" id="ent_edit_dialog">' +
+                    '<div class="dialog-card" style="max-width:520px;">' +
+                        '<h3>新建权益规则</h3>' +
+                        '<div style="display:grid; gap:8px; grid-template-columns:1fr 1fr;">' +
+                            '<label>code<input id="ent_f_code" placeholder="plus_member_off20" style="width:100%;"></label>' +
+                            '<label>显示名<input id="ent_f_name" placeholder="Plus 会员 8 折" style="width:100%;"></label>' +
+                            '<label>折扣类型<select id="ent_f_dtype" style="width:100%;"><option value="percent">百分比</option><option value="fixed_cents">减固定金额</option><option value="fixed_price_cents">一口价</option></select></label>' +
+                            '<label>折扣值<input id="ent_f_dval" type="number" placeholder="20" style="width:100%;"></label>' +
+                            '<label>门槛（cents）<input id="ent_f_min" type="number" value="0" style="width:100%;"></label>' +
+                            '<label>配额（次）<input id="ent_f_uses" type="number" value="1" style="width:100%;"></label>' +
+                            '<label>有效期（天）<input id="ent_f_days" type="number" value="30" style="width:100%;"></label>' +
+                            '<label>优先级<input id="ent_f_pri" type="number" value="100" style="width:100%;"></label>' +
+                            '<label>状态<select id="ent_f_status" style="width:100%;"><option value="draft">draft</option><option value="active">active</option><option value="paused">paused</option></select></label>' +
+                            '<label>来源<select id="ent_f_src" style="width:100%;"><option value="manual">manual</option><option value="purchase">purchase</option><option value="event">event</option></select></label>' +
+                            '<label>触发 plan_code（purchase 用）<input id="ent_f_tpc" placeholder="留空" style="width:100%;"></label>' +
+                        '</div>' +
+                        '<label style="display:block; margin-top:8px;">适用 plan_code（JSON 数组；留空=全部）<input id="ent_f_scope" placeholder=' + "'[]'" + ' style="width:100%;"></label>' +
+                        '<label style="display:block; margin-top:8px;">备注<input id="ent_f_note" style="width:100%;"></label>' +
+                        '<div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">' +
+                            '<button class="btn" onclick="closeEntitlementDialog()">取消</button>' +
+                            '<button class="btn btn-primary" onclick="submitNewEntitlement()">创建</button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            const holder = document.createElement('div');
+            holder.innerHTML = html;
+            document.body.appendChild(holder.firstChild);
+        }
+
+        async function openEntitlementEditDialog(code) {
+            const r = _entCurrent.find(x => x.code === code);
+            if (!r) { showMessage('未找到规则', 'error'); return; }
+            openNewEntitlementDialog();
+            document.getElementById('ent_f_code').value = r.code;
+            document.getElementById('ent_f_code').disabled = true;
+            document.getElementById('ent_f_name').value = r.display_name || '';
+            document.getElementById('ent_f_dtype').value = r.discount_type || 'percent';
+            document.getElementById('ent_f_dval').value = r.discount_value || 0;
+            document.getElementById('ent_f_min').value = r.min_order_cents || 0;
+            document.getElementById('ent_f_uses').value = r.grant_uses || 1;
+            document.getElementById('ent_f_days').value = r.grant_period_days || 30;
+            document.getElementById('ent_f_pri').value = r.priority || 100;
+            document.getElementById('ent_f_status').value = r.status || 'draft';
+            document.getElementById('ent_f_src').value = r.source || 'manual';
+            document.getElementById('ent_f_tpc').value = r.trigger_plan_code || '';
+            document.getElementById('ent_f_scope').value = JSON.stringify(r.plan_scope || []);
+            document.getElementById('ent_f_note').value = r.note || '';
+            document.getElementById('ent_edit_dialog').setAttribute('data-mode', 'edit');
+        }
+
+        async function submitNewEntitlement() {
+            const mode = (document.getElementById('ent_edit_dialog').getAttribute('data-mode') === 'edit') ? 'PATCH' : 'POST';
+            const url = mode === 'POST' ? '/api/admin/entitlements/rules'
+                : '/api/admin/entitlements/rules/' + encodeURIComponent(document.getElementById('ent_f_code').value);
+            let scope = [];
+            try { scope = JSON.parse(document.getElementById('ent_f_scope').value || '[]'); } catch (e) { showMessage('plan_scope 必须是 JSON 数组', 'error'); return; }
+            const body = {
+                code: document.getElementById('ent_f_code').value,
+                display_name: document.getElementById('ent_f_name').value,
+                discount_type: document.getElementById('ent_f_dtype').value,
+                discount_value: parseInt(document.getElementById('ent_f_dval').value, 10) || 0,
+                min_order_cents: parseInt(document.getElementById('ent_f_min').value, 10) || 0,
+                grant_uses: parseInt(document.getElementById('ent_f_uses').value, 10) || 1,
+                grant_period_days: parseInt(document.getElementById('ent_f_days').value, 10) || 30,
+                priority: parseInt(document.getElementById('ent_f_pri').value, 10) || 100,
+                status: document.getElementById('ent_f_status').value,
+                source: document.getElementById('ent_f_src').value,
+                trigger_plan_code: document.getElementById('ent_f_tpc').value || null,
+                plan_scope: scope,
+                note: document.getElementById('ent_f_note').value || ''
+            };
+            try {
+                await authFetch(url, { method: mode, body: JSON.stringify(body) });
+                showMessage('已保存', 'success');
+                closeEntitlementDialog();
+                loadEntitlementsList();
+            } catch (e) { showMessage(e.message || '保存失败', 'error'); }
+        }
+
+        function closeEntitlementDialog() {
+            const el = document.getElementById('ent_edit_dialog');
+            if (el) el.remove();
+        }
+
+        function openEntitlementIssueDialog(code) {
+            const html =
+                '<div class="dialog-backdrop" id="ent_issue_dialog">' +
+                    '<div class="dialog-card" style="max-width:420px;">' +
+                        '<h3>发权益 · <code>' + escapeHtml(code) + '</code></h3>' +
+                        '<label style="display:block; margin-top:8px;">Xboard user_id<input id="ent_i_uid" type="number" style="width:100%;"></label>' +
+                        '<label style="display:block; margin-top:8px;">来源参考（可选）<input id="ent_i_ref" placeholder="如 order_id 或 manual" style="width:100%;"></label>' +
+                        '<label style="display:block; margin-top:8px;">备注（可选）<input id="ent_i_note" style="width:100%;"></label>' +
+                        '<div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">' +
+                            '<button class="btn" onclick="document.getElementById(\'ent_issue_dialog\').remove()">取消</button>' +
+                            '<button class="btn btn-primary" onclick="submitEntitlementIssue(\'' + _escAttr(code) + '\')">下发</button>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            const holder = document.createElement('div');
+            holder.innerHTML = html;
+            document.body.appendChild(holder.firstChild);
+        }
+
+        async function submitEntitlementIssue(code) {
+            const uid = parseInt(document.getElementById('ent_i_uid').value, 10);
+            if (!uid) { showMessage('user_id 必填', 'error'); return; }
+            const ref = document.getElementById('ent_i_ref').value || '';
+            const note = document.getElementById('ent_i_note').value || '';
+            try {
+                const r = await authFetch('/api/admin/entitlements/rules/' + encodeURIComponent(code) + '/issue', {
+                    method: 'POST',
+                    body: JSON.stringify({ user_id: uid, source_ref: ref, note })
+                });
+                showMessage(r.reused ? '该用户已有该权益，已复用' : '已下发 grant', 'success');
+                document.getElementById('ent_issue_dialog').remove();
+            } catch (e) { showMessage(e.message || '下发失败', 'error'); }
+        }
+
+        async function loadEntitlementGrants() {
+            const uid = parseInt(document.getElementById('ent_lookup_user_id').value, 10);
+            if (!uid) { showMessage('user_id 必填', 'error'); return; }
+            try {
+                const [gRes, aRes] = await Promise.all([
+                    authFetch('/api/admin/entitlements/grants?user_id=' + uid),
+                    authFetch('/api/admin/entitlements/actions?user_id=' + uid)
+                ]);
+                const list = (gRes && gRes.data) || [];
+                const actions = (aRes && aRes.data) || [];
+                // grants 表
+                const grantsHtml = !list.length
+                    ? '<p style="color:var(--text-dim);">该用户无 grant 记录。</p>'
+                    : '<h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-dim);">grants</h4>' +
+                        '<table class="kc-table"><thead><tr><th>规则</th><th>折扣</th><th>适用范围</th><th>剩余/总额</th><th>过期</th><th>状态</th><th>来源</th></tr></thead><tbody>' +
+                        list.map(g => {
+                            const statusBadge = g.status === 'active' ? '<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">active</span>'
+                                : g.status === 'exhausted' ? '<span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">exhausted</span>'
+                                : g.status === 'expired' ? '<span style="background:#94a3b8;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">expired</span>'
+                                : g.status === 'revoked' ? '<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">revoked</span>'
+                                : '<span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + g.status + '</span>';
+                            const scope = Array.isArray(g.plan_scope) ? (g.plan_scope.length ? g.plan_scope.join(', ') : '<em>全部</em>') : '';
+                            const revokeBtn = g.status === 'active' ? '<button class="btn" style="padding:2px 8px; font-size:11px; margin-left:6px;" onclick="revokeEntitlementGrant(' + g.id + ')">撤销</button>' : '';
+                            return '<tr>' +
+                                '<td><code>' + escapeHtml(g.rule_code) + '</code><br><span style="color:var(--text-dim);font-size:11px;">' + escapeHtml(g.display_name || '') + '</span></td>' +
+                                '<td>' + (ENT_DISCOUNT_LABELS[g.discount_type] || g.discount_type) + (g.discount_type === 'percent' ? ' · ' + g.discount_value + '%' : ' · ' + g.discount_value + ' cents') + '</td>' +
+                                '<td>' + scope + '</td>' +
+                                '<td>' + g.remaining_uses + ' / ' + g.total_uses + '</td>' +
+                                '<td>' + (g.expires_at || '<em>永久</em>') + '</td>' +
+                                '<td>' + statusBadge + revokeBtn + '</td>' +
+                                '<td style="font-size:11px; color:var(--text-dim);">' + (g.source || '') + '<br>' + (g.source_ref || '') + '</td>' +
+                            '</tr>';
+                        }).join('') + '</tbody></table>';
+                // actions 表（R6）
+                const actionsHtml = !actions.length
+                    ? '<p style="color:var(--text-dim); margin-top:12px;">该用户无动作流水。</p>'
+                    : '<h4 style="margin:16px 0 8px 0; font-size:13px; color:var(--text-dim);">事件动作流水（R6）</h4>' +
+                        '<table class="kc-table"><thead><tr><th>时间</th><th>事件</th><th>规则</th><th>handler</th><th>目标</th><th>状态</th><th>result</th></tr></thead><tbody>' +
+                        actions.map(a => {
+                            const statusBadge = a.status === 'success' ? '<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">success</span>'
+                                : a.status === 'skipped' ? '<span style="background:#94a3b8;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">skipped</span>'
+                                : a.status === 'failed' ? '<span style="background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">failed</span>'
+                                : '<span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + a.status + '</span>';
+                            let resStr = a.result_json || '';
+                            try { const j = JSON.parse(a.result_json); resStr = j.note || j.error || JSON.stringify(j).slice(0, 120); } catch (e) {}
+                            return '<tr>' +
+                                '<td style="font-size:11px; color:var(--text-dim);">' + a.created_at + '</td>' +
+                                '<td><code>' + escapeHtml(a.action_code) + '</code></td>' +
+                                '<td><code>' + escapeHtml(a.rule_code) + '</code></td>' +
+                                '<td>' + escapeHtml(a.handler) + '</td>' +
+                                '<td>' + escapeHtml(a.target_plan_code || '-') + '</td>' +
+                                '<td>' + statusBadge + '</td>' +
+                                '<td style="font-size:11px; max-width:280px; word-break:break-all;">' + escapeHtml(String(resStr).slice(0, 160)) + '</td>' +
+                            '</tr>';
+                        }).join('') + '</tbody></table>';
+                document.getElementById('ent_grants_list').innerHTML = grantsHtml + actionsHtml;
+                if (window.lucide && lucide.createIcons) lucide.createIcons();
+            } catch (e) {
+                document.getElementById('ent_grants_list').innerHTML = '<p style="color:var(--text-dim);">查询失败：' + (e.message || e) + '</p>';
+            }
+        }
+
+        async function revokeEntitlementGrant(id) {
+            if (!confirm('确认撤销该 grant？撤销后不可恢复（不影响已扣次流水）。')) return;
+            try {
+                await authFetch('/api/admin/entitlements/grants/' + id + '/revoke', { method: 'POST' });
+                showMessage('已撤销', 'success');
+                loadEntitlementGrants();
+            } catch (e) { showMessage(e.message || '撤销失败', 'error'); }
         }
 
         bootAdmin();

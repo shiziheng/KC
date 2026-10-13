@@ -9,7 +9,7 @@
 
 ### 1. 当前版本
 
-**`v1.13.0` · 2026-10-11 · 客服工作台与全站美元显示守护**
+**`v1.24.0` · 2026-10-13 · 商品管理 MVP：一个页面配商品，保存即同步商城**
 
 ### 1b. 产品一句话
 
@@ -36,6 +36,18 @@ ChatGPT Plus / Pro 自动代充平台。当前独立业务前台和后台仅运�
 
 ### 3. 当前进度
 
+- **商品管理 MVP（v1.24.0）**：KC 后台「商品管理」页——一个页面配商品（列表 + 单表单编辑/新建：名称/周期/售价/货源下拉/卖点/说明/在售与显示开关/API 加价配置），「保存并同步商城」聚合写入 v2_plan + kc_plans + 资费规则 + 卡片 + 插件 packages 映射（订阅类自动写，新商品下单即可发卡）；菜单取代原「商品与资费」「商品卡片」入口；端到端验证全绿（改价双写 / 新建含发卡映射 / 无脏数据）。
+- **修复：元/月残留 + 上游/资费入口（v1.23.1）**：新增套餐价格「元/月」类后缀清零（i18n unit 键 ×14 → `/月` `/季` 等；含邀请页「提现门槛(元)」）；隐藏两年付/三年付价格行；Xboard 后台「代充运营」链接修正为直达 KC 后台（`:3100/admin`，原误指 business-admin 冻结台）；`migrate-upstreams.js` 修复本机连接（自动加载 .env + 默认 3310）并完成回填（mock_zovo + 12 条目录，上游管理页从此有数据）；KC 后台菜单更名「上游管理」「商品与资费」。
+- **管理端代充化（v1.23.0）**：Xboard 管理端 `/5fea4ca1` 三层运行时过滤器（`admin.blade.php` 壳层「KC-ADMIN-V2」）——i18n 覆盖（订阅管理→商品管理、订阅套餐→商品套餐、订阅计划→商品名称、周期→服务周期（月付→30 天/一次性→单次）、流量包→充值包、订阅→当前商品）；菜单收敛（优惠券/礼品卡/服务器/节点/权限组/路由/主题/插件/知识库隐藏，「节点管理」空组整组隐藏，保留「代充运营」入口）；字段过滤（权限组/在线设备/已用流量/总流量/到期时间列、套餐与用户弹窗机场字段、系统设置机场页签、仪表盘流量卡、行菜单机场项）；品牌 KC 加速 + ¥→$ + 站点名称/描述经 `Setting::set` 写入；断言工具 `tools/check-admin-airport.js` **33 PASS / 0 FAIL / 0 词典命中**。
+- **全站机场字段屏蔽与代充化（v1.22.0）**：实测走查 9 项体验问题全处置——订单详情「类型/周期→服务周期（月付→30 天）」「产品流量→交付方式：卡密自动发放」；订单列表「周期→服务周期」列改名映射；个人中心「重置订阅信息」「通知」整卡隐藏；菜单三机场入口（使用文档/节点状态/流量明细）移除；`#/node`、`#/traffic` 路由拦截重定向首页；CNY→USD 货币守护扩展；门户卡按钮「立即订阅→立即办理」。引擎为文案精确匹配的运行时过滤器（只隐藏不删 Vue 节点、心跳+观察器自愈）；断言工具 `tools/check-airport-lexicon.js` **19/19 全 PASS**。同批连带部署 v1.14 主题增量（类型标已上线）。
+- **后台解耦 R7·老字段下掉评估（v1.21.0）**：评估报告 `docs/方案/老字段下掉评估-v1.0.0.md`（首版）。**数据一致性 10/10 PASS**（v2_plan ↔ kc_plans+kc_pricing_rules+kc_listing_cards）但**本期不实际下掉**——需 BFF 代理接入 + 前台切读法两个收尾完成（v1.22.0+ 续作）。诊断能力：`GET /api/admin/diag/legacy-fields` 后台一键查双轨差异；`tools/check-legacy-readiness.js` 离线 CI/CD 接入（exit 0=ready / 1=有差异）。
+- **后台解耦 R6·事件型权益（v1.20.0）**：插件 `KcIntegration` 主动上报事件（`POST /api/integration/entitlement/event`，按 event_code 精确匹配或 `'*'` 通配 source='event' 的规则），内置 handler `audit_log`（写流水 status=success）与 `plan_switch`（写流水 status=skipped + note 标注"v1.20.0 仅记录计划不实切换；实切换留 v1.21+"，避免越权）；handler 配置通过 rule.note 的 `handler=xxx` 读取，target 通过 `target=xxx` 读取；后台权益页"按 user_id 查询"扩展同时展示 grants + actions 两张表。KC 数据库新增 `kc_entitlement_actions` 表；端到端验证脚本 `tools/_v120_r6_e2e.js` 6 阶段全 PASS。
+- **后台解耦 R5·权益高级（v1.19.0）**：插件 `KcIntegration` 发卡成功后自动回调 KC 触发权益 grant（`POST /api/integration/entitlement/issue-after-cdk`，按 plan_code × source='purchase' × trigger_plan_code 命中规则，幂等下发）；退款/失败回补端点 `POST /api/integration/entitlement/refund`（grant.remaining_uses + 1 + exhausted→active）；grant 流水回滚用 note='REFUNDED' 标记而非删除保留审计；端到端验证脚本 `tools/_v119_link_e2e.js` 9 阶段全 PASS。
+- **后台解耦 R4·权益 MVP（v1.18.0）**：后台新增「权益」页（菜单顶级项 / lucide-ticket-percent 图标）——权益规则 CRUD（discount_type: percent/fixed_cents/fixed_price_cents × discount_value/门槛/配额/有效期/优先级/适用范围 plan_scope/触发源 source）、按 user_id 手动发 grants、查询/撤销 grants；`POST /api/pricing/quote` v1.18.0 起**启用 entitlement 分支**（取用户持有的最优 grant 与 manual/promotion 比价取低，落单 upsert `kc_order_pricing_snapshot` + 写 `kc_entitlement_uses` 扣次流水）；grant 并发防重（uk_user_rule_active + INSERT IGNORE）；扣次幂等（uk_grant_order）。KC 数据库新增 `kc_entitlement_rules` / `kc_entitlement_grants` / `kc_entitlement_uses` 三表；数据回填脚本 `tools/migrate-entitlements.js` 幂等可重跑（首次需手动执行，含 2 条 demo 规则）。
+- **后台解耦 R3·展示层（v1.17.0）**：后台新增「商品卡片」页（菜单顶级项 / lucide-credit-card 图标）——基于 KC 视图 SKU 编辑卡片展示（title/subtitle/badge/type/listing_state/chips/features/guarantees/button/tip/footer_link/is_visible）；与 v2_plan.kc_card 解耦存 `kc_listing_cards`；提供「同步到 v2」一键双写兜底（让插件立即读到新配置）。KC 数据库新增 `kc_listing_cards` 表；数据回填脚本 `tools/migrate-listing-cards.js` 幂等可重跑（10 SKU → 10 张卡片）。**终极方案**（插件改读 KC 侧 BFF）留给 R7·读法切换。
+- **后台解耦 R2·资费层（v1.16.0）**：后台新增「商品 SKU」页（菜单顶级项 / lucide-package 图标）—— KC 视图 SKU（code UNIQUE、kc_type=recharge/account/entitlement、upstream_code+plan_key 引用上游）+ 资费规则（source='manual'/'promotion'/'entitlement' × period × amount_cents 美分数 + priority + valid_from/until），支持整体替换与价格预览；`POST /api/pricing/quote` 价格引擎 MVP（按 plan_code 命中最高 priority + 手动 > 促销 > 权益，落单时 upsert `kc_order_pricing_snapshot` 保证退款可复算）。KC 数据库新增 `kc_plans`、`kc_pricing_rules`、`kc_order_pricing_snapshot` 三表；数据回填脚本 `tools/migrate-pricing.js` 幂等可重跑（10 SKU + 10 manual 规则）。本版本与 R1 同步**未改** 插件 `config.packages` 与前台商品页读法，R3 展示层时由 BFF 代理接入。
+- **后台解耦 R1·上游接入层（v1.15.0）**：后台新增「上游接入」页（菜单顶级项 / lucide-server-cog 图标）——可视化新增/暂停/启用上游、查看/导入上游目录、刷健康（Mock）；KC 数据库新增 `kc_upstreams` / `kc_upstream_plans` / `kc_upstream_health_snapshots` 三表；数据回填脚本 `tools/migrate-upstreams.js` 幂等可重跑（首次需手动执行）。本版本仅 KC 侧独立管理 + 后台可视，**未改插件 `config.packages` 与前台**，切换读法留待 R3（按方案 `SP-2026-10-11-v1.0.1` §7 M3 双轨读）。
+- **商品页游客浏览与卡片配置化（v1.14.0）**：商品页对未登录游客开放浏览（同一套商品与卡片配置，仅购买需登录）；商品卡新增**类型标**（文案/颜色可配）与**优惠行**（划线原价 + 促销文案，带**一键关闭的全局开关**，保存即生效）；底部服务链接能力保留、默认不显示；品牌水印不做。
 - **客服工作台与美元显示守护（v1.13.0）**：客服只读工作台上线（余额 / 订单进度 / 充值到账 / 卡密查询 + 话术卡；运营壳内链直达）；全站金额一律以美元（$）显示落成硬约束（运行时兜底 + 检查脚本 + 提交钩子）；Xboard 补丁核查并入部署/重建流程（缺失自动重打）。
 - **「购买卡密」前台入口（v1.12.0）**：商品卡新增次级入口，走经典「下单 → USDT 收银台 → 发卡」链路（后端全复用）；入口开关与文案在 Xboard 插件设置可配、**保存即生效、可随时关闭**；P2/P3 设计稿已产出（`docs/方案/卡密购买模式-前台设计-v1.0.0.md`）。
 - **供应商健康摘要与履约链路（v1.11.3）**：补回 10-07 丢失的 S8 健康摘要（商城可售判定恢复——商品从「不可售」回到在售）；履约链路完成全链路模拟验证：真实下单 → 模拟到账回调 → 自动发卡 → 订单页展示卡密，幂等复验通过（零真实扣款）。

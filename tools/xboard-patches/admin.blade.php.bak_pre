@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ $title }}</title>
+  <script>
+    window.settings = {
+      base_url: "/",
+      title: "{{ $title }}",
+      version: "{{ $version }}",
+      logo: "{{ $logo }}",
+      secure_path: "{{ $secure_path }}",
+    };
+  </script>
+  @php
+    $manifestPath = public_path('assets/admin/manifest.json');
+    $manifest = file_exists($manifestPath) ? json_decode(file_get_contents($manifestPath), true) : null;
+    $entry = is_array($manifest) ? ($manifest['index.html'] ?? null) : null;
+    $scripts = [];
+    $styles = [];
+    $locales = [];
+
+    if (is_array($entry)) {
+      $visited = [];
+      $collectAssets = function ($chunkName) use (&$collectAssets, &$manifest, &$visited, &$scripts, &$styles) {
+        if (isset($visited[$chunkName]) || !isset($manifest[$chunkName]) || !is_array($manifest[$chunkName])) {
+          return;
+        }
+
+        $visited[$chunkName] = true;
+        $chunk = $manifest[$chunkName];
+
+        if (!empty($chunk['css']) && is_array($chunk['css'])) {
+          foreach ($chunk['css'] as $cssFile) {
+            $styles[$cssFile] = $cssFile;
+          }
+        }
+
+        if (!empty($chunk['imports']) && is_array($chunk['imports'])) {
+          foreach ($chunk['imports'] as $import) {
+            $collectAssets($import);
+          }
+        }
+
+        if (!empty($chunk['isEntry']) && !empty($chunk['file'])) {
+          $scripts[$chunk['file']] = $chunk['file'];
+        }
+      };
+
+      $collectAssets('index.html');
+    }
+
+    foreach (glob(public_path('assets/admin/locales/*.js')) ?: [] as $localeFile) {
+      $locales[] = 'locales/' . basename($localeFile);
+    }
+    sort($locales);
+  @endphp
+
+  @if($entry && count($scripts) > 0)
+    @foreach($styles as $css)
+      <link rel="stylesheet" crossorigin href="/assets/admin/{{ $css }}" />
+    @endforeach
+    @foreach($locales as $locale)
+      <script src="/assets/admin/{{ $locale }}"></script>
+    @endforeach
+    @foreach($scripts as $js)
+      <script type="module" crossorigin src="/assets/admin/{{ $js }}"></script>
+    @endforeach
+  @else
+    {{-- Fallback: hardcoded paths for backward compatibility --}}
+    <script type="module" crossorigin src="/assets/admin/assets/index.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/admin/assets/index.css" />
+    <link rel="stylesheet" crossorigin href="/assets/admin/assets/vendor.css">
+    <script src="/assets/admin/locales/en-US.js"></script>
+    <script src="/assets/admin/locales/zh-CN.js"></script>
+    <script src="/assets/admin/locales/ko-KR.js"></script>
+  @endif
+  <script>
+    // 代充运营整改：Xboard 管理端是编译产物，菜单通过同源壳脚本按路径收敛。
+    // 底层路由和数据保留，技术管理员仍可直接访问原地址。
+    (function () {
+      var keep = ['/finance/plan', '/finance/order', '/user/manage', '/user/ticket', '/payment', '/config/notice'];
+      var hide = ['/finance/coupon', '/finance/gift-card', '/server/', '/traffic-reset', '/theme', '/mail/template', '/config/knowledge', '/plugin'];
+      function shouldHide(href) {
+        if (!href || keep.some(function (p) { return href.indexOf(p) >= 0; })) return false;
+        return hide.some(function (p) {
+          return p === '/plugin' ? /\/plugin\/?$/.test(href) : href.indexOf(p) >= 0;
+        });
+      }
+      function applyMenu() {
+        document.querySelectorAll('a[href],button[data-href]').forEach(function (node) {
+          var href = node.getAttribute('href') || node.getAttribute('data-href') || '';
+          if (!shouldHide(href)) return;
+          var item = node.closest('a,button,li');
+          if (item) item.style.display = 'none';
+        });
+        var nav = document.querySelector('nav');
+        if (nav && !document.getElementById('kc-ops-menu-link')) {
+          var link = document.createElement('a');
+          link.id = 'kc-ops-menu-link';
+          link.href = 'http://localhost:3100/business-admin';
+          link.target = '_blank';
+          link.rel = 'noopener';
+          link.textContent = '代充运营';
+          link.style.cssText = 'display:flex;align-items:center;height:40px;padding:0 24px;border-radius:6px;color:inherit;text-decoration:none;font-weight:600;';
+          nav.insertBefore(link, nav.firstChild);
+        }
+      }
+      document.addEventListener('DOMContentLoaded', function () {
+        applyMenu();
+        new MutationObserver(applyMenu).observe(document.body, { childList: true, subtree: true });
+      });
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+</body>
+
+</html>

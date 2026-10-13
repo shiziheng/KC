@@ -343,6 +343,233 @@ async function ensureIntegrationTable() {
     await ensureTable('integration_cdk_issue', INTEGRATION_TABLE_SQL);
 }
 
+// ============================================================
+// v1.15.0 · 上游接入层（独立于 v2_plan；与 plugins.config.packages 并行作为权威源）
+// 设计：SP-2026-10-11-v1.0.1 §3.1；本版本仅 KC 侧管理；插件读法切换留待 R3 展示层
+// ============================================================
+const UPSTREAMS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_upstreams (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(32) NOT NULL COMMENT '上游唯一代号：mock_zovo / zovo / epay 等',
+    display_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '后台显示名',
+    protocol ENUM('mock','rest','custom') NOT NULL DEFAULT 'mock' COMMENT '接入协议；当前仅 mock 可用',
+    status ENUM('active','paused','archived') NOT NULL DEFAULT 'active' COMMENT '上游状态',
+    base_url VARCHAR(255) NOT NULL DEFAULT '' COMMENT '上游 API 地址；mock 可空',
+    api_key_ref VARCHAR(64) NOT NULL DEFAULT '' COMMENT '密钥变量名（实际密钥放 .env）',
+    config_json JSON NULL COMMENT '上游特有配置（超时、重试等）',
+    note VARCHAR(255) NOT NULL DEFAULT '' COMMENT '备注',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_kc_upstreams_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+const UPSTREAM_PLANS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_upstream_plans (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    upstream_code VARCHAR(32) NOT NULL COMMENT '→ kc_upstreams.code',
+    upstream_plan_key VARCHAR(64) NOT NULL COMMENT '上游套餐键：plus / pro_5x / credit500 / …',
+    display_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '展示名（可与上游名不同）',
+    sku_type ENUM('subscription','topup','credit') NOT NULL DEFAULT 'subscription' COMMENT 'SKU 类型',
+    period ENUM('once','month','quarter','half_year','year','two_year','three_year') NOT NULL DEFAULT 'month' COMMENT '周期；once=单次/充值包',
+    upstream_price_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '上游报价（分，仅参考）',
+    currency CHAR(3) NOT NULL DEFAULT 'USD' COMMENT 'ISO 4217 三字代码',
+    is_credit TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否点数/credit 类型',
+    requires_active_subscription TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否依赖已有订阅',
+    enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+    note VARCHAR(255) NOT NULL DEFAULT '' COMMENT '备注',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_kc_upstream_plan (upstream_code, upstream_plan_key),
+    KEY idx_kc_upstream_plans_code (upstream_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+const UPSTREAM_HEALTH_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_upstream_health_snapshots (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    upstream_code VARCHAR(32) NOT NULL,
+    state ENUM('healthy','degraded','soldout','paused','archived') NOT NULL DEFAULT 'healthy',
+    reason VARCHAR(255) NOT NULL DEFAULT '',
+    failure_count INT UNSIGNED NOT NULL DEFAULT 0,
+    last_probe_status VARCHAR(16) NOT NULL DEFAULT '',
+    last_probe_reason_code VARCHAR(64) NOT NULL DEFAULT '',
+    manual_override TINYINT(1) NOT NULL DEFAULT 0,
+    mock TINYINT(1) NOT NULL DEFAULT 1,
+    checked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_kc_upstream_health_code (upstream_code),
+    KEY idx_kc_upstream_health_checked (checked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+async function ensureUpstreamsTable() {
+    await ensureTable('kc_upstreams', UPSTREAMS_TABLE_SQL);
+}
+async function ensureUpstreamPlansTable() {
+    await ensureTable('kc_upstream_plans', UPSTREAM_PLANS_TABLE_SQL);
+}
+async function ensureUpstreamHealthTable() {
+    await ensureTable('kc_upstream_health_snapshots', UPSTREAM_HEALTH_TABLE_SQL);
+}
+
+// ============================================================
+// v1.16.0 · 资费层（独立于 v2_plan.prices 与 plugins.config.packages）
+// 设计：SP-2026-10-11-v1.0.1 §3.2；售价统一「美分数」（amount_cents，与 v1.13.0 美元守护兼容）
+// ============================================================
+const PLANS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_plans (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(64) NOT NULL COMMENT 'KC SKU 唯一代号（自维护，例如 plus_m / topup_500）',
+    kc_type ENUM('recharge','account','entitlement') NOT NULL DEFAULT 'recharge' COMMENT '商品类型（接《商品类型体系 v1.0.0》）',
+    display_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '展示名',
+    upstream_code VARCHAR(32) NOT NULL DEFAULT '' COMMENT '→ kc_upstreams.code（空=未绑定上游）',
+    upstream_plan_key VARCHAR(64) NOT NULL DEFAULT '' COMMENT '→ kc_upstream_plans.upstream_plan_key',
+    status ENUM('active','paused','archived') NOT NULL DEFAULT 'active' COMMENT 'SKU 状态',
+    note VARCHAR(255) NOT NULL DEFAULT '' COMMENT '备注',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_kc_plans_code (code),
+    KEY idx_kc_plans_status (status),
+    KEY idx_kc_plans_upstream (upstream_code, upstream_plan_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+const PRICING_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_pricing_rules (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    plan_id BIGINT UNSIGNED NOT NULL COMMENT '→ kc_plans.id',
+    source ENUM('manual','promotion','entitlement') NOT NULL DEFAULT 'manual' COMMENT '来源：手工 / 促销 / 权益（R4）',
+    period ENUM('once','month','quarter','half_year','year','two_year','three_year') NOT NULL DEFAULT 'month' COMMENT '周期；once=单次/充值包',
+    amount_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '售价（美分数，与 v1.13.0 美元守护兼容）',
+    priority INT NOT NULL DEFAULT 0 COMMENT '多规则时优先级（数字大者优先）',
+    valid_from DATETIME NULL DEFAULT NULL COMMENT '生效起始（促销/限时价）',
+    valid_until DATETIME NULL DEFAULT NULL COMMENT '生效截止',
+    enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+    note VARCHAR(255) NOT NULL DEFAULT '' COMMENT '备注',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_kc_pricing_plan (plan_id, enabled),
+    KEY idx_kc_pricing_source (source, priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+const PRICING_SNAPSHOT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_order_pricing_snapshot (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    trade_no VARCHAR(64) NOT NULL COMMENT 'Xboard 订单号（外部幂等键）',
+    plan_id BIGINT UNSIGNED NOT NULL,
+    base_price_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '标价（manual 价）',
+    final_price_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '实际收',
+    applied_source ENUM('manual','promotion','entitlement') NULL DEFAULT NULL,
+    applied_rule_id BIGINT UNSIGNED NULL DEFAULT NULL,
+    snapshot_json JSON NULL COMMENT '命中规则全集（含未命中，便于审计）',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_kc_pricing_snapshot_trade (trade_no),
+    KEY idx_kc_pricing_snapshot_plan (plan_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+async function ensurePlansTable() {
+    await ensureTable('kc_plans', PLANS_TABLE_SQL);
+    // v1.24.0 商品管理 MVP：API 分销配置占位列（仅存配置，对外接口 v2 启用）
+    try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status'); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_enabled'); } catch (e) { /* 已存在 */ }
+}
+async function ensurePricingRulesTable() { await ensureTable('kc_pricing_rules', PRICING_RULES_TABLE_SQL); }
+async function ensurePricingSnapshotTable() { await ensureTable('kc_order_pricing_snapshot', PRICING_SNAPSHOT_TABLE_SQL); }
+
+// v1.18.0 · 权益 MVP（SP-2026-10-11-v1.0.1 §R4）
+const ENTITLEMENT_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_rules (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(64) NOT NULL,
+    display_name VARCHAR(128) NOT NULL DEFAULT '',
+    plan_scope JSON NOT NULL,
+    discount_type ENUM('percent','fixed_cents','fixed_price_cents') NOT NULL DEFAULT 'percent',
+    discount_value INT NOT NULL DEFAULT 0,
+    min_order_cents INT NOT NULL DEFAULT 0,
+    grant_uses INT NOT NULL DEFAULT 1,
+    grant_period_days INT NOT NULL DEFAULT 30,
+    priority INT NOT NULL DEFAULT 100,
+    status ENUM('draft','active','paused','expired') NOT NULL DEFAULT 'draft',
+    source ENUM('manual','purchase','event') NOT NULL DEFAULT 'manual',
+    trigger_plan_code VARCHAR(64) NULL,
+    valid_from DATETIME NULL,
+    valid_until DATETIME NULL,
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权益规则定义'`;
+
+const ENTITLEMENT_GRANTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_grants (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    rule_code VARCHAR(64) NOT NULL,
+    source ENUM('manual','purchase','event') NOT NULL DEFAULT 'manual',
+    source_ref VARCHAR(128) NOT NULL DEFAULT '',
+    remaining_uses INT NOT NULL DEFAULT 1,
+    total_uses INT NOT NULL DEFAULT 1,
+    expires_at DATETIME NULL,
+    status ENUM('active','exhausted','expired','revoked') NOT NULL DEFAULT 'active',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_rule_active (user_id, rule_code, status) COMMENT '并发防同 user 同规则同 status 多发',
+    KEY idx_user_status (user_id, status),
+    KEY idx_rule (rule_code),
+    KEY idx_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户持有权益'`;
+
+const ENTITLEMENT_USES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_uses (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    grant_id BIGINT UNSIGNED NOT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    rule_code VARCHAR(64) NOT NULL,
+    order_trade_no VARCHAR(64) NOT NULL DEFAULT '',
+    plan_code VARCHAR(64) NOT NULL,
+    original_cents INT NOT NULL,
+    final_cents INT NOT NULL,
+    discount_cents INT NOT NULL,
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    snapshot_id BIGINT UNSIGNED NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_grant_order (grant_id, order_trade_no) COMMENT '幂等防同 grant 同单重复扣次',
+    KEY idx_user_created (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权益使用流水'`;
+
+async function ensureEntitlementRulesTable() { await ensureTable('kc_entitlement_rules', ENTITLEMENT_RULES_TABLE_SQL); }
+async function ensureEntitlementGrantsTable() { await ensureTable('kc_entitlement_grants', ENTITLEMENT_GRANTS_TABLE_SQL); }
+async function ensureEntitlementUsesTable() {
+    await ensureTable('kc_entitlement_uses', ENTITLEMENT_USES_TABLE_SQL);
+    // 兼容 v1.19.0 之前已部署但缺 note 列的实例
+    try { await runExecute('ALTER TABLE kc_entitlement_uses ADD COLUMN note VARCHAR(255) NOT NULL DEFAULT "" AFTER discount_cents'); } catch (e) { /* 已存在则忽略 */ }
+}
+
+// v1.20.0 · 权益·动作流水（SP §R6 事件型权益）
+const ENTITLEMENT_ACTIONS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_actions (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    rule_code VARCHAR(64) NOT NULL,
+    action_code VARCHAR(64) NOT NULL COMMENT '事件类型（plugin 上报）',
+    handler VARCHAR(64) NOT NULL DEFAULT 'audit_log' COMMENT '动作处理器：audit_log / plan_switch / ...',
+    target_plan_code VARCHAR(64) NOT NULL DEFAULT '' COMMENT '动作目标 plan_code（如切换到哪个档）',
+    params_json JSON NOT NULL COMMENT '动作参数（snapshot/trace）',
+    status ENUM('pending','success','failed','skipped') NOT NULL DEFAULT 'pending',
+    result_json JSON NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_user (user_id, created_at),
+    KEY idx_rule (rule_code),
+    KEY idx_action (action_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权益动作流水（事件触发）'`;
+
+async function ensureEntitlementActionsTable() { await ensureTable('kc_entitlement_actions', ENTITLEMENT_ACTIONS_TABLE_SQL); }
+
+// ============================================================
+// v1.17.0 · 商品展示层（独立于 v2_plan.kc_card；卡片配置落 KC 侧新表）
+// 设计：SP-2026-10-11-v1.0.1 §3.3；R3 阶段：新建表 + 后台编辑 + 回填 + 准备双轨
+// ============================================================
+const LISTING_CARDS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_listing_cards (
+    plan_id BIGINT UNSIGNED NOT NULL PRIMARY KEY COMMENT '→ kc_plans.id',
+    card_json JSON NOT NULL COMMENT '卡片配置（沿用 cardNorm 白名单字段：title/subtitle/badge/type/features/guarantees/tip/button/chips/...）',
+    is_visible TINYINT(1) NOT NULL DEFAULT 1 COMMENT '可见开关',
+    listing_state ENUM('onsale','featured','soon','soldout','manual') NOT NULL DEFAULT 'onsale' COMMENT '卡片展示状态',
+    sort INT NOT NULL DEFAULT 0 COMMENT '排序权重',
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_kc_listing_state (listing_state, sort),
+    KEY idx_kc_listing_visible (is_visible)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+async function ensureListingCardsTable() { await ensureTable('kc_listing_cards', LISTING_CARDS_TABLE_SQL); }
+
 async function ensureIntegrationConfigDefaults() {
     const defaults = [
         ['integration_enabled', '0'],
@@ -585,6 +812,17 @@ async function ensureReady() {
     await ensureLegacyColumns();
     await ensureGptApiColumns();
     await ensureIntegrationTable();
+    await ensureUpstreamsTable();
+    await ensureUpstreamPlansTable();
+    await ensureUpstreamHealthTable();
+    await ensurePlansTable();
+    await ensurePricingRulesTable();
+    await ensurePricingSnapshotTable();
+    await ensureListingCardsTable();
+    await ensureEntitlementRulesTable();
+    await ensureEntitlementGrantsTable();
+    await ensureEntitlementUsesTable();
+    await ensureEntitlementActionsTable();
     await initializeBaseData();
     await ensureAdminSecurityDefaults();
     await ensureHcaptchaConfigDefaults();
