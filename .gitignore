@@ -105,3 +105,5 @@ web/_reg_prof/
 **/_reg_prof/
 **/_chrome_tmp*/
 *.dmp
+# Local backup files (never committed)
+*.bak_*
