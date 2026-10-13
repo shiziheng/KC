@@ -5784,6 +5784,15 @@ app.post('/api/open/v1/orders', requireOpenApiAuth, async (req, res) => {
         }
 
         const ourOrderNo = 'api_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+        try {
+            const [balRow] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [req.openApiClient.id]);
+            if (balRow) {
+                await store.runExecute(
+                    'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
+                    [req.openApiClient.id, -amount, balRow.balance_cents, 'consume', ourOrderNo, '下单 ' + clientOrderNo]
+                );
+            }
+        } catch (le) { /* 流水失败不阻塞订单 */ }
         let cdk = '';
         let status = 'created';
         let failReason = '';
@@ -5801,6 +5810,15 @@ app.post('/api/open/v1/orders', requireOpenApiAuth, async (req, res) => {
             status = 'failed';
             failReason = String((e && e.message) || e).slice(0, 200);
             await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [amount, req.openApiClient.id]).catch(function () { });
+            try {
+                const [balRow2] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [req.openApiClient.id]);
+                if (balRow2) {
+                    await store.runExecute(
+                        'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
+                        [req.openApiClient.id, amount, balRow2.balance_cents, 'refund', ourOrderNo, '履约失败退回 ' + clientOrderNo]
+                    );
+                }
+            } catch (le2) { /* 流水失败不阻塞回滚 */ }
         }
 
         const ins = await store.runExecute(
@@ -5877,7 +5895,11 @@ app.post('/api/admin/api-clients/:id/recharge', requireSecondaryAuth, async (req
         const r = await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [cents, id]);
         if (!r || Number(r.affectedRows) === 0) return res.status(404).json({ success: false, message: '客户不存在' });
         const [rows] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [id]);
-        res.json({ success: true, message: '已充值 $' + amount.toFixed(2), data: { balance_cents: rows[0].balance_cents, balance: openApiUsd(rows[0].balance_cents) } });
+        await store.runExecute(
+            'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, cents, rows.balance_cents, 'recharge', '', '后台充值 $' + amount.toFixed(2)]
+        );
+        res.json({ success: true, message: '已充值 $' + amount.toFixed(2), data: { balance_cents: rows.balance_cents, balance: openApiUsd(rows.balance_cents) } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -5899,6 +5921,226 @@ app.get('/api/admin/api-clients/:id/credential', requireSecondaryAuth, async (re
         const rows = await store.runQuery('SELECT code, name, api_key, api_secret, rate_limit FROM kc_api_clients WHERE id=? LIMIT 1', [id]);
         if (!rows.length) return res.status(404).json({ success: false, message: '客户不存在' });
         res.json({ success: true, data: rows[0] });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// ─── v1.26.0 · API 客户自助门户（SP-2026-10-13-PORTAL-v1.0.0）────────────────────
+// 门户面 /api/portal/*（客户登录态=portal token，Bearer 鉴权，client_id 只来自 token）
+// 与开放 API /api/open/v1/*（程序调用，Key+签名）鉴权体系完全独立、互不继承。
+// 开关：app_config.api_portal_enabled（后台「API 客户」页顶部 Switch 控制）。
+
+const PORTAL_TOKEN_TTL_SEC = 24 * 3600;
+const portalLoginBuckets = new Map();
+
+function portalTokenSecret() {
+    return String(process.env.PORTAL_TOKEN_SECRET || 'kc_portal_dev_secret_change_me');
+}
+function portalSign(data) {
+    return crypto.createHmac('sha256', portalTokenSecret()).update(String(data)).digest('base64url');
+}
+function portalIssueToken(clientId) {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const payload = Buffer.from(JSON.stringify({ cid: Number(clientId), iat: now, exp: now + PORTAL_TOKEN_TTL_SEC })).toString('base64url');
+    return header + '.' + payload + '.' + portalSign(header + '.' + payload);
+}
+function portalVerifyToken(token) {
+    try {
+        const parts = String(token || '').split('.');
+        if (parts.length !== 3) return null;
+        const expect = portalSign(parts[0] + '.' + parts[1]);
+        if (!openApiSafeEq(expect, parts[2])) return null;
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        if (!payload || !payload.cid || !payload.exp || Number(payload.exp) < Math.floor(Date.now() / 1000)) return null;
+        return payload;
+    } catch (e) { return null; }
+}
+async function getPortalEnabled() {
+    try {
+        const v = await store.getAppConfigValue('api_portal_enabled', '1');
+        return String(v) !== '0';
+    } catch (e) { return true; }
+}
+async function requirePortalAuth(req, res, next) {
+    try {
+        await ensureStoreReady();
+        if (!(await getPortalEnabled())) {
+            return res.status(403).json({ success: false, code: 'PORTAL_DISABLED', message: '门户维护中，暂不可访问' });
+        }
+        const auth = String(req.headers.authorization || '');
+        const token = auth.indexOf('Bearer ') === 0 ? auth.slice(7).trim() : '';
+        const payload = portalVerifyToken(token);
+        if (!payload) return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '登录已过期，请重新登录' });
+        const rows = await store.runQuery('SELECT * FROM kc_api_clients WHERE id=? LIMIT 1', [payload.cid]);
+        if (!rows.length || rows[0].status !== 'active') {
+            return res.status(403).json({ success: false, code: 'CLIENT_DISABLED', message: '账户已停用，请联系运营' });
+        }
+        req.portalClient = rows[0];
+        next();
+    } catch (error) {
+        res.status(500).json({ success: false, code: 'INTERNAL', message: error.message });
+    }
+}
+
+// 门户静态页（独立 SPA）
+app.get(['/api-portal', '/api-portal/'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'api-portal.html'));
+});
+
+// 登录（API Key + Secret；统一报"凭证不正确"，不区分是 key 错还是 secret 错）
+app.post('/api/portal/login', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        if (!(await getPortalEnabled())) {
+            return res.status(403).json({ success: false, code: 'PORTAL_DISABLED', message: '门户维护中，暂不可登录' });
+        }
+        const key = String((req.body || {}).api_key || '').trim();
+        const secret = String((req.body || {}).api_secret || '').trim();
+        if (!key || !secret) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '请输入 API Key 与 Secret' });
+        const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
+        const nowMs = Date.now();
+        let bucket = portalLoginBuckets.get(ip);
+        if (!bucket || nowMs - bucket.start > 60000) { bucket = { start: nowMs, count: 0 }; portalLoginBuckets.set(ip, bucket); }
+        bucket.count += 1;
+        if (bucket.count > 10) return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '尝试过于频繁，请 1 分钟后再试' });
+        const rows = await store.runQuery('SELECT * FROM kc_api_clients WHERE api_key=? LIMIT 1', [key]);
+        if (!rows.length || rows[0].status !== 'active' || !openApiSafeEq(rows[0].api_secret || '', secret)) {
+            return res.status(401).json({ success: false, code: 'INVALID_CREDENTIALS', message: 'API Key 或 Secret 不正确' });
+        }
+        const c = rows[0];
+        res.json({
+            success: true, message: '登录成功',
+            data: { portal_token: portalIssueToken(c.id), client: { name: c.name, code: c.code, status: c.status } }
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 概览（客户信息 + 余额 + 统计）
+app.get('/api/portal/me', requirePortalAuth, async (req, res) => {
+    try {
+        const cid = req.portalClient.id;
+        const statRows = await store.runQuery(
+            "SELECT " +
+            "(SELECT COUNT(*) FROM kc_api_quote_logs WHERE client_id=? AND created_at >= CURDATE()) AS quotes_today, " +
+            "(SELECT COUNT(*) FROM kc_api_orders WHERE client_id=? AND created_at >= CURDATE()) AS orders_today, " +
+            "(SELECT COUNT(*) FROM kc_api_quote_logs WHERE client_id=? AND created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')) AS quotes_month, " +
+            "(SELECT COUNT(*) FROM kc_api_orders WHERE client_id=? AND created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')) AS orders_month, " +
+            "(SELECT COUNT(*) FROM kc_api_orders WHERE client_id=? AND status='delivered') AS orders_delivered, " +
+            "(SELECT COALESCE(SUM(amount_cents),0) FROM kc_api_orders WHERE client_id=? AND status='delivered') AS gmv_cents",
+            [cid, cid, cid, cid, cid, cid]
+        );
+        const stat = (statRows && statRows[0]) || {};
+        res.json({
+            success: true,
+            data: {
+                client: { name: req.portalClient.name, code: req.portalClient.code, status: req.portalClient.status },
+                balance: openApiUsd(req.portalClient.balance_cents),
+                stats: {
+                    quotes_today: Number(stat.quotes_today) || 0,
+                    orders_today: Number(stat.orders_today) || 0,
+                    quotes_month: Number(stat.quotes_month) || 0,
+                    orders_month: Number(stat.orders_month) || 0,
+                    orders_delivered: Number(stat.orders_delivered) || 0,
+                    gmv: openApiUsd(stat.gmv_cents)
+                }
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 查看凭证（API Key 明文；Secret 不返回，掩码展示，重置走 reset-secret）
+app.get('/api/portal/credentials', requirePortalAuth, async (req, res) => {
+    try {
+        res.json({ success: true, data: { api_key: req.portalClient.api_key, client_code: req.portalClient.code } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 重置 Secret（旧值立即失效，新值一次性返回）
+app.post('/api/portal/credentials/reset-secret', requirePortalAuth, async (req, res) => {
+    try {
+        const newSecret = crypto.randomBytes(24).toString('hex');
+        await store.runExecute('UPDATE kc_api_clients SET api_secret=?, updated_at=CURRENT_TIMESTAMP WHERE id=?', [newSecret, req.portalClient.id]);
+        res.json({ success: true, message: 'Secret 已重置（旧 Secret 立即失效，请立即保存新 Secret）', data: { api_secret: newSecret } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 我的订单（仅本客户；卡密仅 delivered 返回）
+app.get('/api/portal/orders', requirePortalAuth, async (req, res) => {
+    try {
+        const rangeRaw = String(req.query.range || '30');
+        const range = rangeRaw === '7' ? 7 : (rangeRaw === 'all' ? 3650 : 30);
+        const statusRaw = String(req.query.status || '');
+        const status = ['delivered', 'failed', 'created'].indexOf(statusRaw) >= 0 ? statusRaw : 'all';
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limit = 20;
+        const offset = (page - 1) * limit;
+        const where = ['client_id=?', 'created_at >= (NOW() - INTERVAL ? DAY)'];
+        const params = [req.portalClient.id, range];
+        if (status !== 'all') { where.push('status=?'); params.push(status); }
+        const [countRows, rows] = await Promise.all([
+            store.runQuery('SELECT COUNT(*) AS n FROM kc_api_orders WHERE ' + where.join(' AND '), params),
+            store.runQuery(
+                'SELECT our_order_no, client_order_no, sku_code, qty, amount_cents, status, cdk, created_at ' +
+                'FROM kc_api_orders WHERE ' + where.join(' AND ') + ' ORDER BY id DESC LIMIT ? OFFSET ?',
+                params.concat([limit, offset])
+            )
+        ]);
+        res.json({
+            success: true,
+            data: {
+                total: Number(countRows[0].n) || 0, page: page, limit: limit,
+                items: rows.map(function (o) {
+                    return {
+                        order_id: o.our_order_no, client_order_no: o.client_order_no,
+                        sku: o.sku_code, qty: o.qty, amount: openApiUsd(o.amount_cents),
+                        status: o.status, cdk: o.status === 'delivered' ? (o.cdk || '') : '',
+                        created_at: o.created_at
+                    };
+                })
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 余额与消费（流水）
+app.get('/api/portal/billing', requirePortalAuth, async (req, res) => {
+    try {
+        const cid = req.portalClient.id;
+        const ledgerRows = await store.runQuery(
+            'SELECT change_cents, balance_after_cents, type, ref, note, created_at FROM kc_api_balance_ledger WHERE client_id=? ORDER BY id DESC LIMIT 100',
+            [cid]
+        );
+        res.json({
+            success: true,
+            data: {
+                balance: openApiUsd(req.portalClient.balance_cents),
+                ledger: (ledgerRows || []).map(function (l) {
+                    return {
+                        type: l.type, change: openApiUsd(l.change_cents), balance_after: openApiUsd(l.balance_after_cents),
+                        ref: l.ref, note: l.note, created_at: l.created_at
+                    };
+                }),
+                recharge_hint: '充值请联系运营（对公转账后由运营在后台确认到账）'
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ─── 管理面：门户总开关 ────────────────────────────────────────────────────
+app.get('/api/admin/api-portal/setting', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const enabled = await getPortalEnabled();
+        res.json({ success: true, data: { api_portal_enabled: enabled } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/admin/api-portal/setting', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const raw = (req.body || {}).enabled;
+        const enabled = !(raw === false || String(raw) === 'false' || String(raw) === '0');
+        await store.setAppConfigValue('api_portal_enabled', enabled ? '1' : '0');
+        res.json({ success: true, message: enabled ? '门户已开放' : '门户已关闭（客户登录将看到维护中，API 调用不受影响）', data: { api_portal_enabled: enabled } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

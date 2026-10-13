@@ -40,6 +40,7 @@ const TOKENS = ['¥', '￥', 'CNY', 'RMB', '人民币'];
 const ALLOW_LINE = [
   { file: 'tools/kc_theme_inject.html', re: /FEAT-017|kcFixCurrency|货币|人民币|indexOf\(|split\(|换成|「¥|¥\/￥/ },
   { file: 'tools/xboard-patches/admin.blade.php', re: /KC-ADMIN-V2|文案兜底|货币（/ },
+  { file: 'tools/xboard-patches/Epay/Plugin.php', re: /fiat|CNY|KC-PATCH|默认按/ },
   { file: 'tools/_v123_admin_inject_script.html.tpl', re: /KC-ADMIN-V2|文案兜底|货币（/ },
 ];
 

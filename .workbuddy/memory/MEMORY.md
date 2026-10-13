@@ -35,7 +35,8 @@
 
 ## Xboard 平台真相
 - ghcr.io/cedar2025/xboard（Octane）：hash 路由、仅 12 页、无钱包页；金额以分计；custom_html 在 #app 外；v2_settings 无 key 列；补列 kc_is_topup / kc_topup_amount / kc_card。
-- 支付渠道 v2_payment；EPay=plugins-core 定制插件；回调 /api/v1/guest/payment/notify/{method}/{uuid}；「订单不存在」误回 success（不动）。
+- 支付渠道 v2_payment；EPay=plugins-core 定制插件（容器路径 /www/plugins-core/Epay，**不在 plugins/**）；回调 /api/v1/guest/payment/notify/{method}/{uuid}；「订单不存在」误回 success（不动）。
+- ⭐Epay pay() 必须传 fiat=USD：BEpusdt epay 接口缺失 fiat 默认按 CNY 解读 money（$15→15元÷6.69≈2.24 USDT，少收款 6.7 倍且回调后照常履约=资损漏洞，v1.25.1 已修）；成品 tools/xboard-patches/Epay/Plugin.php，重建重打+octane:reload；验证 tools/_v1251_fiat_usd_verify.js。
 - 红线：只许 ①保命补丁 ②插件 API ③壳层菜单；admin/kc/* 18 接口（403=存活）。壳页(ops/support)公开壳+数据接口 admin 鉴权，token 取同源 localStorage。
 - 坑：period 键错配；plan/save 不收 show/sell/renew/sort；余额=抵扣池（纯余额单 OrderService->paid('BALANCE-..')）；分销快照 order.open.after（20/10/5）；/invite/save 是 GET；插件 PascalCase 目录/snake code、listen()、路由无 /api 前缀、新增后 octane:reload；order.open.after 5s 超时内 HTTP 2~3s 全吞。
 - 插件配置有 1h Cache::remember（octane:reload 不清）→ 要即时生效的配置键直读 DB（如 card_buy_*）。

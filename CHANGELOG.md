@@ -9,6 +9,45 @@
 
 ---
 
+## v1.26.0 · 2026-10-13 · API 客户自助门户：凭证/文档/订单/余额自助 + 运营总开关（UX-7）
+
+- 背景：用户要求"前端研发一个 API 菜单、后端可控开关、开放给接接口的客户"——按《API 客户自助门户设计 v1.0.0》（SP-2026-10-13-PORTAL-v1.0.0）实施，方案即执行口径。
+- **独立门户 `/api-portal`**（`public/api-portal.html`，原生 SPA）：客户用 **API Key + Secret 登录**（portal token = HMAC 自签、24h、`PORTAL_TOKEN_SECRET` 入 .env；**client_id 仅来自 token，禁客户端传参**）；登录失败统一"凭证不正确"、同 IP 10 次/分钟限流。
+- **五页菜单**（侧栏导航）：**概览**（余额大卡 / 今日·本月报价与订单四宫格 / 接入三步清单）/ **API 凭证**（Base URL、API Key 明文可复制、Secret 掩码 + 重置（旧值立即失效、新值一次性展示）、签名规则速查 + curl/Node/Python 三语言示例）/ **接入文档**（快速开始、4 接口参数与响应示例、签名详解、错误码表、锁价/幂等/限流规则）/ **我的订单**（下游单号/金额/状态/卡密可复制，仅本客户）/ **余额与消费**（余额 + 流水，`recharge/consume/refund` 三型）。
+- **运营总开关**（你要求的后端可控）：后台「API 客户」页顶部「客户自助门户」Switch → `app_config.api_portal_enabled`；**关闭后门户登录 403「维护中」，但下游程序里的 API 调用完全不受影响**（急停按钮只停人不停程序）。
+- **余额流水闭环**（对账是门户立身之本）：新增 `kc_api_balance_ledger` 表；充值（recharge）/ 下单扣费（consume）/ 履约失败退回（refund）三处自动记流水；门户「余额与消费」页展示。
+- **信息红线**（方案 §3.2 落实）：门户**不暴露**成本价/加价率/上游身份/其他客户/运营功能——客户只看"自己付多少、买了什么、怎么调用"。
+- 管理接口：`GET/POST /api/admin/api-portal/setting`（开关）；门户接口 `/api/portal/{login,me,credentials,orders,billing,credentials/reset-secret}`。
+- 验证（双轨全绿）：
+  - API 层 `tools/_v126_verify.js` 16 项：登录 200 / 错 secret 401 / me 200（余额+统计+GMV）/ credentials（Key 明文、Secret 不返回）/ orders 2 笔含卡密 / **billing consume 流水 2 条** / 无 token 401 / **重置 Secret 后旧 secret 登录 401、旧 secret 调 API 401、新 secret 200** / **开关关闭→登录 403 PORTAL_DISABLED、恢复→200** / 门户静态页 200 ✓
+  - UI 层 `tools/_v126_verify_ui.js` 12 项：登录页 → 门户五页全渲染（凭证页 Key 明文+掩码+HMAC 示例、文档 3903 字）→ 后台开关 UI（on）→ **toggle 关闭后 app_config=0 + UI 状态同步** → 恢复=1 → **充值 $500→$600 + ledger recharge 流水 1 条** ✓
+- 踩坑修复（同款解构 bug 三处）：`const [x] = await store.runQuery()` 取到的是**行对象**，不能再 `x[0]`——me/billing/C2/C3/C1 五处已修并全量扫描无同类残留；门户 JS 单引号嵌单引号致语法错一处已修；curl 示例 URL 拼重一处已修。
+- 部署：server.js + mysql-store.js + admin.html + public/api-portal.html（挂载，容器重启）；测试客户/订单/流水残留已清理（当前 0 客户）。
+- 上线前置（开放给真实客户前）：域名 + HTTPS 反代（门户上公网、密钥登录必须 TLS）；建议先 1 个内测客户灰度。
+- 下一步（后续版本）：客户级加价覆盖、交付回调 webhook、成本自动同步、报价日志后台可视化。
+
+### v1.25.1 · 2026-10-13 · 修复：收银台把美元订单当人民币折算（$15 → 2.24 USDT）
+
+- 背景：用户实测「购买卡密」发现平台显示 $15/月，跳转 BEpusdt 收银台却显示「15 CNY · 2.24 USDT」——平台少收款约 6.7 倍。
+- **根因**（证据链）：Xboard EPay 插件 `pay()` 把订单美分 ÷100 得 `money=15.00` 发给 BEpusdt `/submit.php`，但**未传 fiat 参数**；BEpusdt 易支付兼容接口（`app/handler/epay/epay.go` `verify()`）在缺失 fiat 时**默认按 `model.CNY` 解读**，15 元人民币 ÷6.69 汇率 = 2.24 USDT。bep_order 落库佐证：`fiat=CNY, rate=6.69, money=15, amount=2.24`（10-12 起共 4 笔同型订单）。
+- **修复**：`tools/xboard-patches/Epay/Plugin.php`（成品，已打容器 + 重建重打用）—— `$params` 增加 `'fiat' => 'USD'`，金额数值不变。BEpusdt 侧 `epay.go` 本就支持 `fiat` 参数（`model.Fiat(fiat)`，USD 汇率自动同步自 coingecko），无需改 BEpusdt。签名无需适配：fiat 参与双方同一套「非空参数字典序 k=v& + key」MD5 计算。
+- 影响面：**所有走 EPay 渠道的订单**（购买卡密 + 余额充值，含充值尾数识别逻辑）全部修正为美元 1:1 口径；Xboard 回调侧只按 `trade_no` 记账、不采信收银台金额，无连带影响。
+- 资损说明：修复前用户若按收银台金额实付 2.24 USDT，BEpusdt 回调验签通过后 Xboard 即按 $15 订单履约（发货/到账）——属资损漏洞，本次随修复关闭；历史 4 笔低额订单未造成实际损失（测试单/未付单），已留档 order_id。
+- 部署：容器内 `/www/plugins-core/Epay/Plugin.php` 覆盖 + `php artisan octane:reload` + `php -l` 通过；容器内备份 `Plugin.php.pre-fiatusd.bak`；仓库成品 `tools/xboard-patches/Epay/Plugin.php` + `.orig` 原件。
+- 验证：`tools/_v1251_fiat_usd_verify.js`（与修复后插件 pay() 同构的 epay 请求，含签名）——POST /submit.php → 302 收银台；DB 核对 `fiat=USD, money=15, amount=15.02, rate=0.999126`（1:1；修复前同单 2.24）；收银台 200；测试单已清理（只删本脚本建的 order_id，未动历史数据）。
+- 下一步：① 用户在商城真实走一笔「购买卡密」到收银台页确认显示「15 USD · ≈15 USDT」（不支付，过期自动关闭）；② 考虑把该核查并入 `tools/xboard-patch-check.js`（容器重建后自动核查 fiat=USD 在位）。
+
+### 验证
+
+- 接口层：`tools/_v1251_fiat_usd_verify.js` 全绿（fiat=USD / money=15 / amount=15.02 / 302 / 收银台 200 / 测试单清理 1 行）。
+- 语法与运行时：`php -l` 无错误；`php artisan octane:reload` 成功。
+- 回归：bep_wallet 前置（恰好 1 个启用 usdt.trc20）满足；BEpusdt 汇率同步正常（USD 行今日 09:51 更新）。
+
+### 下一步
+
+1. 史哥在商城前台走一笔「购买卡密」到收银台页面目视确认（$15 → ≈15 USDT），不实际支付。
+2. 将「Epay 插件含 fiat=USD」加入 `tools/xboard-patch-check.js` 核查清单，防容器重建后静默丢失。
+
 ## v1.25.0 · 2026-10-13 · 对外分销 API + API 客户管理：双模式定价落地（API 加价分销侧）
 
 - 背景：用户确定商业模式后开工——"客户平台直购固定价 + API 按上游价加价分销"。本版落地**分销侧 MVP**（固定零售价侧已在 v1.24.0 完成）。

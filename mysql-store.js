@@ -464,6 +464,20 @@ async function ensurePlansTable() {
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_enabled'); } catch (e) { /* 已存在 */ }
 }
 // v1.25.0 · 对外分销 API（SP-2026-10-13-API-v1.0.0 精简执行）
+// v1.26.0 · API 客户余额流水（自助门户对账）
+const API_BALANCE_LEDGER_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_balance_ledger (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    change_cents INT NOT NULL COMMENT '变动（分，负=扣减）',
+    balance_after_cents INT NOT NULL COMMENT '变动后余额',
+    type ENUM('recharge','consume','refund') NOT NULL,
+    ref VARCHAR(64) NOT NULL DEFAULT '' COMMENT '关联单号',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='API 客户余额流水'`;
+
+async function ensureApiBalanceLedgerTable() { await ensureTable('kc_api_balance_ledger', API_BALANCE_LEDGER_TABLE_SQL); }
 const API_CLIENTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_clients (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(32) NOT NULL COMMENT '客户内部编号 cli_xxx',
@@ -878,6 +892,7 @@ async function ensureReady() {
     await ensureApiClientsTable();
     await ensureApiOrdersTable();
     await ensureApiQuoteLogsTable();
+    await ensureApiBalanceLedgerTable();
     await ensurePricingRulesTable();
     await ensurePricingSnapshotTable();
     await ensureListingCardsTable();

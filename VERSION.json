@@ -1,8 +1,8 @@
 {
-  "version": "1.25.0",
-  "version_tag": "v1.25.0",
+  "version": "1.26.0",
+  "version_tag": "v1.26.0",
   "date": "2026-10-13",
-  "title": "对外分销 API + API 客户管理：双模式定价落地（API 加价分销侧）",
+  "title": "API 客户自助门户：凭证/文档/订单/余额自助 + 运营总开关（UX-7）",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",

@@ -3320,6 +3320,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
                     <h2 class="panel-title" style="margin:0;">客户列表</h2>
                     <span style="flex:1;"></span>
+                    <span style="font-size:12px; color:var(--text-dim);">客户自助门户</span>
+                    <span class="switch" id="api-portal-switch" onclick="toggleApiPortal()" title="关闭后客户登录显示维护中，不影响 API 调用"></span>
                     <button type="button" class="btn" onclick="loadApiClients()">刷新</button>
                     <button type="button" class="btn btn-primary" onclick="openNewApiClientDialog()">+ 新建客户</button>
                 </div>
@@ -9495,7 +9497,29 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         // ===================== v1.25.0 · API 客户管理（UX-6，下游分销入口） =====================
+        async function loadApiPortalSwitch() {
+            try {
+                const res = await authFetch('/api/admin/api-portal/setting');
+                const data = await res.json();
+                const on = !!(data.success && data.data && data.data.api_portal_enabled);
+                const el = document.getElementById('api-portal-switch');
+                if (el) { el.classList.toggle('on', on); el.title = on ? '门户开放中（点击关闭）' : '门户已关闭（点击开放）'; }
+            } catch (e) { /* 忽略 */ }
+        }
+        async function toggleApiPortal() {
+            const el = document.getElementById('api-portal-switch');
+            if (!el) return;
+            const cur = el.classList.contains('on');
+            try {
+                const res = await authFetch('/api/admin/api-portal/setting', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !cur }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '操作失败');
+                showMessage(data.message || '已更新', 'success');
+                loadApiPortalSwitch();
+            } catch (e) { showMessage(e.message || '操作失败', 'error'); }
+        }
         async function loadApiClients() {
+            loadApiPortalSwitch();
             const box = document.getElementById('api-clients-list');
             if (!box) return;
             box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';

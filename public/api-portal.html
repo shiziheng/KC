@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API 接入门户</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F2;--card:#FFFFFF;--line:#E4E3DC;--line2:#D3D1C7;
+  --text:#1F2328;--sub:#6B6F76;--dim:#9A9Ea5;
+  --teal:#0F6E56;--teal-deep:#085041;--teal-bg:#E1F5EE;
+  --amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB;
+  --radius:12px;--radius-sm:8px;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+a{color:var(--teal)}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+
+/* 登录页 */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:36px;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(30,35,40,.06)}
+.login-brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.login-brand .dot{width:12px;height:12px;border-radius:4px;background:var(--teal)}
+.login-brand b{font-size:16px}
+.login-sub{color:var(--sub);font-size:13px;margin-bottom:24px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field input{width:100%;border:1px solid var(--line2);border-radius:var(--radius-sm);padding:10px 12px;font-size:13.5px;font-family:inherit}
+.field input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(15,110,86,.12)}
+.btn{border:1px solid var(--line2);background:#fff;color:var(--text);padding:9px 16px;border-radius:9px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600;width:100%}
+.btn.primary:hover{background:var(--teal-deep)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:5px 11px;font-size:12px;border-radius:7px}
+.login-msg{color:var(--red);font-size:12.5px;margin-top:12px;min-height:18px}
+.login-foot{margin-top:18px;padding-top:14px;border-top:1px dashed var(--line2);color:var(--dim);font-size:11.5px}
+
+/* 门户框架 */
+.app{display:flex;min-height:100vh}
+.sidebar{width:210px;flex:0 0 210px;background:#FBFBF9;border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{font-size:14px;font-weight:600;padding:6px 10px 14px;display:flex;align-items:center;gap:8px}
+.brand .dot{width:10px;height:10px;border-radius:3px;background:var(--teal)}
+.brand small{font-weight:400;color:var(--sub);font-size:11px}
+.nav-item{padding:9px 12px;border-radius:var(--radius-sm);color:var(--sub);cursor:pointer;font-size:13.5px}
+.nav-item:hover{color:var(--text);background:#F0EFEA}
+.nav-item.active{background:var(--teal-bg);color:var(--teal-deep);font-weight:600}
+.side-foot{margin-top:auto;font-size:11px;color:var(--dim);padding:10px 12px;border-top:1px dashed var(--line2)}
+.side-foot b{color:var(--sub)}
+.main{flex:1;max-width:1060px;padding:22px 30px 60px}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.topbar h1{font-size:19px;font-weight:650}
+.topbar .sub{color:var(--sub);font-size:12.5px;margin-top:2px}
+.badge-env{margin-left:auto;font-size:11.5px;color:var(--teal-deep);background:var(--teal-bg);padding:3px 10px;border-radius:999px}
+.view{display:none}
+.view.active{display:block}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:14px}
+.panel h2{font-size:15px;font-weight:650;margin-bottom:4px}
+.panel .desc{color:var(--sub);font-size:12.5px;margin-bottom:14px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.stat .lb{font-size:12px;color:var(--sub)}
+.stat .v{font-size:20px;font-weight:650;margin-top:4px}
+.stat .v small{font-size:12px;color:var(--sub);font-weight:400}
+.balance-card{background:var(--teal-bg);border:1px solid #9FE1CB;border-radius:var(--radius);padding:22px 24px;margin-bottom:14px;display:flex;align-items:center;gap:20px}
+.balance-card .lb{font-size:13px;color:var(--teal-deep)}
+.balance-card .v{font-size:32px;font-weight:700;color:var(--teal-deep)}
+.balance-card .hint{margin-left:auto;font-size:12px;color:var(--teal-deep);opacity:.85;max-width:300px;text-align:right}
+.kv{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.kv:last-child{border-bottom:0}
+.kv .k{width:110px;color:var(--sub);flex:0 0 110px;font-size:12.5px}
+.kv .v{flex:1;min-width:0;word-break:break-all}
+.copybtn{flex:0 0 auto}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.pill.ok{background:#dcfce7;color:#166534}
+.pill.fail{background:var(--red-bg);color:var(--red)}
+.pill.gray{background:#ECEBE6;color:var(--sub)}
+.pill.up{background:#dcfce7;color:#166534}
+.pill.down{background:var(--red-bg);color:var(--red)}
+.pill.refund{background:var(--amber-bg);color:var(--amber)}
+table.kc-table{width:100%;border-collapse:collapse;font-size:13px}
+table.kc-table th{text-align:left;padding:9px 10px;background:#F6F5F1;color:var(--sub);font-weight:500;font-size:12px;border-bottom:1px solid var(--line)}
+table.kc-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.kc-table tr:hover td{background:#FAFAF7}
+.seg{display:inline-flex;gap:4px;background:#ECEBE6;padding:3px;border-radius:8px;margin-bottom:12px}
+.seg button{border:0;background:transparent;padding:5px 12px;border-radius:6px;font-size:12px;color:var(--sub);cursor:pointer;font-family:inherit}
+.seg button.active{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.pre{background:#F6F5F1;border:1px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;overflow:auto;white-space:pre;word-break:break-all}
+.doc h3{font-size:14px;font-weight:650;margin:22px 0 8px;padding-top:16px;border-top:1px solid var(--line)}
+.doc h3:first-child{margin-top:0;padding-top:0;border-top:0}
+.doc h4{font-size:13px;font-weight:650;margin:14px 0 6px}
+.doc p{margin:6px 0;font-size:13px}
+.doc table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}
+.doc th{background:#F6F5F1;text-align:left;padding:7px 9px;border:1px solid var(--line);font-weight:500}
+.doc td{padding:7px 9px;border:1px solid var(--line);vertical-align:top}
+.doc ul,.doc ol{margin:6px 0 6px 20px;font-size:13px}
+.doc li{margin:3px 0}
+.doc .note{background:var(--amber-bg);border:1px solid #EF9F27;color:var(--amber);border-radius:var(--radius-sm);padding:10px 14px;font-size:12.5px;margin:10px 0}
+.checklist{display:flex;flex-direction:column;gap:8px}
+.check-item{display:flex;align-items:center;gap:10px;font-size:13px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:#fff}
+.check-item .ck{width:18px;height:18px;border-radius:50%;background:#ECEBE6;color:var(--dim);display:flex;align-items:center;justify-content:center;font-size:11px;flex:0 0 18px}
+.check-item.done .ck{background:var(--teal);color:#fff}
+.check-item a{margin-left:auto;font-size:12px}
+.empty{color:var(--dim);padding:24px 0;text-align:center;font-size:13px}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.dialog-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1000;align-items:center;justify-content:center}
+.dialog-backdrop.show{display:flex}
+.dialog{background:#fff;border-radius:var(--radius);padding:24px;max-width:520px;width:92%;max-height:88vh;overflow:auto}
+.dialog h3{font-size:16px;font-weight:650;margin-bottom:12px}
+.dialog .body{font-size:13px;line-height:2}
+.masked{letter-spacing:2px}
+@media (max-width:900px){.grid4{grid-template-columns:repeat(2,1fr)}.sidebar{width:64px;flex-basis:64px}.sidebar .nav-item,.side-foot b,.brand span{display:none}}
+</style>
+</head>
+<body>
+
+<!-- 登录视图 -->
+<div id="view-login" class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="dot"></span><b>API 接入门户</b></div>
+    <div class="login-sub">使用运营分配给您的 API Key 与 Secret 登录，自助管理凭证、订单与余额。</div>
+    <div class="field"><label>API Key</label><input id="lg-key" placeholder="ak_live_..." autocomplete="off"></div>
+    <div class="field"><label>Secret</label><input id="lg-secret" type="password" placeholder="登录密钥" autocomplete="off"></div>
+    <button class="btn primary" id="lg-btn" onclick="doLogin()">登 录</button>
+    <div class="login-msg" id="lg-msg"></div>
+    <div class="login-foot">登录态 24 小时有效 · 门户仅供客户自助查询，不影响您的 API 调用 · 如需充值请联系运营</div>
+  </div>
+</div>
+
+<!-- 门户视图 -->
+<div id="view-app" class="app" style="display:none">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span>API 接入门户</span></div>
+    <div class="nav-item active" data-nav="overview" onclick="go('overview')">概览</div>
+    <div class="nav-item" data-nav="credentials" onclick="go('credentials')">API 凭证</div>
+    <div class="nav-item" data-nav="docs" onclick="go('docs')">接入文档</div>
+    <div class="nav-item" data-nav="orders" onclick="go('orders')">我的订单</div>
+    <div class="nav-item" data-nav="billing" onclick="go('billing')">余额与消费</div>
+    <div class="side-foot">客户：<b id="sf-name">—</b><br>状态：<span id="sf-status">—</span></div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div><h1 id="pg-title">概览</h1><div class="sub" id="pg-sub"></div></div>
+      <span class="badge-env">MOCK 沙盒环境</span>
+      <button class="btn sm" onclick="logout()">退出登录</button>
+    </div>
+
+    <div id="pg-overview" class="view active">
+      <div class="balance-card">
+        <div><div class="lb">当前余额（美元）</div><div class="v" id="ov-balance">$0.00</div></div>
+        <div class="hint">余额用于 API 下单扣费；充值请联系运营（对公转账后由运营确认到账）。</div>
+      </div>
+      <div class="grid4" id="ov-stats"></div>
+      <div class="panel" style="margin-top:14px">
+        <h2>接入清单</h2>
+        <div class="desc">三步完成对接，全部自助。</div>
+        <div class="checklist">
+          <div class="check-item" id="ck-1"><span class="ck">1</span><span>保存好 API Key 与 Secret（在「API 凭证」页）</span><a href="javascript:go('credentials')">去保存 →</a></div>
+          <div class="check-item" id="ck-2"><span class="ck">2</span><span>阅读接入文档，完成签名调用（「接入文档」页）</span><a href="javascript:go('docs')">去阅读 →</a></div>
+          <div class="check-item" id="ck-3"><span class="ck">3</span><span>发起第一笔测试下单（「我的订单」查结果）</span><a href="javascript:go('orders')">去查看 →</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pg-credentials" class="view">
+      <div class="panel">
+        <h2>调用凭证</h2>
+        <div class="desc">程序调用请使用 API Key + 签名；Secret 用于签名，请妥善保管（站内仅掩码展示，可随时重置）。</div>
+        <div class="kv"><span class="k">Base URL</span><span class="v mono" id="cd-base"></span><button class="btn sm copybtn" onclick="copyText(document.getElementById('cd-base').textContent)">复制</button></div>
+        <div class="kv"><span class="k">API Key</span><span class="v mono" id="cd-key"></span><button class="btn sm copybtn" onclick="copyText(document.getElementById('cd-key').textContent)">复制</button></div>
+        <div class="kv"><span class="k">Secret</span><span class="v mono masked" id="cd-secret">••••••••••••••••</span><button class="btn sm copybtn" onclick="resetSecret()">重置 Secret</button></div>
+      </div>
+      <div class="panel">
+        <h2>签名规则速查</h2>
+        <div class="desc">signature = HMAC-SHA256(secret, <code>METHOD\npath\ntimestamp\nsha256(body)</code>)（hex 小写）</div>
+        <div class="seg" id="cd-lang-seg">
+          <button class="active" data-lang="curl" onclick="switchLang('curl')">curl</button>
+          <button data-lang="node" onclick="switchLang('node')">Node.js</button>
+          <button data-lang="python" onclick="switchLang('python')">Python</button>
+        </div>
+        <div class="pre" id="cd-sample"></div>
+        <div style="margin-top:10px"><button class="btn sm" onclick="copyText(document.getElementById('cd-sample').textContent)">复制示例代码</button></div>
+      </div>
+    </div>
+
+    <div id="pg-docs" class="view">
+      <div class="panel doc">
+        <h2>接入文档</h2>
+        <div class="desc">5 分钟完成对接。当前为沙盒（Mock）环境，下单不产生真实扣款，但会真实扣减您的门户余额用于验证。</div>
+
+        <h3>1. 快速开始</h3>
+        <ol>
+          <li>在「API 凭证」页拿到 API Key 与 Secret（丢失可重置）。</li>
+          <li>按下方签名规则构造请求头：<code>X-Api-Key</code>、<code>X-Timestamp</code>（当前 Unix 秒）、<code>X-Signature</code>。</li>
+          <li>调用 <code>GET /api/open/v1/catalog</code> 查看可售商品与当前报价。</li>
+          <li>调用 <code>POST /api/open/v1/quote</code> 获取报价（60 秒锁价）。</li>
+          <li>调用 <code>POST /api/open/v1/orders</code> 下单，响应里直接返回卡密。</li>
+        </ol>
+
+        <h3>2. 接口列表</h3>
+        <h4>2.1 查询目录 <code>GET /api/open/v1/catalog</code></h4>
+        <p>无需业务参数。响应：</p>
+        <div class="pre">{
+  "success": true,
+  "data": [
+    { "sku": "xplan_1", "name": "ChatGPT Plus 一个月", "currency": "USD",
+      "deliver": "card", "available": true, "price": 11.5 }
+  ]
+}</div>
+        <h4>2.2 报价 <code>POST /api/open/v1/quote</code></h4>
+        <p>请求：<code>{ "sku": "xplan_1", "qty": 1 }</code></p>
+        <div class="pre">{
+  "success": true,
+  "data": {
+    "quote_id": "q_3c840052dfbc6c11",
+    "unit_price": 11.5, "total": 11.5, "currency": "USD",
+    "cost_basis": 10.0, "expires_in": 60,
+    "expires_at": "2026-10-13T01:40:26Z"
+  }
+}</div>
+        <h4>2.3 下单 <code>POST /api/open/v1/orders</code></h4>
+        <p>请求：<code>{ "quote_id": "q_xxx", "client_order_no": "PO-2026-0001" }</code>（<code>client_order_no</code> 是您的单号，≤64 字符，用于幂等）</p>
+        <div class="pre">{
+  "success": true,
+  "data": {
+    "order_id": "api_mv60jg4o_a5246a", "status": "delivered",
+    "amount": 12.65, "currency": "USD", "cdk": "KC-XXXXXXXXXXXX"
+  }
+}</div>
+        <h4>2.4 查单 <code>GET /api/open/v1/orders/{order_id}</code></h4>
+        <p>响应含 <code>status</code>（delivered/failed）与 <code>cdk</code>（卡密）。</p>
+
+        <h3>3. 签名详解</h3>
+        <p>待签名串（四行，用真实换行拼接）：</p>
+        <div class="pre">POST
+/api/open/v1/orders
+1712345678
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</div>
+        <p>其中第四行是请求体的 SHA-256（GET 无 body 时对空串求值）；signature = HMAC-SHA256(secret, 上述四行) 的 hex 小写。</p>
+        <h4>Node.js 示例</h4>
+        <div class="pre">const crypto = require('crypto');
+function sign(secret, method, path, ts, body) {
+  const bodyHash = crypto.createHash('sha256').update(body || '').digest('hex');
+  return crypto.createHmac('sha256', secret)
+    .update(method + '\n' + path + '\n' + ts + '\n' + bodyHash).digest('hex');
+}
+const body = JSON.stringify({ sku: 'xplan_1', qty: 1 });
+const ts = Math.floor(Date.now() / 1000);
+const headers = {
+  'Content-Type': 'application/json',
+  'X-Api-Key': API_KEY,
+  'X-Timestamp': String(ts),
+  'X-Signature': sign(API_SECRET, 'POST', '/api/open/v1/quote', ts, body)
+};
+const res = await fetch(BASE + '/api/open/v1/quote', { method: 'POST', headers, body });</div>
+        <h4>Python 示例</h4>
+        <div class="pre">import hashlib, hmac, json, time, requests
+
+def sign(secret, method, path, ts, body):
+    body_hash = hashlib.sha256((body or '').encode()).hexdigest()
+    canonical = f"{method}\n{path}\n{ts}\n{body_hash}"
+    return hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+
+body = json.dumps({"sku": "xplan_1", "qty": 1})
+ts = int(time.time())
+headers = {
+    "Content-Type": "application/json",
+    "X-Api-Key": API_KEY,
+    "X-Timestamp": str(ts),
+    "X-Signature": sign(API_SECRET, "POST", "/api/open/v1/quote", ts, body),
+}
+r = requests.post(BASE + "/api/open/v1/quote", headers=headers, data=body, timeout=10)</div>
+
+        <h3>4. 错误码</h3>
+        <table>
+          <tr><th>code</th><th>HTTP</th><th>含义与处理</th></tr>
+          <tr><td>INVALID_SIGNATURE</td><td>401</td><td>签名失败：检查 secret、待签名串拼接、body 序列化是否一致</td></tr>
+          <tr><td>TIMESTAMP_EXPIRED</td><td>401</td><td>时间戳超出 ±5 分钟：校准服务器时间</td></tr>
+          <tr><td>INVALID_KEY / CLIENT_DISABLED</td><td>401/403</td><td>Key 无效或账户被停用：联系运营</td></tr>
+          <tr><td>RATE_LIMITED</td><td>429</td><td>超过限流（默认 120 次/分钟）：退避重试</td></tr>
+          <tr><td>SKU_NOT_FOUND / SKU_UNAVAILABLE</td><td>404/409</td><td>商品不存在或未开放分销：换 sku 或联系运营</td></tr>
+          <tr><td>QUOTE_NOT_FOUND / QUOTE_EXPIRED / QUOTE_CONSUMED</td><td>404/409</td><td>报价无效/过期/已用：重新 quote</td></tr>
+          <tr><td>PRICE_CHANGED</td><td>409</td><td>报价后成本变动超 3%：按响应里的 new_unit_price 重新报价后再下单</td></tr>
+          <tr><td>INSUFFICIENT_BALANCE</td><td>402</td><td>余额不足：联系运营充值</td></tr>
+          <tr><td>FULFILL_FAILED</td><td>502</td><td>履约失败（余额已自动退回）：重试或联系运营</td></tr>
+        </table>
+
+        <h3>5. 规则说明</h3>
+        <ul>
+          <li><b>锁价</b>：报价 60 秒内有效；超时请重新报价。</li>
+          <li><b>价格保护</b>：报价后上游成本变动超过 3%，下单会返回 <code>PRICE_CHANGED</code>，请按新价重新报价（避免您在成本突变时按旧价成交）。</li>
+          <li><b>幂等</b>：<code>client_order_no</code> 全局唯一；重复提交同一单号返回原订单，不会重复扣费。</li>
+          <li><b>限流</b>：默认 120 次/分钟，超限返回 429。</li>
+          <li><b>交付</b>：下单成功后响应内直接返回卡密；也可随时查单补取。</li>
+        </ul>
+        <div class="note">当前为沙盒（Mock）环境：卡密为测试串，不产生真实上游扣款；正式环境切换前会另行通知。</div>
+      </div>
+    </div>
+
+    <div id="pg-orders" class="view">
+      <div class="panel">
+        <h2>我的订单</h2>
+        <div class="desc">仅展示本账户订单；卡密可复制（已交付订单）。</div>
+        <div class="seg" id="ord-range-seg">
+          <button data-r="7" onclick="loadOrders(7)">近 7 天</button>
+          <button class="active" data-r="30" onclick="loadOrders(30)">近 30 天</button>
+          <button data-r="all" onclick="loadOrders('all')">全部</button>
+        </div>
+        <div id="ord-list"><div class="empty">加载中...</div></div>
+      </div>
+    </div>
+
+    <div id="pg-billing" class="view">
+      <div class="panel">
+        <h2>余额与消费</h2>
+        <div class="desc">流水自 v1.26.0 起记录；更早记录不在门户展示。</div>
+        <div class="balance-card">
+          <div><div class="lb">当前余额（美元）</div><div class="v" id="bl-balance">$0.00</div></div>
+          <div class="hint" id="bl-hint">充值请联系运营（对公转账后由运营确认到账）。</div>
+        </div>
+        <div id="bl-list"><div class="empty">加载中...</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="dialog-backdrop" id="dlg-backdrop">
+  <div class="dialog">
+    <h3 id="dlg-title">提示</h3>
+    <div class="body" id="dlg-body"></div>
+    <div style="text-align:right;margin-top:16px"><button class="btn" onclick="closeDialog()">知道了</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var TOKEN_KEY = 'kc_portal_token';
+var CLIENT_INFO = null;
+var ORD_RANGE = 30;
+
+function $(s){ return document.querySelector(s); }
+function money(n){ return '$' + Number(n || 0).toFixed(2); }
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toast(msg){ var t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(function(){ t.classList.remove('show'); }, 2200); }
+function openDialog(title, bodyHtml){ $('#dlg-title').textContent=title; $('#dlg-body').innerHTML=bodyHtml; $('#dlg-backdrop').classList.add('show'); }
+function closeDialog(){ $('#dlg-backdrop').classList.remove('show'); }
+function copyText(text){
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ toast('已复制'); }, function(){ fallbackCopy(text); });
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text){
+  var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); toast('已复制'); } catch(e) { toast('复制失败，请手动选择'); }
+  document.body.removeChild(ta);
+}
+function getToken(){ return localStorage.getItem(TOKEN_KEY) || ''; }
+function portalFetch(url, options){
+  options = options || {};
+  var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+  var token = getToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  return fetch(url, Object.assign({}, options, { headers: headers }));
+}
+
+// ---------- 登录 ----------
+function doLogin(){
+  var key = $('#lg-key').value.trim();
+  var secret = $('#lg-secret').value.trim();
+  var msg = $('#lg-msg');
+  if (!key || !secret) { msg.textContent = '请输入 API Key 与 Secret'; return; }
+  var btn = $('#lg-btn'); btn.disabled = true; btn.textContent = '登录中...'; msg.textContent = '';
+  fetch('/api/portal/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: key, api_secret: secret })
+  }).then(function(r){ return r.json().then(function(j){ return { status: r.status, json: j }; }); })
+    .then(function(res){
+      if (res.status === 200 && res.json.success) {
+        localStorage.setItem(TOKEN_KEY, res.json.data.portal_token);
+        CLIENT_INFO = res.json.data.client;
+        enterApp();
+      } else {
+        msg.textContent = (res.json && res.json.message) || ('登录失败（' + res.status + '）');
+      }
+    }).catch(function(){ msg.textContent = '网络错误，请稍后重试'; })
+    .finally(function(){ btn.disabled = false; btn.textContent = '登 录'; });
+}
+function logout(){
+  localStorage.removeItem(TOKEN_KEY);
+  $('#view-app').style.display = 'none';
+  $('#view-login').style.display = 'flex';
+  $('#lg-key').value = ''; $('#lg-secret').value = '';
+}
+function enterApp(){
+  $('#view-login').style.display = 'none';
+  $('#view-app').style.display = 'flex';
+  $('#sf-name').textContent = CLIENT_INFO ? CLIENT_INFO.name : '—';
+  $('#sf-status').textContent = CLIENT_INFO && CLIENT_INFO.status === 'active' ? '正常' : '已停用';
+  $('#cd-base').textContent = location.origin + '/api/open/v1';
+  go('overview');
+}
+
+// ---------- 路由 ----------
+function go(page){
+  var titles = { overview: ['概览', '账户与调用总览'], credentials: ['API 凭证', '密钥与签名'], docs: ['接入文档', '接口 / 签名 / 错误码'], orders: ['我的订单', '下单记录与卡密'], billing: ['余额与消费', '余额与流水'] };
+  document.querySelectorAll('.nav-item').forEach(function(el){ el.classList.toggle('active', el.getAttribute('data-nav') === page); });
+  document.querySelectorAll('.view').forEach(function(el){ el.classList.remove('active'); });
+  var pg = $('#pg-' + page); if (pg) pg.classList.add('active');
+  var t = titles[page] || ['', ''];
+  $('#pg-title').textContent = t[0]; $('#pg-sub').textContent = t[1];
+  location.hash = page;
+  if (page === 'overview') loadOverview();
+  if (page === 'credentials') loadCredentials();
+  if (page === 'orders') loadOrders(ORD_RANGE);
+  if (page === 'billing') loadBilling();
+}
+
+// ---------- 概览 ----------
+function loadOverview(){
+  portalFetch('/api/portal/me').then(function(r){
+    if (r.status === 401) { logout(); return null; }
+    return r.json();
+  }).then(function(j){
+    if (!j || !j.success) return;
+    var d = j.data;
+    $('#ov-balance').textContent = money(d.balance);
+    var s = d.stats;
+    $('#ov-stats').innerHTML =
+      stat('今日报价', s.quotes_today) + stat('今日订单', s.orders_today) +
+      stat('本月订单', s.orders_month) + stat('累计成交', s.orders_delivered);
+    $('#ck-1').classList.toggle('done', true);
+    $('#ck-2').classList.toggle('done', s.quotes_today > 0 || s.orders_today > 0);
+    $('#ck-3').classList.toggle('done', s.orders_delivered > 0);
+  }).catch(function(){ toast('加载失败'); });
+}
+function stat(lb, v){ return '<div class="stat"><div class="lb">' + esc(lb) + '</div><div class="v">' + Number(v || 0) + '</div></div>'; }
+
+// ---------- 凭证 ----------
+function loadCredentials(){
+  portalFetch('/api/portal/credentials').then(function(r){
+    if (r.status === 401) { logout(); return null; }
+    return r.json();
+  }).then(function(j){
+    if (j && j.success && j.data) {
+      $('#cd-key').textContent = j.data.api_key;
+    }
+    switchLang('curl');
+  }).catch(function(){ switchLang('curl'); });
+}
+function resetSecret(){
+  openDialog('重置 Secret', '<p>重置后<b>旧 Secret 立即失效</b>（正在使用旧 Secret 的程序会报 401），新 Secret 仅展示一次。</p><p style="color:var(--red)">确定现在重置吗？</p><div style="text-align:right;margin-top:14px"><button class="btn" onclick="closeDialog()">取消</button> <button class="btn primary" style="width:auto;padding:8px 18px" onclick="confirmResetSecret()">确认重置</button></div>');
+}
+function confirmResetSecret(){
+  portalFetch('/api/portal/credentials/reset-secret', { method: 'POST', body: '{}' }).then(function(r){ return r.json(); }).then(function(j){
+    closeDialog();
+    if (j && j.success) {
+      openDialog('新 Secret（仅此一次）', '<p>请立即复制并妥善保存：</p><div class="pre" style="margin-top:8px;user-select:all">' + esc(j.data.api_secret) + '</div><div style="text-align:right;margin-top:14px"><button class="btn primary" style="width:auto;padding:8px 18px" onclick="copyText(document.querySelector(\"#dlg-body .pre\").textContent)">复制</button></div>');
+    } else { toast((j && j.message) || '重置失败'); }
+  }).catch(function(){ toast('网络错误'); });
+}
+function switchLang(lang){
+  document.querySelectorAll('#cd-lang-seg button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-lang') === lang); });
+  var base = location.origin + '/api/open/v1';
+  var samples = {
+    curl: 'curl -s ' + base + '/catalog \\\n  -H "X-Api-Key: $API_KEY" \\\n  -H "X-Timestamp: $(date +%s)" \\\n  -H "X-Signature: $SIGNATURE"',
+    node: "// 签名：HMAC-SHA256(secret, METHOD\\npath\\ntimestamp\\nsha256(body))\nconst crypto = require('crypto');\nfunction sign(secret, method, path, ts, body) {\n  const bodyHash = crypto.createHash('sha256').update(body || '').digest('hex');\n  return crypto.createHmac('sha256', secret)\n    .update(method + '\\n' + path + '\\n' + ts + '\\n' + bodyHash).digest('hex');\n}\nconst ts = Math.floor(Date.now() / 1000);\nconst headers = {\n  'Content-Type': 'application/json',\n  'X-Api-Key': API_KEY,\n  'X-Timestamp': String(ts),\n  'X-Signature': sign(API_SECRET, 'GET', '/api/open/v1/catalog', ts, '')\n};\nfetch(BASE + '/api/open/v1/catalog', { headers });",
+    python: "import hashlib, hmac, time, requests\n\ndef sign(secret, method, path, ts, body):\n    body_hash = hashlib.sha256((body or '').encode()).hexdigest()\n    canonical = f\"{method}\\n{path}\\n{ts}\\n{body_hash}\"\n    return hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()\n\nts = int(time.time())\nheaders = {\n    \"X-Api-Key\": API_KEY,\n    \"X-Timestamp\": str(ts),\n    \"X-Signature\": sign(API_SECRET, \"GET\", \"/api/open/v1/catalog\", ts, \"\"),\n}\nr = requests.get(BASE + \"/api/open/v1/catalog\", headers=headers, timeout=10)"
+  };
+  $('#cd-sample').textContent = samples[lang] || '';
+}
+
+// ---------- 订单 ----------
+function loadOrders(range){
+  ORD_RANGE = range;
+  document.querySelectorAll('#ord-range-seg button').forEach(function(b){ b.classList.toggle('active', String(b.getAttribute('data-r')) === String(range)); });
+  $('#ord-list').innerHTML = '<div class="empty">加载中...</div>';
+  portalFetch('/api/portal/orders?range=' + range + '&page=1').then(function(r){
+    if (r.status === 401) { logout(); return null; }
+    return r.json();
+  }).then(function(j){
+    if (!j) return;
+    if (!j.success) { $('#ord-list').innerHTML = '<div class="empty">加载失败：' + esc(j.message || '') + '</div>'; return; }
+    var items = (j.data && j.data.items) || [];
+    if (!items.length) { $('#ord-list').innerHTML = '<div class="empty">暂无订单</div>'; return; }
+    var rows = items.map(function(o){
+      var st = o.status === 'delivered' ? '<span class="pill ok">已交付</span>' : o.status === 'failed' ? '<span class="pill fail">失败</span>' : '<span class="pill gray">处理中</span>';
+      var cdkCell = o.cdk ? '<code style="user-select:all">' + esc(o.cdk) + '</code> <button class="btn sm" onclick="copyText(\'' + esc(o.cdk) + '\')">复制</button>' : '—';
+      return '<tr><td class="mono" style="font-size:12px">' + esc(o.created_at) + '</td>' +
+        '<td class="mono" style="font-size:12px">' + esc(o.client_order_no) + '</td>' +
+        '<td>' + esc(o.sku) + '</td><td>' + Number(o.qty || 1) + '</td>' +
+        '<td><b>' + money(o.amount) + '</b></td><td>' + st + '</td><td>' + cdkCell + '</td></tr>';
+    }).join('');
+    $('#ord-list').innerHTML = '<table class="kc-table"><thead><tr><th>时间</th><th>您的单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>卡密</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      '<div style="color:var(--dim);font-size:12px;margin-top:10px">共 ' + (j.data.total || 0) + ' 单（当前第 ' + (j.data.page || 1) + ' 页）</div>';
+  }).catch(function(){ $('#ord-list').innerHTML = '<div class="empty">网络错误</div>'; });
+}
+
+// ---------- 余额与消费 ----------
+function loadBilling(){
+  portalFetch('/api/portal/billing').then(function(r){
+    if (r.status === 401) { logout(); return null; }
+    return r.json();
+  }).then(function(j){
+    if (!j || !j.success) return;
+    var d = j.data;
+    $('#bl-balance').textContent = money(d.balance);
+    $('#bl-hint').textContent = d.recharge_hint || '';
+    var rows = (d.ledger || []).map(function(l){
+      var badge = l.type === 'recharge' ? '<span class="pill up">充值</span>' : l.type === 'consume' ? '<span class="pill down">消费</span>' : '<span class="pill refund">退回</span>';
+      var amt = (Number(l.change) < 0 ? '-' : '+') + '$' + Math.abs(Number(l.change || 0)).toFixed(2);
+      return '<tr><td class="mono" style="font-size:12px">' + esc(l.created_at) + '</td><td>' + badge + '</td>' +
+        '<td><b>' + amt + '</b></td><td>' + money(l.balance_after) + '</td>' +
+        '<td class="mono" style="font-size:12px">' + esc(l.ref || '—') + '</td><td style="font-size:12px;color:var(--sub)">' + esc(l.note || '') + '</td></tr>';
+    }).join('');
+    $('#bl-list').innerHTML = rows
+      ? '<table class="kc-table"><thead><tr><th>时间</th><th>类型</th><th>变动</th><th>变动后余额</th><th>关联单号</th><th>备注</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty">暂无流水</div>';
+  }).catch(function(){ $('#bl-list').innerHTML = '<div class="empty">网络错误</div>'; });
+}
+
+// ---------- 启动 ----------
+(function init(){
+  var token = getToken();
+  if (!token) return;
+  // 有 token：先探活拿客户信息
+  portalFetch('/api/portal/me').then(function(r){
+    if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); return null; }
+    return r.json();
+  }).then(function(j){
+    if (j && j.success) {
+      CLIENT_INFO = j.data.client;
+      enterApp();
+    }
+  }).catch(function(){});
+  $('#lg-key').value = '';
+})();
+</script>
+</body>
+</html>
