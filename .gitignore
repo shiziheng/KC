@@ -107,3 +107,25 @@ web/_reg_prof/
 *.dmp
 # Local backup files (never committed)
 *.bak_*
+# --- Headless browser profile & one-off recon artefacts (2026-10-13) ---
+# logs/ff_trial holds a full leftover Chrome profile; tools/_recon_* hold
+# one-off recon scripts / container reference copies (authoritative versions
+# live in tools/xboard-patches/).
+logs/ff_trial/
+tools/_recon_ff/
+tools/_recon_admin/
+# Verification screenshots & probe output under logs/ (report JSONs stay tracked;
+# see the migrate-*/v1xx-*e2e-report files added on purpose).
+logs/_*
+logs/dbg_*
+logs/*-probe*/
+logs/admin-airport/
+logs/admin-trial/
+logs/airport-lexicon/
+logs/v124-investigate/
+logs/v124-verify/
+logs/v125-ui/
+logs/v125-ux/
+logs/v126-ui/
+logs/v126-verify/
+logs/ff-trial-report*.json

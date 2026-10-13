@@ -1,0 +1,89 @@
+{
+  "stages": [
+    {
+      "name": "0.health",
+      "ts": "2026-10-11T15:28:49.455Z",
+      "status": 200,
+      "sellable": true
+    },
+    {
+      "name": "0.cards",
+      "ts": "2026-10-11T15:28:49.548Z",
+      "status": 200,
+      "plan1Sellable": true
+    },
+    {
+      "name": "0.epay_key",
+      "ts": "2026-10-11T15:28:49.594Z",
+      "length": 32
+    },
+    {
+      "name": "0.integration_key",
+      "ts": "2026-10-11T15:28:49.617Z",
+      "length": 22
+    },
+    {
+      "name": "1.register",
+      "ts": "2026-10-11T15:28:49.764Z",
+      "status": 200,
+      "hasAuth": true
+    },
+    {
+      "name": "2.save",
+      "ts": "2026-10-11T15:28:49.878Z",
+      "status": 200,
+      "tradeNo": "2026101123104986998071889"
+    },
+    {
+      "name": "3.notify",
+      "ts": "2026-10-11T15:28:50.034Z",
+      "status": 200,
+      "raw": "success"
+    },
+    {
+      "name": "4.poll",
+      "ts": "2026-10-11T15:28:50.037Z",
+      "attempts": 0,
+      "orderStatus": 3,
+      "pluginStatus": "issued",
+      "kcStatus": "pending",
+      "cdk": "KC-4F4LEDEW33C52Z4"
+    },
+    {
+      "name": "5.kc",
+      "ts": "2026-10-11T15:28:50.040Z",
+      "integrationIssue": {
+        "ref": "2026101123104986998071889",
+        "cdk_code": "KC-4F4LEDEW33C52Z4",
+        "plan_type": "plus"
+      },
+      "cdkRow": {
+        "cdk_code": "KC-4F4LEDEW33C52Z4",
+        "type": "自助"
+      }
+    },
+    {
+      "name": "6.idempotent",
+      "ts": "2026-10-11T15:28:50.046Z",
+      "status": 200,
+      "reused": true,
+      "sameCdk": true
+    },
+    {
+      "name": "6.notify.repeat",
+      "ts": "2026-10-11T15:28:50.128Z",
+      "status": 200,
+      "raw": "success"
+    }
+  ],
+  "errors": [],
+  "warnings": [],
+  "summary": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "tradeNo": "2026101123104986998071889",
+    "cdk": "KC-4F4LEDEW33C52Z4",
+    "attempts": 0
+  }
+}

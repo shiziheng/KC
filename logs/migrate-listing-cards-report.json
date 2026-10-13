@@ -1,0 +1,93 @@
+{
+  "summary": {
+    "ok": true,
+    "total": 10,
+    "inserted": 10,
+    "updated": 0,
+    "skipped": 0,
+    "skippedDetail": [],
+    "note": "v2_plan.kc_card 未修改；本脚本只回填 KC 侧 kc_listing_cards；切换读法留待插件改读"
+  },
+  "cards": [
+    {
+      "v2_plan_id": 1,
+      "plan_id": 1,
+      "has_custom_card": true,
+      "is_visible": 1,
+      "listing_state": "onsale",
+      "sort": 1
+    },
+    {
+      "v2_plan_id": 2,
+      "plan_id": 2,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 99
+    },
+    {
+      "v2_plan_id": 6,
+      "plan_id": 3,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 7,
+      "plan_id": 4,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 8,
+      "plan_id": 5,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 9,
+      "plan_id": 6,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 10,
+      "plan_id": 7,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 11,
+      "plan_id": 8,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 12,
+      "plan_id": 9,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    },
+    {
+      "v2_plan_id": 14,
+      "plan_id": 10,
+      "has_custom_card": false,
+      "is_visible": 0,
+      "listing_state": "soon",
+      "sort": 999
+    }
+  ]
+}

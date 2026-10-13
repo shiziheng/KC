@@ -1,0 +1,89 @@
+{
+  "ok": true,
+  "upstreams": [
+    {
+      "code": "mock_zovo",
+      "display_name": "ZovoCard (Mock)",
+      "status": "active"
+    }
+  ],
+  "upstream_plans": [
+    {
+      "upstream_plan_key": "go",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "plus",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "pro_5x",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "pro_20x",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "pro_50x",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "pro_20x_renew",
+      "sku_type": "subscription",
+      "period": "month",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit250",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit500",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit1000",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit2500",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit5000",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    },
+    {
+      "upstream_plan_key": "credit25000",
+      "sku_type": "credit",
+      "period": "once",
+      "enabled": true
+    }
+  ],
+  "packages_reference": {
+    "source": "not-found",
+    "plans": 0
+  },
+  "note": "plugins.config.packages 未修改，切换读法留待 R3"
+}

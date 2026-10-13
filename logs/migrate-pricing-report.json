@@ -1,0 +1,101 @@
+{
+  "ok": true,
+  "planCount": 10,
+  "rulesCount": 10,
+  "plans": [
+    {
+      "v2_plan_id": 1,
+      "code": "xplan_1",
+      "kc_type": "recharge",
+      "display_name": "ChatGPT Plus 一个月",
+      "upstream": "mock_zovo/plus",
+      "amount_cents": 1500,
+      "period": "month"
+    },
+    {
+      "v2_plan_id": 2,
+      "code": "xplan_2",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $14",
+      "upstream": "/",
+      "amount_cents": 1400,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 6,
+      "code": "xplan_6",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $2",
+      "upstream": "/",
+      "amount_cents": 200,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 7,
+      "code": "xplan_7",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $2",
+      "upstream": "/",
+      "amount_cents": 200,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 8,
+      "code": "xplan_8",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $2",
+      "upstream": "/",
+      "amount_cents": 200,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 9,
+      "code": "xplan_9",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $2",
+      "upstream": "/",
+      "amount_cents": 200,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 10,
+      "code": "xplan_10",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $7",
+      "upstream": "/",
+      "amount_cents": 700,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 11,
+      "code": "xplan_11",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $14",
+      "upstream": "/",
+      "amount_cents": 1400,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 12,
+      "code": "xplan_12",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $7",
+      "upstream": "/",
+      "amount_cents": 700,
+      "period": "once"
+    },
+    {
+      "v2_plan_id": 14,
+      "code": "xplan_14",
+      "kc_type": "recharge",
+      "display_name": "余额充值 $1",
+      "upstream": "/",
+      "amount_cents": 100,
+      "period": "once"
+    }
+  ],
+  "packages_reference": {
+    "1": "plus"
+  },
+  "note": "v2_plan.prices / kc_topup_amount 未修改；切换读法留 R3"
+}

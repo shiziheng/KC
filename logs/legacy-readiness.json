@@ -1,0 +1,84 @@
+{
+  "ts": "2026-10-11T16:20:23.979Z",
+  "legacy_v2_plan_count": 10,
+  "kc_plans_count": 10,
+  "summary": {
+    "matches": 10,
+    "mismatches": 0,
+    "kc_only": 0,
+    "legacy_only": 0
+  },
+  "plans": [
+    {
+      "v2_plan_id": 1,
+      "name": "ChatGPT Plus 一个月",
+      "code": "xplan_1",
+      "kc_plan_id": 1,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 2,
+      "name": "余额充值 $14",
+      "code": "xplan_2",
+      "kc_plan_id": 2,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 6,
+      "name": "余额充值 $2",
+      "code": "xplan_6",
+      "kc_plan_id": 3,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 7,
+      "name": "余额充值 $2",
+      "code": "xplan_7",
+      "kc_plan_id": 4,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 8,
+      "name": "余额充值 $2",
+      "code": "xplan_8",
+      "kc_plan_id": 5,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 9,
+      "name": "余额充值 $2",
+      "code": "xplan_9",
+      "kc_plan_id": 6,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 10,
+      "name": "余额充值 $7",
+      "code": "xplan_10",
+      "kc_plan_id": 7,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 11,
+      "name": "余额充值 $14",
+      "code": "xplan_11",
+      "kc_plan_id": 8,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 12,
+      "name": "余额充值 $7",
+      "code": "xplan_12",
+      "kc_plan_id": 9,
+      "mismatches": []
+    },
+    {
+      "v2_plan_id": 14,
+      "name": "余额充值 $1",
+      "code": "xplan_14",
+      "kc_plan_id": 10,
+      "mismatches": []
+    }
+  ],
+  "ready_to_drop_legacy": true
+}

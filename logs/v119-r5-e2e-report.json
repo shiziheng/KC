@@ -1,0 +1,112 @@
+{
+  "steps": [
+    {
+      "name": "register",
+      "ts": "2026-10-11T16:12:05.308Z",
+      "data": {
+        "status": 200,
+        "auth_data_len": 55
+      }
+    },
+    {
+      "name": "lookup-user-id",
+      "ts": "2026-10-11T16:12:05.315Z",
+      "data": {
+        "email": "r5test_1791735125142@example.com",
+        "user_id": 199
+      }
+    },
+    {
+      "name": "create-order",
+      "ts": "2026-10-11T16:12:05.430Z",
+      "data": {
+        "status": 200,
+        "body": "{\"status\":\"success\",\"message\":\"\\u64cd\\u4f5c\\u6210\\u529f\",\"data\":\"2026101200100541877078666\",\"error\":null}"
+      }
+    },
+    {
+      "name": "notify",
+      "ts": "2026-10-11T16:12:05.591Z",
+      "data": {
+        "status": 200,
+        "body": "success"
+      }
+    },
+    {
+      "name": "poll-cdk",
+      "ts": "2026-10-11T16:12:07.101Z",
+      "data": {
+        "cdk": "KC-5B8C82QRU2VYWS5",
+        "attempts": "issued",
+        "pluginStatus": "issued",
+        "kcStatus": "pending"
+      }
+    },
+    {
+      "name": "issue-after-cdk",
+      "ts": "2026-10-11T16:12:07.117Z",
+      "data": {
+        "status": 200,
+        "body": "{\"success\":true,\"data\":{\"granted\":[{\"rule_code\":\"plus_purchase_off20_grant\",\"success\":true,\"reused\":false,\"grant_id\":3,\"user_id\":199,\"total_uses\":1,\"expires_at\":\"2026-11-10T16:12:07.110Z\"}]}}"
+      }
+    },
+    {
+      "name": "db-grants",
+      "ts": "2026-10-11T16:12:07.121Z",
+      "data": {
+        "rows": 1,
+        "sample": {
+          "id": 3,
+          "user_id": 199,
+          "rule_code": "plus_purchase_off20_grant",
+          "source": "purchase",
+          "source_ref": "order:2026101200100541877078666:KC-5B8C82QRU2VYWS5",
+          "remaining_uses": 1,
+          "total_uses": 1,
+          "expires_at": "2026-11-10T08:12:07.000Z",
+          "status": "active",
+          "note": "plugin auto-issue after cdk",
+          "created_at": "2026-10-11T08:12:07.000Z",
+          "updated_at": "2026-10-11T08:12:07.000Z"
+        }
+      }
+    },
+    {
+      "name": "db-plan",
+      "ts": "2026-10-11T16:12:07.125Z",
+      "data": {
+        "rows": 1,
+        "plan": {
+          "id": 1,
+          "code": "xplan_1",
+          "display_name": "ChatGPT Plus 一个月"
+        },
+        "rule": {
+          "id": 3,
+          "code": "plus_purchase_off20_grant",
+          "discount_type": "percent",
+          "discount_value": 20
+        }
+      }
+    },
+    {
+      "name": "refund",
+      "ts": "2026-10-11T16:12:07.156Z",
+      "data": {
+        "status": 200,
+        "body": "{\"success\":true,\"data\":{\"refunded\":true,\"grant_id\":3,\"rule_code\":\"plus_purchase_off20_grant\",\"order_trade_no\":\"2026101200100541877078666_refundtest\"}}"
+      }
+    },
+    {
+      "name": "db-grant-after-refund",
+      "ts": "2026-10-11T16:12:07.159Z",
+      "data": {
+        "sample": {
+          "id": 3,
+          "status": "active",
+          "remaining_uses": 1
+        }
+      }
+    }
+  ]
+}
