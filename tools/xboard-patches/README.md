@@ -122,6 +122,16 @@ docker exec xboard sh -c "grep -c kc_is_topup /www/app/Services/PlanService.php;
 - **部署**：覆盖插件源文件后执行 `docker exec xboard php artisan migrate --path=plugins/KcIntegration/database/migrations --force`，再执行 `docker exec xboard php artisan octane:reload`。
 - **安全边界**：不回填历史假流水，不提供前台调账接口；分销佣金仍不纳入本段；MOCK 安全锁保持开启。
 
+## 补丁 8：Epay 插件 fiat=USD —— 修复收银台把美元订单当人民币折算（2026-10-13，v1.25.1）
+
+- **文件**：容器内 `/www/plugins-core/Epay/Plugin.php`（成品：`tools/xboard-patches/Epay/Plugin.php`；原件：`Plugin.php.orig`；容器内备份：`Plugin.php.pre-fiatusd.bak`）
+- **原因**：插件 `pay()` 只传 `money`（订单美分 ÷100），BEpusdt 易支付兼容接口在**缺失 fiat 参数时默认按 CNY 解读**（见 `v03413/bepusdt` `app/handler/epay/epay.go` `verify()`：`params.Fiat = model.CNY`）——$15.00 被当成 15 元人民币 ÷6.69 ≈ **2.24 USDT**，用户少付约 6.7 倍，且 BEpusdt 回调验签通过后 Xboard 按 $15 履约，形成资损漏洞。
+- **补丁内容**：`$params` 数组增加 `'fiat' => 'USD'`（金额数值不变）。BEpusdt 侧原生支持 fiat 参数（USD 汇率自动同步），**无需改 BEpusdt**；签名两边同一套「非空参数字典序 k=v& + key」MD5，fiat 自动参与，无额外适配。
+- **影响面**：所有走 EPay 渠道的订单（购买卡密 + 余额充值含尾数识别）。
+- **重打**：`docker cp tools/xboard-patches/Epay/Plugin.php xboard:/www/plugins-core/Epay/Plugin.php && docker exec xboard php artisan octane:reload`
+- **验证**：`node tools/_v1251_fiat_usd_verify.js`（同构 epay 请求含 fiat=USD 与签名）→ DB 核对 `fiat=USD / money=15 / amount≈15`（修复前 2.24）；`php -l` 通过。验收后自动清理测试单。
+- **核查**（重建后）：`docker exec xboard grep -c "fiat.*USD" /www/plugins-core/Epay/Plugin.php` 期望 ≥1；缺则重打。
+
 ## 相关数据修复（一次性，重建容器不影响 DB 无需重做）
 
 - `v2_plan`：所有 `kc_is_topup=1` 套餐 `show=0`；id=2 改名「余额充值 ¥100」
