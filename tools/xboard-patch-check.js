@@ -2,11 +2,13 @@
 /**
  * tools/xboard-patch-check.js — Xboard 容器补丁在位核查（可选 --fix 自动重打）
  *
- * 背景：Xboard 容器内的 4 处内核补丁不进镜像，容器重建后会静默丢失：
+ * 背景：Xboard 容器内的 6 处内核补丁不进镜像，容器重建后会静默丢失：
  *   P1 PlanService   —— kc_is_topup 豁免 show 校验（丢 → 充值面板下单被拒「已售罄」）
  *   P2 TopupController —— show=0 套餐可复用（插件侧，宿主挂载）
  *   P3 OrderService  —— 充值套餐不产生佣金
  *   P4 CheckCommission —— 返利以「货交付」为前提（丢 → 失败订单照发佣金）
+ *   P5/P6 OrderService + V1 OrderController —— 允许多笔未支付/处理中订单并存
+ *        （丢 →  resurrect「您有未付款或开通中的订单」拦截，有未付款单的用户无法再下单）
  *
  * 用法：
  *   node tools/xboard-patch-check.js          # 只核查，缺任一即退出码 1
@@ -32,6 +34,8 @@ const CHECKS = [
   { name: 'P3 OrderService（充值不返佣）', file: '/www/app/Services/OrderService.php', pattern: 'kc_is_topup', min: 2 },
   { name: 'P4 CheckCommission（交付才结算）', file: '/www/app/Console/Commands/CheckCommission.php', pattern: 'kcHasCardTable', min: 2 },
   { name: 'P2 TopupController（show=0 复用）', file: '/www/plugins/KcIntegration/Controllers/TopupController.php', pattern: 'KC-PATCH2', min: 2 },
+  { name: 'P5 OrderService（允许多笔未支付单）', file: '/www/app/Services/OrderService.php', pattern: 'ALLOW-CONCURRENT-ORDERS', min: 1 },
+  { name: 'P6 V1 OrderController（允许多笔未支付单）', file: '/www/app/Http/Controllers/V1/User/OrderController.php', pattern: 'ALLOW-CONCURRENT-ORDERS', min: 1 },
 ];
 
 const FIX_SOURCES = [
@@ -39,6 +43,7 @@ const FIX_SOURCES = [
   path.join(ROOT, 'tools/xboard-patch-topup-ctrl.php'),
   path.join(ROOT, 'tools/xboard-patches/OrderService.php'),
   path.join(ROOT, 'tools/xboard-patches/CheckCommission.php'),
+  path.join(ROOT, 'tools/xboard-patch-allow-concurrent-orders.php'),
 ];
 
 const FIX_STEPS = [
@@ -52,6 +57,12 @@ const FIX_STEPS = [
   ] },
   { desc: 'P3 重打', cmds: [
     ['cp', FIX_SOURCES[2], 'xboard:/www/app/Services/OrderService.php'],
+  ] },
+  // ⚠️ 顺序要点：P3 是整文件覆盖 OrderService.php，会冲掉 P5 的补丁，
+  //    所以 P5/P6 必须排在 P3 之后重打（脚本幂等，重复执行不会重复改）。
+  { desc: 'P5/P6 重打（允许多笔未支付单）', cmds: [
+    ['cp', FIX_SOURCES[4], 'xboard:/www/xboard-patch-allow-concurrent-orders.php'],
+    ['exec', 'xboard', 'php', '/www/xboard-patch-allow-concurrent-orders.php'],
   ] },
   { desc: 'P4 重打', cmds: [
     ['cp', FIX_SOURCES[3], 'xboard:/www/app/Console/Commands/CheckCommission.php'],

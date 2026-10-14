@@ -1644,6 +1644,105 @@ app.get('/api/public/runtime', async (req, res) => {
     }
 });
 
+// ===== v1.31 站点配置（品牌/定价/文案）=====
+const SITE_CONFIG_DEFAULT = {
+    brand: { name: 'KC 直供', badge: 'KC', sub: 'GPT 代充 · 批发价', slogan: '一个人也算批发' },
+    packs: [
+        { key: 'light', name: '轻享包', fee: 15, times: 5, tagline: '给还没验证市场的你' },
+        { key: 'pro', name: '畅享包', fee: 99, times: 50, tagline: '给已经稳定出货的你' }
+    ],
+    building: { name: '建站支持套餐', fee: 399, unit: '月' },
+    plans: [],
+    copy: {
+        marketLabel: '市场行情',
+        thresholdTitle: '拿这个价，不用先押几千美元',
+        oldSideTitle: '行业常见做法',
+        newSideTitle: '我们',
+        thresholdNote: '「行业常见做法」指传统批发型发卡平台的普遍门槛，仅供参考。'
+    }
+};
+
+function cloneJson(x) { return JSON.parse(JSON.stringify(x)); }
+
+async function readSiteConfig() {
+    const base = cloneJson(SITE_CONFIG_DEFAULT);
+    try {
+        const raw = await store.getAppConfigValue('site_config', '');
+        if (!raw) return base;
+        const saved = JSON.parse(raw);
+        return {
+            brand: Object.assign(base.brand, saved.brand || {}),
+            packs: (Array.isArray(saved.packs) && saved.packs.length) ? saved.packs : base.packs,
+            building: Object.assign(base.building, saved.building || {}),
+            plans: Array.isArray(saved.plans) ? saved.plans : base.plans,
+            copy: Object.assign(base.copy, saved.copy || {})
+        };
+    } catch (e) {
+        return base;
+    }
+}
+
+app.get('/api/public/site-config', async (req, res) => {
+    // 前台商城与 KC 不同源（端口/域名不同），公开配置允许跨域读取
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        await ensureStoreReady();
+        return res.json({ success: true, config: await readSiteConfig() });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/site-config', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        return res.json({ success: true, config: await readSiteConfig() });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/site-config', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const body = req.body || {};
+        const cur = await readSiteConfig();
+        const next = {
+            brand: Object.assign({}, cur.brand, body.brand || {}),
+            packs: (Array.isArray(body.packs) && body.packs.length) ? body.packs : cur.packs,
+            building: Object.assign({}, cur.building, body.building || {}),
+            plans: Array.isArray(body.plans) ? body.plans : cur.plans,
+            copy: Object.assign({}, cur.copy, body.copy || {})
+        };
+        await store.setAppConfigValue('site_config', JSON.stringify(next));
+
+        let siteNameSynced = false;
+        const brandName = String((next.brand && next.brand.name) || '').trim();
+        if (brandName) {
+            try {
+                await store.runQuery(
+                    "UPDATE `xboard`.`v2_settings` SET value = ?, updated_at = NOW() WHERE name = 'app_name'",
+                    [brandName]
+                );
+                siteNameSynced = true;
+            } catch (e) {
+                siteNameSynced = false;
+            }
+        }
+        return res.json({
+            success: true,
+            message: siteNameSynced
+                ? '站点配置已保存。若前台浏览器标题未变，请执行一次 Xboard 缓存清理（optimize:clear）。'
+                : '站点配置已保存（站点名跨库同步失败，请检查 KC 对 xboard 库的写权限）。',
+            site_name_synced: siteNameSynced,
+            config: next
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 app.get('/api/admin/session', (req, res) => {
     const age = Date.now() - Number(req.admin.iat || 0);
     const shouldRefresh = age >= ADMIN_REFRESH_AFTER_MS;
@@ -5302,6 +5401,20 @@ app.post('/api/admin/entitlements/grants/:id/revoke', requireSecondaryAuth, asyn
 });
 
 // 查某 user 的 grants
+// v1.28.2 · 邮箱 → Xboard user_id 查询（运营不记得数字 ID，权益查询/发放按邮箱定位用户）
+app.get('/api/admin/entitlements/user-lookup', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const email = String(req.query.email || '').trim().toLowerCase();
+        if (!email) return res.status(400).json({ success: false, message: 'email 必填' });
+        const rows = await store.runQuery(
+            'SELECT id, email FROM xboard.v2_user WHERE LOWER(email)=? ORDER BY id ASC LIMIT 5',
+            [email]
+        );
+        res.json({ success: true, data: rows.map(r => ({ user_id: r.id, email: r.email })) });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 app.get('/api/admin/entitlements/grants', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();

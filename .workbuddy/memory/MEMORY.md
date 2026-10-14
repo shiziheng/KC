@@ -17,10 +17,14 @@
 - ⭐.ps1 新增块必须 ASCII（PS5.1 读无 BOM 中文注释会吞换行致解析错，实测）；校验用 Parser::ParseFile / PortableGit bash -n（容器 busybox sh 会误报 bash 语法）。
 - 凭据输出易被审批拦截 → 用户自跑/在场授权；密钥脚本内用、绝不打印。
 - 同文件多处 Edit 别同批（会丢改动）；改后 node includes 复核。
+- agent-browser：daemon 跨工具调用不存活 → open/fill/screenshot 全链放同一次调用内；AGENT_BROWSER_EXECUTABLE_PATH 指本机 Chrome（googleapis 下载必超时）；exe 全路径直调（PS1 执行策略禁）；admin token 走 POST /api/admin/login 后 eval 注入 localStorage('plus_admin_token')。
 
 ## 部署与运行（deploy-manifest.json=服务清单）
 - KC kc-gpt-pay2：app :3100（探活 /api/public/runtime）、mysql :3310；重建 docker compose up -d --build app；zovocard-client.js bind 实时。
 - Xboard :7001（后台 /5fea4ca1）；custom_html 走 tools/xboard-apply-custom-html.js；容器重建必重打内核补丁（丢→下单 400 已售罄）——已并入引擎自动核查+重打（tools/xboard-patch-check.js，ps1 委托 node）。
+- ⭐内核补丁共 **6 处**（核查/重打都走 tools/xboard-patch-check.js，--fix 自动重打）：P1 PlanService（kc_is_topup 豁免）/ P2 TopupController（show=0 复用）/ P3 OrderService（充值不返佣）/ P4 CheckCommission（交付才结算）/ **P5 OrderService + P6 V1 OrderController（允许多笔未支付订单并存，v1.28.1）**。
+  - ⚠️ **顺序陷阱**：P3 是**整文件覆盖** `tools/xboard-patches/OrderService.php`，会冲掉 P5 → P5/P6 必须排在 P3 之后重打；且改过容器内 `OrderService.php` 后**必须回拷更新** `tools/xboard-patches/OrderService.php`，否则下次 --fix 把旧版装回去。
+- ⭐**前台注入改动收尾铁律**：直接改 DB `custom_html` 的补丁，收尾必须跑 `node tools/_v129_sync_sources_from_db.js --write` 回灌本地三份源（否则全量部署静默回滚）；改完还必须 `docker exec xboard php artisan optimize:clear`。
 - BEpusdt :8080、卷 D:/tools/bepusdt；epay KEY=api_auth_token（32 位，勿混 64 位 admin_secret）；签名=升序拼+KEY→MD5；成功=302→/pay/checkout/{trade_id}。
 - 收款钱包就绪：唯一启用 usdt.trc20=TSYdNdbx1Prw5jXjcWTgbY6N28BGmR1ufD；回调 172.17.0.1:7001。
 - 凭据见 .env（收款前轮换）；入口：KC :3100/admin-login、business-admin（冻结）。
@@ -40,6 +44,8 @@
 - 红线：只许 ①保命补丁 ②插件 API ③壳层菜单；admin/kc/* 18 接口（403=存活）。壳页(ops/support)公开壳+数据接口 admin 鉴权，token 取同源 localStorage。
 - 坑：period 键错配；plan/save 不收 show/sell/renew/sort；余额=抵扣池（纯余额单 OrderService->paid('BALANCE-..')）；分销快照 order.open.after（20/10/5）；/invite/save 是 GET；插件 PascalCase 目录/snake code、listen()、路由无 /api 前缀、新增后 octane:reload；order.open.after 5s 超时内 HTTP 2~3s 全吞。
 - 插件配置有 1h Cache::remember（octane:reload 不清）→ 要即时生效的配置键直读 DB（如 card_buy_*）。
+- **下单并发规则（v1.28.1 产品决策）**：已去掉「有未付款订单不能再下单」限制。`UserService::isNotCompleteOrderByUserId()`（查 status in (0,1)）在用户侧 2 处调用被短路：`app/Services/OrderService.php:79` + `app/Http/Controllers/V1/User/OrderController.php:71`。**管理员侧 `V2/Admin/OrderController.php:213`（替用户分配订阅）有意保留**。理由：① 插件充值早已放开同款限制，口径不一致；② 套餐不占库存（capacity_limit=NULL）无防超发价值；③ 待支付 30 分钟自动失效；④ 该规则直接挡住换套餐/支付失败重开=丢单。
+- 容器无 grep（`docker exec xboard grep` 报错）→ 搜代码用 `docker cp` 一个 PHP 递归搜索脚本进容器再 `php` 跑。
 
 ## 前端注入 & 业务闭环
 - 三源 tools/kc_{theme,panel,activate}_inject.html（防中间态三件套；技能 spa-inject-without-rebuild）；充值主路径 payment.notify.verified→加余额+COMPLETED；下限三处同改（现 $1）；用户 API 头用 auth_data。

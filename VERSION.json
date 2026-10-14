@@ -1,8 +1,8 @@
 {
-  "version": "1.26.0",
-  "version_tag": "v1.26.0",
-  "date": "2026-10-13",
-  "title": "API 客户自助门户：凭证/文档/订单/余额自助 + 运营总开关（UX-7）",
+  "version": "1.28.2",
+  "version_tag": "v1.28.2",
+  "date": "2026-10-14",
+  "title": "后台管理体验修复（19 页 UX 走查：权益弹窗 P0 + 表单/列表中文化）",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -63,30 +63,43 @@
   },
   "latest": {
     "added": [
-      "客服工作台（/plugins/kc_integration/support）：客服只读聚合查询——用户全景（余额/订单/充值/卡密/售后）、订单进度（含 KC 实时复核）与 4 张标准话术卡",
-      "客服查询接口 admin/kc/support/user 与 admin/kc/support/order（严格只读、管理员鉴权；页面壳公开、数据接口受保护）",
-      "货币显示守护：tools/check-currency.js + pre-commit 钩子（全站金额一律 $ 展示，不允许人民币符号/字样出现在显示面）",
-      "补丁在位核查工具 tools/xboard-patch-check.js（--fix 自动重打）；部署/重建流程自动核查并重打 4 处内核补丁"
+      "v1.28.2 · GET /api/admin/entitlements/user-lookup（只读、鉴权保护）：邮箱 → Xboard user_id；权益页查询框兼容邮箱/数字 ID 双格式",
+      "v1.28.1 · 去掉「有未付款订单不能再下单」限制：用户侧下单不再校验 isNotCompleteOrderByUserId，可同时存在多笔待支付/处理中订单（内核补丁 P5+P6，幂等脚本 tools/xboard-patch-allow-concurrent-orders.php)",
+      "工具 tools/_v130_verify_concurrent.js：验证「已有待支付单时仍能连续下单」并自动清理测试单",
+      "v1.28.0 · 钱包流水页 #/wallet（余额大卡 + 逐条明细；消费红、到账绿、未完成中性灰带失败原因；顶栏「余额」与抽屉余额可点入）",
+      "v1.28.0 · 订单状态筛选 tab（全部/待支付/已完成/已关闭，带实时计数）+ 待支付 30 分钟倒计时（秒级刷新，超时置灰并隐藏支付入口）",
+      "v1.28.0 · 订单详情四节点时间线「订单进度」+「申请售后」弹窗（POST /user/kc/after-sales）与「联系客服」入口"
     ],
     "changed": [
-      "全站货币兜底（FEAT-017）升级：替换范围含全角 ￥；对所有页面（含游客页/登录页）常开",
-      "KC 后台（public/admin.html）商品卡片配置预览与占位文案由 ¥ 改为 $（随容器重建生效）",
-      "运营壳与客服台鉴权模型修订：页面壳公开、数据接口保持管理员鉴权（修复浏览器直开页面 403 无法使用）",
-      "部署引擎（Windows/Linux）在注入流程尾部自动核查 Xboard 容器补丁，缺失即重打；Windows 引擎改为委托 node 工具且新增块保持 ASCII（修复 PowerShell 5.1 对无 BOM 中文注释的编码误读）；Linux 引擎修复清单行分隔符被 read 折叠导致的空字段错位"
+      "v1.28.2 · 后台 19 页 UX 走查修复：补 dialog-backdrop/dialog-card CSS（P0 权益弹窗裸渲染）、权益表单 $ 输入+逗号分隔 scope+枚举中文化、任务管理状态中文/日期不折行、自动化阶段列宽修复、toast 移右上角、导航「任务与日志」分组+删隐藏残留、权益页头文案去表名",
+      "v1.28.1 · Xboard 内核补丁由 4 处增至 6 处（P5 OrderService / P6 V1 OrderController），已纳入 tools/xboard-patch-check.js 核查与 --fix 重打；并回拷更新了 tools/xboard-patches/OrderService.php（P3 整文件覆盖会冲掉 P5，顺序已调整）",
+      "v1.28.0 · 充值档位定为 $100/$300/$500 + 自定义金额（$1~$500）；删除订阅相关提示文案（任何账号点「充值」直接进选额页）",
+      "v1.28.0 · custom_html 新增第 4 个独立 <script> 注入块（tools/kc_wallet_inject.html），自带 token 读取与工具函数",
+      "v1.28.0 · 钱包页改用主题真实 token（--kc-card-bg/--kc-card-border/--kc-t1/--kc-t2/--kc-brand 青绿 #0d9488），深色主题不再走 fallback",
+      "v1.28.0 · tools/_v128_ux_batch1b.js 加防御性去重（kcTopupSubHint 无条件清理），修复替换结果自身为历史形态前缀导致的重复累积"
     ],
     "verified": [
-      "客服工作台 E2E：用户全景/订单进度 API 200 且数据正确（订单 2026101022104201309630610、卡密 KC-UEQQHXST39SBBQG、KC 实时复核取到中文状态）；headless 页面渲染与两次查询全通过（support-1/2/3.png）；未登录调数据接口 403",
-      "美元显示：tools/check-currency.js 全绿；admin-login 页面 has_¥=false；主题部署零漂移（256,724 → 257,123 字节，md5 逐字节一致）",
-      "补丁核查：4/4 在位；tools/xboard-patch-check.js 实跑 PASS；ps1/sh 引擎 list 动作实跑通过、sh bash -n 通过",
-      "档位映射核对：在售仅 #1→plus；发卡记录 plus×25；与 KC 支持集（plus/pro_5x/pro_20x）及上游目录一致"
+      "v1.28.2 · tools/_v1282_ux_verify.js：内联脚本 node --check 1/1、15 项改动点核对全 PASS、server.js --check 通过；浏览器实测权益弹窗居中/任务管理/自动化任务/toast/导航截图 v1282_*.png；user-lookup 无 token 401、带 token 200（user_id=1）；check-docs-sync + check-currency 通过",
+      "v1.28.1 · tools/_v130_verify_concurrent.js：下单前已有 1 笔待支付单 → 连续下 2 单均 HTTP 200（新单 2026101316100695560752664 / 2026101316100707115214796），下单后待支付/处理中=3，取消清理 2 单后归零；限制已去除",
+      "v1.28.1 · tools/xboard-patch-check.js：6/6 全部在位（P1/P2/P3/P4/P5/P6）；php -l 双文件无错误；octane:reload 完成；容器内两文件均留 .pre-concurrent.bak",
+      "v1.28.1 回归 · 前台 tools/_v129_batch2_verify.js 全绿且反证生效：造单由 400 变 200；tab「全部12/待支付2/已完成6/已关闭4」；两笔待支付单倒计时同时工作（[剩 29:48, 已超时]）；钱包页、两套详情时间线、售后弹窗正常；运行期 JS 错误 []",
+      "v1.28.0 · 钱包页三场景（tools/_v129_wallet_probe2.js）：直连 #/wallet（被重写为 #/404）仍渲染、点顶栏入口、点返回关闭；批次一回归档位 $100/$300/$500、0.00 单元格 0、非待支付行取消按钮 0",
+      "v1.28.0 · 部署安全：源回灌后回拼校验逐字节通过；实跑全量部署后 DB custom_html 长度不变，未被回滚",
+      "tools/check-docs-sync.js 与 tools/check-currency.js 均通过"
     ],
     "risks": [
+      "⭐内核补丁顺序陷阱：P3 重打是整文件覆盖 tools/xboard-patches/OrderService.php，会冲掉 P5 —— P5/P6 必须排在 P3 之后；改过容器内 OrderService.php 后必须回拷更新该成品文件",
+      "⭐运维红线：任何直接改 DB custom_html 的注入改动，收尾必须跑 tools/_v129_sync_sources_from_db.js --write 回灌本地源，否则下次全量部署会静默回滚",
+      "v1.28.2 用户决策：续费管理页保持现状不改（危险操作无确认/无生效列表）；自动化任务 SUCCESS 与 Checkout 未打开的口径对齐属数据层语义，待产品确认",
+      "管理员后台「替用户分配订阅」的同款限制（V2/Admin/OrderController）有意保留，属运营风控、口径不同；如需放开需另行指示",
+      "放开后可同时存在多笔待支付单，需关注订单表增长（TTL 30 分钟自动失效回收，暂无需额外清理任务）",
+      "Xboard 是 hash 路由，未知路由被重写成 #/404：#/wallet 靠 pushState + sessionStorage 意图识别才可用；新增自定义页面须沿用同一套模式",
       "收银台（BEpusdt 第三方界面）仍显示基准币 CNY 文本（汇率换算基准）——改动等于变更实付金额，属定价层决策，已登记待办",
-      "客服台令牌取自同源管理端 localStorage：管理端登出后查询将 403（预期行为）",
-      "BEpusdt 联调令牌与集成密钥均为联调值：收款前必须轮换（2026-10-11 巡检后重申）"
+      "BEpusdt 联调令牌与集成密钥均为联调值：收款前必须轮换"
     ]
   },
   "next": [
+    "第三批（走查方案剩余项）：收银台 CNY 基准币文案（定价层决策，需先确认）、订单列表分页/加载更多、钱包页导出明细、售后与工单联动",
     "用户执行：$1 真实充值测试与小额真实首单（收款链路最终验收；用户已确认暂缓，等其安排）",
     "评审《系统低耦合重整与上线路线》D1–D6 与《后台形态选型》方案稿",
     "上线前：收银台地址与回调域名从内网地址切换为可访问域名；集成密钥与 BEpusdt 令牌轮换",

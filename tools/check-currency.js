@@ -39,6 +39,8 @@ const TOKENS = ['¥', '￥', 'CNY', 'RMB', '人民币'];
 
 const ALLOW_LINE = [
   { file: 'tools/kc_theme_inject.html', re: /FEAT-017|kcFixCurrency|货币|人民币|indexOf\(|split\(|换成|「¥|¥\/￥/ },
+  // 订单金额补丁里的「空金额单元格」识别正则：必须同时匹配 ¥0.00 / $0.00 才能把任意币种的空值找出来
+  { file: 'tools/kc_panel_inject.html', re: /¥0\\\.00|kcFixCurrency|金额识别|货币/ },
   { file: 'tools/xboard-patches/admin.blade.php', re: /KC-ADMIN-V2|文案兜底|货币（/ },
   { file: 'tools/xboard-patches/Epay/Plugin.php', re: /fiat|CNY|KC-PATCH|默认按/ },
   { file: 'tools/_v123_admin_inject_script.html.tpl', re: /KC-ADMIN-V2|文案兜底|货币（/ },

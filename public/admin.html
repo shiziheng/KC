@@ -442,6 +442,28 @@
             border-radius: 10px;
         }
 
+        /* v1.28.2 · 通用弹窗（权益页 dialog-backdrop 曾缺样式导致表单裸渲染右上角，此处兜底） */
+        .dialog-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.45);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .dialog-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 24px;
+            width: 92%;
+            max-width: 560px;
+            max-height: 88vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
         .table-footer {
             margin-top: 16px;
             display: flex;
@@ -1086,17 +1108,16 @@
             to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* Toast 消息 */
+        /* Toast 消息（v1.28.2 移至右上角，避免遮挡页头标题） */
         .message-container {
             position: fixed;
             top: 24px;
-            left: 50%;
-            transform: translateX(-50%);
+            right: 24px;
             z-index: 9999;
             display: flex;
             flex-direction: column;
             gap: 10px;
-            align-items: center;
+            align-items: flex-end;
             pointer-events: none;
         }
 
@@ -1111,7 +1132,7 @@
             box-shadow: var(--shadow-lg);
             display: inline-flex;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             gap: 8px;
             font-weight: 500;
             font-size: 13px;
@@ -1799,32 +1820,39 @@
             </div>
 
             <div class="nav-item" onclick="switchPage('cancel_renewal', this)" data-page="cancel_renewal">
-                <i data-lucide="circle-x"></i>
+                <i data-lucide="rotate-ccw"></i>
                 <span>续费管理</span>
             </div>
-            <div class="nav-item" onclick="switchPage('logs', this)">
-                <i data-lucide="file-text"></i>
-                <span>任务管理</span>
+
+            <div class="nav-group" id="nav_group_tasks">
+                <div class="nav-item nav-group-toggle" onclick="toggleNavGroup('nav_group_tasks', event)">
+                    <i data-lucide="activity"></i>
+                    <span>任务与日志</span>
+                    <i data-lucide="chevron-down" class="nav-chevron"></i>
+                </div>
+                <div class="nav-subitems">
+                    <div class="nav-item nav-subitem" onclick="switchPage('logs', this)" data-page="logs">
+                        <span>任务管理</span>
+                    </div>
+                    <div class="nav-item nav-subitem" onclick="switchPage('automation_tasks', this)" data-page="automation_tasks">
+                        <span>自动化任务</span>
+                    </div>
+                    <div class="nav-item nav-subitem" onclick="switchPage('runtime_logs', this)" data-page="runtime_logs">
+                        <span>运行日志</span>
+                    </div>
+                    <div class="nav-item nav-subitem" onclick="switchPage('admin_login_logs', this)" data-page="admin_login_logs">
+                        <span>登录日志</span>
+                    </div>
+                </div>
             </div>
-            <div class="nav-item" onclick="switchPage('automation_tasks', this)">
-                <i data-lucide="bot"></i>
-                <span>自动化任务</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('runtime_logs', this)" data-page="runtime_logs">
-                <i data-lucide="terminal"></i>
-                <span>运行日志</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('plans', this)" data-page="plans" style="display:none">
-                <i data-lucide="package"></i>
-                <span>商品与资费</span>
+
+            <div class="nav-item" onclick="switchPage('sitecfg', this)" data-page="sitecfg">
+                <i data-lucide="settings-2"></i>
+                <span>站点与定价</span>
             </div>
             <div class="nav-item" onclick="switchPage('products', this)" data-page="products">
                 <i data-lucide="shopping-bag"></i>
                 <span>商品管理</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('listing_cards', this)" data-page="listing_cards" style="display:none">
-                <i data-lucide="credit-card"></i>
-                <span>商品卡片</span>
             </div>
             <div class="nav-item" onclick="switchPage('entitlements', this)" data-page="entitlements">
                 <i data-lucide="ticket-percent"></i>
@@ -1837,10 +1865,6 @@
             <div class="nav-item" onclick="switchPage('api_clients', this)" data-page="api_clients">
                 <i data-lucide="plug"></i>
                 <span>API 客户</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('admin_login_logs', this)" data-page="admin_login_logs">
-                <i data-lucide="shield-check"></i>
-                <span>登录日志</span>
             </div>
         </nav>
 
@@ -3134,12 +3158,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <table>
                         <thead>
                             <tr>
-                                <th>执行时间</th>
+                                <th width="150px" style="white-space:nowrap;">执行时间</th>
                                 <th>激活码</th>
                                 <th>Token 摘要</th>
                                 <th>任务信息</th>
                                 <th width="150px">进度</th>
-                                <th>状态</th>
+                                <th width="88px">状态</th>
                                 <th width="110px" style="text-align:center">截图/录像</th>
                                 <th width="88px" style="text-align:center">操作</th>
                             </tr>
@@ -3168,14 +3192,14 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <table>
                         <thead>
                             <tr>
-                                <th width="160px">执行时间</th>
-                                <th width="130px">任务 ID</th>
-                                <th width="130px">激活码</th>
-                                <th width="110px" style="text-align:center">Checkout</th>
-                                <th>自动化阶段</th>
-                                <th width="120px">当前阶段</th>
-                                <th width="100px">状态</th>
-                                <th width="110px" style="text-align:center">截图/录像</th>
+                                <th width="150px" style="white-space:nowrap;">执行时间</th>
+                                <th width="105px">任务 ID</th>
+                                <th width="120px">激活码</th>
+                                <th width="95px" style="text-align:center">Checkout</th>
+                                <th width="260px">自动化阶段</th>
+                                <th width="105px">当前阶段</th>
+                                <th width="85px">状态</th>
+                                <th width="100px" style="text-align:center">截图/录像</th>
                             </tr>
                         </thead>
                         <tbody id="automation_body"></tbody>
@@ -3394,6 +3418,69 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             </div>
         </div>
 
+        <div id="sitecfg" class="page-view">
+            <h1>站点与定价</h1>
+            <p style="color:var(--text-dim); margin:8px 0 16px;">品牌名 / 权益包 / 商品权益价 / 价格文案统一在这里配置 —— 保存后前台立即生效，不需要改代码。原价请在「商品管理」页配置。</p>
+
+            <div class="panel" style="margin-bottom:16px;">
+                <h2 class="panel-title">品牌</h2>
+                <div style="display:grid; grid-template-columns:130px 1fr; gap:12px 16px; align-items:center; max-width:680px;">
+                    <label>品牌名</label>
+                    <input id="sc-brand-name" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>Logo 徽标</label>
+                    <input id="sc-brand-badge" placeholder="1-3 个字符" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>副标</label>
+                    <input id="sc-brand-sub" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>宣传定位句</label>
+                    <input id="sc-brand-slogan" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                </div>
+                <p style="color:var(--text-dim); font-size:12.5px; margin-top:12px;">保存品牌名时会同步写入商城站点名（浏览器标题）。若前台标题未变，执行一次 Xboard 缓存清理。</p>
+            </div>
+
+            <div class="panel" style="margin-bottom:16px;">
+                <h2 class="panel-title">权益包</h2>
+                <div id="sc-packs"></div>
+            </div>
+
+            <div class="panel" style="margin-bottom:16px;">
+                <h2 class="panel-title">建站支持套餐</h2>
+                <div style="display:grid; grid-template-columns:130px 1fr; gap:12px 16px; align-items:center; max-width:680px;">
+                    <label>名称</label>
+                    <input id="sc-build-name" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>月费（美元）</label>
+                    <input id="sc-build-fee" type="number" step="1" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                </div>
+            </div>
+
+            <div class="panel" style="margin-bottom:16px;">
+                <h2 class="panel-title">商品权益价</h2>
+                <p style="color:var(--text-dim); font-size:12.5px; margin:6px 0 12px;">「原价」在商品管理页；这里配置「权益价」（消耗 1 次权益）与「市场参考价」（用于页面上的对比锚点）。省多少由前台按数字自动计算。</p>
+                <div id="sc-plans"></div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">页面文案</h2>
+                <div style="display:grid; grid-template-columns:130px 1fr; gap:12px 16px; align-items:center; max-width:680px;">
+                    <label>市场行情标签</label>
+                    <input id="sc-copy-marketLabel" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>门槛对比标题</label>
+                    <input id="sc-copy-thresholdTitle" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>对比·左侧标题</label>
+                    <input id="sc-copy-oldSideTitle" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>对比·右侧标题</label>
+                    <input id="sc-copy-newSideTitle" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                    <label>对比小字说明</label>
+                    <input id="sc-copy-thresholdNote" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
+                </div>
+            </div>
+
+            <div style="margin-top:18px; display:flex; gap:12px; align-items:center;">
+                <button type="button" class="btn btn-primary" onclick="saveSiteConfig()">保存</button>
+                <button type="button" class="btn" onclick="loadSiteConfig()">重新加载</button>
+                <span id="sc-msg" style="color:var(--text-dim); font-size:13px;"></span>
+            </div>
+        </div>
+
         <div id="products" class="page-view">
             <h1>商品管理</h1>
             <p style="color:var(--text-dim); margin:8px 0 16px;">商城商品一站式配置：名称 / 价格 / 货源 / 展示 —— 保存即同步商城，立即可见可买。</p>
@@ -3553,7 +3640,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         <div id="entitlements" class="page-view">
             <div class="page-header">
                 <h1>权益</h1>
-                <p>v1.18.0 权益 MVP（SP-2026-10-11-v1.0.1 §R4）。规则存 <code>kc_entitlement_rules</code>，grants 存 <code>kc_entitlement_grants</code>，扣次流水存 <code>kc_entitlement_uses</code>；价格引擎 quote 已支持权益分支（manual/promotion 与 entitlement 比价取低）。</p>
+                <p>v1.28.2 权益功能：配置折扣规则后，符合条件的用户下单自动享受优惠（与活动折扣比价取低）；支持手动发放给指定用户，也可按用户购买自动触发。</p>
             </div>
 
             <div class="card">
@@ -3562,11 +3649,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <button class="btn" onclick="loadEntitlementsList()"><i data-lucide="refresh-cw"></i> 刷新</button>
                     <span style="margin-left:auto; color:var(--text-dim); font-size:12px;">状态过滤：</span>
                     <select id="ent_status_filter" onchange="loadEntitlementsList()" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px;">
-                        <option value="">全部</option>
-                        <option value="active">active</option>
-                        <option value="draft">draft</option>
-                        <option value="paused">paused</option>
-                        <option value="expired">expired</option>
+                        <option value="">全部状态</option>
+                        <option value="active">已启用</option>
+                        <option value="draft">草稿</option>
+                        <option value="paused">已暂停</option>
+                        <option value="expired">已过期</option>
                     </select>
                 </div>
                 <div id="ent_rules_list"><p style="color:var(--text-dim);">加载中...</p></div>
@@ -3575,10 +3662,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             <div class="card" style="margin-top:16px;">
                 <h3 style="margin:0 0 12px 0; font-size:16px;">用户持有权益查询</h3>
                 <div style="display:flex; gap:8px; margin-bottom:12px;">
-                    <input type="number" id="ent_lookup_user_id" placeholder="Xboard user_id" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; width:200px;">
+                    <input type="text" id="ent_lookup_user_id" placeholder="用户邮箱或 Xboard user_id" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; width:260px;">
                     <button class="btn" onclick="loadEntitlementGrants()"><i data-lucide="search"></i> 查询</button>
                 </div>
-                <div id="ent_grants_list"><p style="color:var(--text-dim);">输入 user_id 查询该用户持有的 grants 与历史使用流水。</p></div>
+                <div id="ent_grants_list"><p style="color:var(--text-dim);">输入用户邮箱或 user_id，查询该用户持有的权益与历史使用记录。</p></div>
             </div>
         </div>
     </main>
@@ -3595,11 +3682,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             logout: '退出登录'
         };
         const statusMap = {
-            success: { class: 'status-success', label: 'SUCCESS' },
-            failed: { class: 'status-failed', label: 'FAILED' },
-            running: { class: 'status-running', label: 'RUNNING' },
+            success: { class: 'status-success', label: '成功' },
+            failed: { class: 'status-failed', label: '失败' },
+            running: { class: 'status-running', label: '运行中' },
             manual: { class: 'status-warning', label: '需人工' },
-            card_invalid: { class: 'status-warning', label: 'CARD_INVALID' }
+            card_invalid: { class: 'status-warning', label: '卡号无效' }
         };
 
         let phonePool = [];
@@ -5185,6 +5272,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 loadBillingRecords(1).catch(() => { });
             }
 
+            if (pId === 'sitecfg') {
+                loadSiteConfig().catch(() => { });
+            }
+
             if (pId === 'sessions') {
                 loadSessions(false).catch(() => { });
             }
@@ -5270,6 +5361,133 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 loadTaskLogs(false).catch((error) => {
                     console.error('Failed to load task logs', error);
                 });
+            }
+        }
+
+        // ===== 站点与定价（v1.31）=====
+        let scConfig = null;
+        let scProducts = [];
+
+        function scNum(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+        function scEsc(s) { return escapeHtml(String(s == null ? '' : s)); }
+
+        async function loadSiteConfig() {
+            const msg = document.getElementById('sc-msg');
+            if (msg) msg.textContent = '加载中…';
+            try {
+                const res = await authFetch('/api/admin/site-config');
+                const j = await res.json();
+                if (!j.success) { if (msg) msg.textContent = ''; showMessage(j.message || '读取站点配置失败', 'error'); return; }
+                scConfig = j.config || {};
+                try {
+                    const pr = await authFetch('/api/admin/products');
+                    const pj = await pr.json();
+                    const list = pj.products || pj.data || pj.list || [];
+                    scProducts = (Array.isArray(list) ? list : []).filter((p) => Number(p.show) === 1 || p.show === true || p.show === undefined);
+                } catch (e) { scProducts = []; }
+                renderSiteConfig();
+                if (msg) msg.textContent = '已加载';
+            } catch (e) {
+                if (msg) msg.textContent = '';
+                showMessage('读取失败：' + e.message, 'error');
+            }
+        }
+
+        function renderSiteConfig() {
+            const c = scConfig || {};
+            const b = c.brand || {};
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
+            set('sc-brand-name', b.name); set('sc-brand-badge', b.badge);
+            set('sc-brand-sub', b.sub); set('sc-brand-slogan', b.slogan);
+
+            const bd = c.building || {};
+            set('sc-build-name', bd.name); set('sc-build-fee', bd.fee);
+
+            const cp = c.copy || {};
+            ['marketLabel', 'thresholdTitle', 'oldSideTitle', 'newSideTitle', 'thresholdNote'].forEach((k) => set('sc-copy-' + k, cp[k]));
+
+            const packs = Array.isArray(c.packs) ? c.packs : [];
+            const ph = document.getElementById('sc-packs');
+            if (ph) {
+                ph.innerHTML = packs.map((p, i) =>
+                    '<div style="display:grid; grid-template-columns:1fr 120px 120px 1fr; gap:12px; align-items:center; margin-bottom:10px;">' +
+                    '<input data-pack="' + i + '" data-k="name" value="' + scEsc(p.name) + '" placeholder="包名" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                    '<input data-pack="' + i + '" data-k="fee" type="number" step="1" value="' + scNum(p.fee) + '" placeholder="月费" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                    '<input data-pack="' + i + '" data-k="times" type="number" step="1" value="' + scNum(p.times) + '" placeholder="次数" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                    '<input data-pack="' + i + '" data-k="tagline" value="' + scEsc(p.tagline) + '" placeholder="定位语（给谁用）" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                    '</div>'
+                ).join('') || '<p style="color:var(--text-dim)">（未配置权益包）</p>';
+            }
+
+            const saved = {};
+            (Array.isArray(c.plans) ? c.plans : []).forEach((p) => { saved[String(p.planId || p.id)] = p; });
+            const lh = document.getElementById('sc-plans');
+            if (lh) {
+                lh.innerHTML = scProducts.length ? scProducts.map((p) => {
+                    const s = saved[String(p.plan_id)] || {};
+                    return '<div style="display:grid; grid-template-columns:1fr 130px 130px; gap:12px; align-items:center; margin-bottom:10px;">' +
+                        '<span>' + scEsc(p.name || ('#' + p.plan_id)) + ' <span style="color:var(--text-dim);font-size:12px;">(id ' + p.plan_id + ')</span></span>' +
+                        '<input data-plan="' + p.plan_id + '" data-k="quotaPrice" type="number" step="0.01" value="' + (s.quotaPrice != null ? scNum(s.quotaPrice) : '') + '" placeholder="权益价" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                        '<input data-plan="' + p.plan_id + '" data-k="marketPrice" type="number" step="0.01" value="' + (s.marketPrice != null ? scNum(s.marketPrice) : '') + '" placeholder="市场参考价" style="padding:9px 12px; border-radius:8px; border:1px solid #2a2a30; background:transparent; color:inherit;">' +
+                        '</div>';
+                }).join('') : '<p style="color:var(--text-dim)">（未读到商品，请先在商品管理页配置）</p>';
+            }
+        }
+
+        function collectSiteConfig() {
+            const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+            const packs = [];
+            document.querySelectorAll('[data-pack]').forEach((el) => {
+                const i = Number(el.getAttribute('data-pack'));
+                const k = el.getAttribute('data-k');
+                if (!packs[i]) packs[i] = {};
+                packs[i][k] = (k === 'fee' || k === 'times') ? scNum(el.value) : el.value.trim();
+            });
+            const plans = [];
+            document.querySelectorAll('[data-plan]').forEach((el) => {
+                const id = Number(el.getAttribute('data-plan'));
+                const k = el.getAttribute('data-k');
+                let row = plans.find((x) => x.planId === id);
+                if (!row) { row = { planId: id }; plans.push(row); }
+                if (el.value.trim() !== '') row[k] = scNum(el.value);
+            });
+            return {
+                brand: { name: val('sc-brand-name'), badge: val('sc-brand-badge'), sub: val('sc-brand-sub'), slogan: val('sc-brand-slogan') },
+                packs: packs.filter(Boolean),
+                building: { name: val('sc-build-name'), fee: scNum(val('sc-build-fee')) },
+                plans: plans,
+                copy: {
+                    marketLabel: val('sc-copy-marketLabel'),
+                    thresholdTitle: val('sc-copy-thresholdTitle'),
+                    oldSideTitle: val('sc-copy-oldSideTitle'),
+                    newSideTitle: val('sc-copy-newSideTitle'),
+                    thresholdNote: val('sc-copy-thresholdNote')
+                }
+            };
+        }
+
+        async function saveSiteConfig() {
+            const msg = document.getElementById('sc-msg');
+            if (msg) msg.textContent = '保存中…';
+            try {
+                const res = await authFetch('/api/admin/site-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(collectSiteConfig())
+                });
+                const j = await res.json();
+                if (j.success) {
+                    scConfig = j.config;
+                    renderSiteConfig();
+                    if (msg) msg.textContent = '已保存';
+                    showMessage(j.message || '站点配置已保存', 'success');
+                } else {
+                    if (msg) msg.textContent = '';
+                    showMessage(j.message || '保存失败', 'error');
+                }
+            } catch (e) {
+                if (msg) msg.textContent = '';
+                showMessage('保存失败：' + e.message, 'error');
             }
         }
 
@@ -6383,13 +6601,13 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const phase = escapeHtml(task.automation?.phase || task.message || '-');
                 return `
                 <tr>
-                    <td>${escapeHtml(task.time || '-')}</td>
+                    <td style="white-space:nowrap;">${escapeHtml(task.time || '-')}</td>
                     <td><code title="${escapeHtml(task.jobKey || task.id || '')}">${escapeHtml(shortenJobKey(task.jobKey || task.id))}</code></td>
                     <td><code>${escapeHtml(task.cdk || '-')}</code></td>
                     <td style="text-align:center">${checkoutCell}</td>
-                    <td>${renderAutomationStages(task.automation)}</td>
+                    <td style="min-width:240px;">${renderAutomationStages(task.automation)}</td>
                     <td>${phase}</td>
-                    <td>${renderStatus(task.status)}</td>
+                    <td style="white-space:nowrap;" title="状态 = 自动化阶段（Stripe 表单/预留卡等）的执行结果，与左列 Checkout 支付页是否打开相互独立">${renderStatus(task.status)}</td>
                     <td style="text-align:center">${mediaCell}</td>
                 </tr>`;
             }).join('');
@@ -6752,7 +6970,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const infoCell = infoParts.length ? infoParts.join('<br>') : '-';
                 return `
                 <tr>
-                    <td>${escapeHtml(l.time || '-')}</td>
+                    <td style="white-space:nowrap;">${escapeHtml(l.time || '-')}</td>
                     <td><code>${escapeHtml(l.cdk || '-')}</code></td>
                     <td><code>${escapeHtml(l.token || '-')}</code></td>
                     <td>${infoCell}</td>
@@ -6762,7 +6980,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                             <div class="progress-mini-bar ${l.status}" style="width: ${l.progress}%"></div>
                         </div>
                     </td>
-                    <td>${renderStatus(l.status)}</td>
+                    <td style="white-space:nowrap;">${renderStatus(l.status)}</td>
                     <td style="text-align:center">${mediaCell}</td>
                     <td style="text-align:center"><button type="button" class="btn-delete" title="删除此任务记录" data-delete-task="${escapeHtml(l.id)}"><i data-lucide="trash-2"></i></button></td>
                 </tr>`;
@@ -10162,7 +10380,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         // ===================== v1.18.0 · 权益 MVP（SP-2026-10-11-v1.0.1 §R4） =====================
-        const ENT_DISCOUNT_LABELS = { percent: '百分比', fixed_cents: '减固定金额(cents)', fixed_price_cents: '一口价(cents)' };
+        const ENT_DISCOUNT_LABELS = { percent: '百分比', fixed_cents: '减固定金额', fixed_price_cents: '一口价' };
         const ENT_SOURCE_LABELS = { manual: '人工', purchase: '购买商品触发', event: '事件触发' };
         const ENT_STATUS_LABELS = { draft: '草稿', active: '启用', paused: '暂停', expired: '过期', active_rule: '启用' };
         let _entCurrent = [];
@@ -10185,11 +10403,15 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         function renderEntitlements(list) {
             if (!list.length) { document.getElementById('ent_rules_list').innerHTML = '<p style="color:var(--text-dim);">暂无规则。点「新建规则」开始。</p>'; return; }
             const html = ['<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:12px;">'];
+                const ENT_BADGE_STYLES = {
+                    active: { bg: '#22c55e', label: '已启用' },
+                    paused: { bg: '#f59e0b', label: '已暂停' },
+                    draft: { bg: '#6b7280', label: '草稿' },
+                    expired: { bg: '#94a3b8', label: '已过期' }
+                };
             for (const r of list) {
-                const statusBadge = r.status === 'active' ? '<span style="background:#22c55e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">active</span>'
-                    : r.status === 'paused' ? '<span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">paused</span>'
-                    : r.status === 'draft' ? '<span style="background:#6b7280;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">draft</span>'
-                    : '<span style="background:#94a3b8;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + r.status + '</span>';
+                const _badge = ENT_BADGE_STYLES[r.status] || { bg: '#94a3b8', label: r.status };
+                const statusBadge = '<span style="background:' + _badge.bg + ';color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">' + _badge.label + '</span>';
                 const scope = Array.isArray(r.plan_scope) ? (r.plan_scope.length ? r.plan_scope.join(', ') : '<em>全部 plan</em>') : '';
                 html.push(
                     '<div class="card" style="background:var(--bg-card-2);">' +
@@ -10200,7 +10422,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         '<div style="font-size:12px; color:var(--text-dim); margin-bottom:4px;">code: <code>' + escapeHtml(r.code) + '</code></div>' +
                         '<div style="font-size:13px; line-height:1.6;">' +
                             '<div>折扣类型：<b>' + (ENT_DISCOUNT_LABELS[r.discount_type] || r.discount_type) + '</b>' +
-                                (r.discount_type === 'percent' ? ' · ' + r.discount_value + '% 减' : ' · ' + r.discount_value + ' cents') + '</div>' +
+                                (r.discount_type === 'percent' ? ' · ' + r.discount_value + '% 减' : ' · $' + ((r.discount_value || 0) / 100).toFixed(2)) + '</div>' +
                             '<div>配额：' + r.grant_uses + ' 次 · 有效期 ' + r.grant_period_days + ' 天</div>' +
                             '<div>门槛：' + (r.min_order_cents > 0 ? '$' + (r.min_order_cents / 100).toFixed(2) : '不限') + '</div>' +
                             '<div>优先级：' + r.priority + '</div>' +
@@ -10232,25 +10454,39 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             } catch (e) { showMessage(e.message || '切换失败', 'error'); }
         }
 
+        function entUpdateDvalUnit() {
+            const t = document.getElementById('ent_f_dtype').value;
+            const hint = document.getElementById('ent_f_dval_unit');
+            const input = document.getElementById('ent_f_dval');
+            if (!hint || !input) return;
+            if (t === 'percent') {
+                hint.textContent = '%（0-100）';
+                input.removeAttribute('step');
+            } else {
+                hint.textContent = '$（如 3.00）';
+                input.setAttribute('step', '0.01');
+            }
+        }
+
         function openNewEntitlementDialog() {
             const html =
-                '<div class="dialog-backdrop" id="ent_edit_dialog">' +
-                    '<div class="dialog-card" style="max-width:520px;">' +
-                        '<h3>新建权益规则</h3>' +
-                        '<div style="display:grid; gap:8px; grid-template-columns:1fr 1fr;">' +
-                            '<label>code<input id="ent_f_code" placeholder="plus_member_off20" style="width:100%;"></label>' +
+                '<div class="dialog-backdrop" id="ent_edit_dialog" onclick="if(event.target===this)closeEntitlementDialog()">' +
+                    '<div class="dialog-card">' +
+                        '<h3 id="ent_dialog_title">新建权益规则</h3>' +
+                        '<div style="display:grid; gap:8px; grid-template-columns:1fr 1fr; margin-top:10px;">' +
+                            '<label>规则代码（code）<input id="ent_f_code" placeholder="plus_member_off20" style="width:100%;"></label>' +
                             '<label>显示名<input id="ent_f_name" placeholder="Plus 会员 8 折" style="width:100%;"></label>' +
-                            '<label>折扣类型<select id="ent_f_dtype" style="width:100%;"><option value="percent">百分比</option><option value="fixed_cents">减固定金额</option><option value="fixed_price_cents">一口价</option></select></label>' +
-                            '<label>折扣值<input id="ent_f_dval" type="number" placeholder="20" style="width:100%;"></label>' +
-                            '<label>门槛（cents）<input id="ent_f_min" type="number" value="0" style="width:100%;"></label>' +
-                            '<label>配额（次）<input id="ent_f_uses" type="number" value="1" style="width:100%;"></label>' +
-                            '<label>有效期（天）<input id="ent_f_days" type="number" value="30" style="width:100%;"></label>' +
-                            '<label>优先级<input id="ent_f_pri" type="number" value="100" style="width:100%;"></label>' +
-                            '<label>状态<select id="ent_f_status" style="width:100%;"><option value="draft">draft</option><option value="active">active</option><option value="paused">paused</option></select></label>' +
-                            '<label>来源<select id="ent_f_src" style="width:100%;"><option value="manual">manual</option><option value="purchase">purchase</option><option value="event">event</option></select></label>' +
-                            '<label>触发 plan_code（purchase 用）<input id="ent_f_tpc" placeholder="留空" style="width:100%;"></label>' +
+                            '<label>折扣类型<select id="ent_f_dtype" onchange="entUpdateDvalUnit()" style="width:100%;"><option value="percent">百分比折扣</option><option value="fixed_cents">减固定金额</option><option value="fixed_price_cents">一口价</option></select></label>' +
+                            '<label>折扣值（<span id="ent_f_dval_unit">%</span>）<input id="ent_f_dval" type="number" placeholder="20" style="width:100%;"></label>' +
+                            '<label>门槛（$，0=不限）<input id="ent_f_min" type="number" step="0.01" min="0" value="0" style="width:100%;"></label>' +
+                            '<label>可用次数<input id="ent_f_uses" type="number" min="1" value="1" style="width:100%;"></label>' +
+                            '<label>有效期（天）<input id="ent_f_days" type="number" min="1" value="30" style="width:100%;"></label>' +
+                            '<label>优先级（大者优先）<input id="ent_f_pri" type="number" value="100" style="width:100%;"></label>' +
+                            '<label>状态<select id="ent_f_status" style="width:100%;"><option value="draft">草稿</option><option value="active">启用</option><option value="paused">暂停</option></select></label>' +
+                            '<label>触发方式<select id="ent_f_src" style="width:100%;"><option value="manual">人工发放</option><option value="purchase">购买商品自动触发</option><option value="event">事件触发</option></select></label>' +
+                            '<label style="grid-column:1 / -1;">触发商品代码（仅「购买商品自动触发」时填，留空不限）<input id="ent_f_tpc" placeholder="留空" style="width:100%;"></label>' +
                         '</div>' +
-                        '<label style="display:block; margin-top:8px;">适用 plan_code（JSON 数组；留空=全部）<input id="ent_f_scope" placeholder=' + "'[]'" + ' style="width:100%;"></label>' +
+                        '<label style="display:block; margin-top:8px;">适用的商品代码（留空=全部；多个用英文逗号分隔）<input id="ent_f_scope" placeholder="plus_monthly, pro_monthly" style="width:100%;"></label>' +
                         '<label style="display:block; margin-top:8px;">备注<input id="ent_f_note" style="width:100%;"></label>' +
                         '<div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">' +
                             '<button class="btn" onclick="closeEntitlementDialog()">取消</button>' +
@@ -10261,41 +10497,51 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const holder = document.createElement('div');
             holder.innerHTML = html;
             document.body.appendChild(holder.firstChild);
+            entUpdateDvalUnit();
         }
 
         async function openEntitlementEditDialog(code) {
             const r = _entCurrent.find(x => x.code === code);
             if (!r) { showMessage('未找到规则', 'error'); return; }
             openNewEntitlementDialog();
+            document.getElementById('ent_dialog_title').textContent = '编辑权益规则 · ' + (r.display_name || r.code);
             document.getElementById('ent_f_code').value = r.code;
             document.getElementById('ent_f_code').disabled = true;
             document.getElementById('ent_f_name').value = r.display_name || '';
             document.getElementById('ent_f_dtype').value = r.discount_type || 'percent';
-            document.getElementById('ent_f_dval').value = r.discount_value || 0;
-            document.getElementById('ent_f_min').value = r.min_order_cents || 0;
+            // 非百分比类型的内部值是美分，表单按 $ 展示
+            document.getElementById('ent_f_dval').value = r.discount_type === 'percent' ? (r.discount_value || 0) : ((r.discount_value || 0) / 100);
+            document.getElementById('ent_f_min').value = (r.min_order_cents || 0) / 100;
             document.getElementById('ent_f_uses').value = r.grant_uses || 1;
             document.getElementById('ent_f_days').value = r.grant_period_days || 30;
             document.getElementById('ent_f_pri').value = r.priority || 100;
             document.getElementById('ent_f_status').value = r.status || 'draft';
             document.getElementById('ent_f_src').value = r.source || 'manual';
             document.getElementById('ent_f_tpc').value = r.trigger_plan_code || '';
-            document.getElementById('ent_f_scope').value = JSON.stringify(r.plan_scope || []);
+            document.getElementById('ent_f_scope').value = Array.isArray(r.plan_scope) ? r.plan_scope.join(', ') : '';
             document.getElementById('ent_f_note').value = r.note || '';
             document.getElementById('ent_edit_dialog').setAttribute('data-mode', 'edit');
+            entUpdateDvalUnit();
         }
 
         async function submitNewEntitlement() {
             const mode = (document.getElementById('ent_edit_dialog').getAttribute('data-mode') === 'edit') ? 'PATCH' : 'POST';
             const url = mode === 'POST' ? '/api/admin/entitlements/rules'
                 : '/api/admin/entitlements/rules/' + encodeURIComponent(document.getElementById('ent_f_code').value);
-            let scope = [];
-            try { scope = JSON.parse(document.getElementById('ent_f_scope').value || '[]'); } catch (e) { showMessage('plan_scope 必须是 JSON 数组', 'error'); return; }
+            // 表单按 $ 输入，内部统一换算为美分（percent 类型直接用整数值）
+            const dtype = document.getElementById('ent_f_dtype').value;
+            const dvalRaw = parseFloat(document.getElementById('ent_f_dval').value);
+            const dval = isNaN(dvalRaw) ? 0 : (dtype === 'percent' ? Math.round(dvalRaw) : Math.round(dvalRaw * 100));
+            const minRaw = parseFloat(document.getElementById('ent_f_min').value);
+            const minCents = isNaN(minRaw) ? 0 : Math.max(0, Math.round(minRaw * 100));
+            const scopeText = document.getElementById('ent_f_scope').value.trim();
+            const scope = scopeText ? scopeText.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean) : [];
             const body = {
                 code: document.getElementById('ent_f_code').value,
                 display_name: document.getElementById('ent_f_name').value,
-                discount_type: document.getElementById('ent_f_dtype').value,
-                discount_value: parseInt(document.getElementById('ent_f_dval').value, 10) || 0,
-                min_order_cents: parseInt(document.getElementById('ent_f_min').value, 10) || 0,
+                discount_type: dtype,
+                discount_value: dval,
+                min_order_cents: minCents,
                 grant_uses: parseInt(document.getElementById('ent_f_uses').value, 10) || 1,
                 grant_period_days: parseInt(document.getElementById('ent_f_days').value, 10) || 30,
                 priority: parseInt(document.getElementById('ent_f_pri').value, 10) || 100,
@@ -10352,9 +10598,25 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             } catch (e) { showMessage(e.message || '下发失败', 'error'); }
         }
 
+        // v1.28.2 · 查询输入兼容邮箱（先换算成 user_id）与数字 ID
+        async function _entResolveUserId(raw) {
+            const v = String(raw || '').trim();
+            if (!v) { showMessage('请输入用户邮箱或 user_id', 'error'); return 0; }
+            if (/^\d+$/.test(v)) return parseInt(v, 10);
+            if (!v.includes('@')) { showMessage('输入格式不对：请填完整邮箱或数字 user_id', 'error'); return 0; }
+            try {
+                const r = await authFetch('/api/admin/entitlements/user-lookup?email=' + encodeURIComponent(v));
+                const list = (r && r.data) || [];
+                if (!list.length) { showMessage('未找到邮箱为「' + v + '」的用户', 'error'); return 0; }
+                if (list.length > 1) { showMessage('该邮箱匹配到 ' + list.length + ' 个用户，请改用数字 user_id 精确查询', 'error'); return 0; }
+                showMessage('已定位用户：' + list[0].email + '（user_id=' + list[0].user_id + '）', 'success');
+                return list[0].user_id;
+            } catch (e) { showMessage(e.message || '邮箱查询失败', 'error'); return 0; }
+        }
+
         async function loadEntitlementGrants() {
-            const uid = parseInt(document.getElementById('ent_lookup_user_id').value, 10);
-            if (!uid) { showMessage('user_id 必填', 'error'); return; }
+            const uid = await _entResolveUserId(document.getElementById('ent_lookup_user_id').value);
+            if (!uid) return;
             try {
                 const [gRes, aRes] = await Promise.all([
                     authFetch('/api/admin/entitlements/grants?user_id=' + uid),

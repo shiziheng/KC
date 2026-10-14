@@ -22,7 +22,7 @@
 
     // ===== 配置 =====
     var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
-    var PRESET_AMOUNTS = [7, 14, 42, 70];       // 预设档位（美元）
+    var PRESET_AMOUNTS = [100, 300, 500];       // 预设档位（美元）
     var MIN_USD = 1, MAX_USD = 500;             // 自由输入范围（美元）
     var POLL_PAY_MS = 3000, POLL_PAY_MAX = 40;   // 支付结果轮询
     var POLL_TASK_MS = 3000, POLL_TASK_MAX = 200;// 开通进度轮询
@@ -133,7 +133,168 @@
         setBody('');
     }
 
-    function closePanel() {
+    // ===== v1.27.0 UX 第一批 ======
+    // P0-3：订单列表金额修正。余额支付订单 total_amount=0、真实金额在 balance_amount，
+    //       原生列表只取 total_amount → 全部显示 0.00。这里嗅探接口响应拿真值后回填。
+    var KC_ORD = {};
+    function kcAbsorb(j) {
+        try {
+            var seen = 0;
+            (function walk(o, d) {
+                if (!o || d > 6 || seen > 4000) { return; }
+                if (Array.isArray(o)) { for (var i = 0; i < o.length; i++) { walk(o[i], d + 1); } return; }
+                if (typeof o !== 'object') { return; }
+                if (typeof o.trade_no === 'string' && o.trade_no) {
+                    KC_ORD[o.trade_no] = { t: Number(o.total_amount || 0), b: Number(o.balance_amount || 0) };
+                    seen++;
+                }
+                for (var k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) { walk(o[k], d + 1); } }
+            })(j, 0);
+        } catch (e) { }
+    }
+    function kcSniffJson(text) {
+        try { if (text && text.charAt(0) === '{') { kcAbsorb(JSON.parse(text)); } } catch (e) { }
+    }
+    function kcInstallSniffer() {
+        if (window.__kcSniffed) { return; }
+        window.__kcSniffed = 1;
+        try {
+            var _f = window.fetch;
+            if (typeof _f === 'function') {
+                window.fetch = function () {
+                    var p = _f.apply(this, arguments);
+                    try {
+                        p.then(function (r) {
+                            try { if (r && r.clone) { r.clone().text().then(kcSniffJson); } } catch (e) { }
+                            return r;
+                        });
+                    } catch (e) { }
+                    return p;
+                };
+            }
+            var _o = XMLHttpRequest.prototype.open, _s = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function (m, u) { this.__kcUrl = String(u || ''); return _o.apply(this, arguments); };
+            XMLHttpRequest.prototype.send = function () {
+                var self = this;
+                try {
+                    this.addEventListener('readystatechange', function () {
+                        if (self.readyState === 4) { try { kcSniffJson(self.responseText); } catch (e) { } }
+                    });
+                } catch (e) { }
+                return _s.apply(this, arguments);
+            };
+        } catch (e) { }
+    }
+    function kcFmtUsd(cents) { return '$' + (Number(cents || 0) / 100).toFixed(2); }
+    function kcPatchOrderList() {
+        try { window.kcOrderPatchRan = (window.kcOrderPatchRan || 0) + 1; } catch (e) { }
+        if (!/order/i.test(window.location.hash || '')) { return; }
+        var rows = document.querySelectorAll('tbody tr');
+        for (var i = 0; i < rows.length; i++) {
+            var tr = rows[i];
+            var txt = tr.textContent || '';
+            // P0-4：已完成/已取消/已关闭 不再显示「取消」
+            if (/已完成|已取消|已关闭/.test(txt)) {
+                var acts = tr.querySelectorAll('a,button');
+                for (var a = 0; a < acts.length; a++) {
+                    if (/取消/.test(acts[a].textContent || '')) { acts[a].style.display = 'none'; }
+                }
+            }
+            // P0-3：金额回填
+            if (tr.getAttribute('data-kc-amt')) { continue; }
+            var no = '';
+            for (var k in KC_ORD) { if (Object.prototype.hasOwnProperty.call(KC_ORD, k) && txt.indexOf(k) >= 0) { no = k; break; } }
+            if (!no) { continue; }
+            var o = KC_ORD[no];
+            var amount = o.t > 0 ? o.t : o.b;
+            if (amount <= 0) { continue; }
+            var tds = tr.querySelectorAll('td');
+            for (var c = 0; c < tds.length; c++) {
+                var cell = (tds[c].textContent || '').trim();
+                if (/^0\.00$|^¥0\.00$|^\$0\.00$|^0$/.test(cell)) {
+                    tds[c].innerHTML = '<b>' + kcFmtUsd(amount) + '</b>' +
+                        '<div style="font-size:11px;opacity:.65;margin-top:2px;">' + (o.t > 0 ? 'USDT 支付' : '余额支付') + '</div>';
+                    tr.setAttribute('data-kc-amt', '1');
+                    break;
+                }
+            }
+        }
+    }
+
+    // ===== P0-3b：订单【详情页】原生渲染的裸金额补 $（余额支付行显示 15.00 → $15.00）=====
+    function kcPatchDetail() {
+        try { window.kcDetailRan = (window.kcDetailRan || 0) + 1; } catch (e) { }
+        if (!/order\/[A-Za-z0-9]/.test(window.location.hash || '')) { return; }
+        try {
+            var cards = document.querySelectorAll('.n-card');
+            for (var i = 0; i < cards.length; i++) {
+                var head = cards[i].querySelector('.n-card-header__main');
+                if (!head || (head.textContent || '').trim() !== '订单信息') { continue; }
+                var rows = cards[i].querySelectorAll('.n-card__content > .flex');
+                for (var r = 0; r < rows.length; r++) {
+                    var lab = rows[r].firstElementChild ? (rows[r].firstElementChild.textContent || '').trim() : '';
+                    var valEl = rows[r].lastElementChild;
+                    if (!valEl || valEl === rows[r].firstElementChild) { continue; }
+                    if (/订单号|创建时间|时间/.test(lab)) { continue; }
+                    var v = (valEl.textContent || '').trim();
+                    if (/^\d+(\.\d{1,2})?$/.test(v)) { valEl.textContent = '$' + Number(v).toFixed(2); }
+                }
+            }
+        } catch (e) { }
+        // ===== P0-5b：顶部原生副标题与真实开通状态联动，消除「已支付并开通」vs「待开通」矛盾 =====
+        try {
+            var badge = document.getElementById('kc-status-text');
+            var st = badge ? (badge.textContent || '').trim() : '';
+            var map = {
+                '待开通': '订单已支付，卡密已发放，待完成开通。',
+                '开通中': '订单已支付，正在为你开通…',
+                '已完成': '订单已支付并已开通。',
+                '开通失败': '订单已支付，开通失败，可联系客服。'
+            };
+            var want = map[st];
+            if (want) {
+                var known = {};
+                for (var kk in map) { if (Object.prototype.hasOwnProperty.call(map, kk)) { known[map[kk]] = 1; } }
+                known['订单已支付并开通。'] = 1;
+                var all = document.querySelectorAll('div,span,p');
+                for (var j = 0; j < all.length; j++) {
+                    var e = all[j];
+                    if (e.childElementCount !== 0) { continue; }
+                    var tx = (e.textContent || '').trim();
+                    if (known[tx]) { if (tx !== want) { e.textContent = want; } break; }
+                }
+            }
+        } catch (e) { }
+    }
+
+    // 注：原「有生效订阅仍可充值」提示按产品要求（2026-10-13）移除——充值页不再出现订阅相关提示。
+
+    function kcScheduleOrderPatch() {
+        [250, 800, 1800, 3500].forEach(function (d) { setTimeout(function () { kcPatchOrderList(); kcPatchDetail(); }, d); });
+    }
+    // 定时点会早于 Vue 渲染（详情卡是异步取数后渲染）→ 用 Observer 持续兜底（防抖 250ms）。
+    // 幂等性保证：金额列改后不再匹配裸数字；副标题改后等于目标值即不再写。
+    function kcStartOrderObserver() {
+        if (window.__kcOrderObs) { return; }
+        window.__kcOrderObs = 1;
+        try {
+            var pend = null;
+            var mo = new MutationObserver(function () {
+                if (!/order/i.test(window.location.hash || '')) { return; }
+                if (pend) { return; }
+                pend = setTimeout(function () {
+                    pend = null;
+                    try { kcPatchOrderList(); } catch (e) { }
+                    try { kcPatchDetail(); } catch (e) { }
+                }, 250);
+            });
+            mo.observe(document.body, { childList: true, subtree: true });
+        } catch (e) { }
+    }
+    kcStartOrderObserver();
+    kcInstallSniffer();
+    try { window.kcPatchOrderList = kcPatchOrderList; window.kcPatchDetail = kcPatchDetail; window.kcScheduleOrderPatch = kcScheduleOrderPatch; } catch (e) { }
+function closePanel() {
         stopAllPolls();
         if (panelHost) { panelHost.style.display = 'none'; }
     }
@@ -225,46 +386,14 @@
             return;
         }
 
-        // 前置拦截：有有效订阅的用户不能充值余额（防套利规则），
-        // 与其走到「确认支付」才被后端报错，不如开面板第一步就引导去买套餐。
-        api('GET', '/api/v1/user/getSubscribe', undefined).then(function (res) {
-            var d = res && res.ok ? res.data : null;
-            var now = Math.floor(Date.now() / 1000);
-            if (d && d.plan_id && d.expired_at && +d.expired_at > now) {
-                renderTopupBlocked(d);
-            } else {
-                renderAmountStep();
-            }
-        }).catch(function () { renderAmountStep(); });
+        // v1.27.0（UX 第一批·P0-1）：删除「有有效订阅不可充值余额」拦截。
+        // 余额只能站内消费、不存在套利空间；拦截让有订阅的客户根本充不了钱（收入流失），
+        // 且与「余额优先支付」的下单逻辑自相矛盾。后端 prepare 也无此限制（仅金额边界+频控）。
+        // ⚠️ 只能调同块（块#2）内函数：openRechargePage 在块#3，跨块会 ReferenceError。
+        renderAmountStep();
     }
 
-    function renderTopupBlocked(sub) {
-        var t = theme();
-        setTitle('余额充值');
-        var planName = (sub && sub.plan && sub.plan.name) ? sub.plan.name : '当前套餐';
-        var expDate = sub && sub.expired_at ? new Date(+sub.expired_at * 1000).toLocaleDateString('zh-CN') : '';
-        var b = setBody(
-            '<div style="text-align:center;padding:6px 0 2px;">' +
-              '<div style="font-size:30px;line-height:1;">✅</div>' +
-              '<div style="margin-top:10px;font-size:14px;font-weight:600;color:' + t.text + ';">您已有有效订阅' +
-                (expDate ? '<span style="font-weight:400;color:' + t.sub + ';">（' + esc(planName) + ' · ' + expDate + ' 到期）</span>' : '') +
-              '</div>' +
-              '<div style="margin-top:12px;font-size:13px;color:' + t.sub + ';line-height:1.8;">无需充值余额——购买其他套餐时可直接下单，' +
-                '支付环节用 USDT 一步完成，余额充值暂不参与。</div>' +
-            '</div>'
-        );
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = '去看看其他套餐';
-        btn.style.cssText = 'display:block;width:100%;margin-top:14px;padding:11px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
-        btn.addEventListener('click', function () {
-            closePanel();
-            try { window.location.hash = '#/plan'; } catch (e) { }
-        });
-        b.appendChild(btn);
-    }
-
-    // ================================================================
+        // ================================================================
     // FEAT-014 · 充值订单台账（前台）
     // ================================================================
     var KC_TOPUP_STATUS = {
@@ -368,7 +497,7 @@
             '</div>' +
             '<button id="kc-topup-next" type="button" style="margin-top:16px;width:100%;padding:12px 0;border:0;border-radius:8px;background:' + t.ok + ';color:#fff;font-size:15px;font-weight:600;cursor:pointer;">下一步</button>' +
             '<button id="kc-topup-orders-btn" type="button" style="margin-top:10px;width:100%;padding:10px 0;border:1px solid ' + t.border + ';background:transparent;color:' + t.text + ';border-radius:8px;font-size:13px;cursor:pointer;">查看充值记录</button>' +
-            '<div style="margin-top:12px;font-size:12px;color:' + t.sub + ';line-height:1.7;">充值到账后可用于购买本站商品与订阅。</div>'
+            '<div style="margin-top:12px;font-size:12px;color:' + t.sub + ';line-height:1.7;">充值到账即成为账户余额：下单时余额优先抵扣，不足可直接用 USDT 支付。</div>'
         );
 
         var selYuan = 0;

@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="a">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KC · ChatGPT 代充批发 —— 改版原型 v1.0.0</title>
+<style>
+:root{
+  --bg:#FFFFFF;
+  --bgSoft:#F6F7F9;
+  --ink:#0E1116;
+  --ink2:#5A6270;
+  --ink3:#8C94A3;
+  --line:#E8EAEE;
+  --line2:#D8DCE3;
+  --save:#00A862;
+  --saveSoft:#E9F9F1;
+  --saveSoft2:#F3FBF7;
+  --onInk:#FFFFFF;
+  --radius:16px;
+}
+html[data-theme="b"]{
+  --bg:#FFFFFF;
+  --bgSoft:#F7F8FA;
+  --ink:#0B1220;
+  --ink2:#5A6478;
+  --ink3:#8B93A6;
+  --line:#E6E9EF;
+  --line2:#D5DAE4;
+  --save:#FF5A1F;
+  --saveSoft:#FFF1EA;
+  --saveSoft2:#FFF8F4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--ink);
+  font-size:15px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.wrap{max-width:1160px;margin:0 auto;padding:0 28px}
+
+/* ---------- top nav ---------- */
+.top{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.top-in{display:flex;align-items:center;gap:34px;height:64px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px;white-space:nowrap;flex:none}
+.logo-mark{width:26px;height:26px;border-radius:7px;background:var(--ink);color:var(--onInk);display:grid;place-items:center;font-size:12px;font-weight:700;letter-spacing:.3px}
+.nav{display:flex;gap:26px;margin-left:6px}
+.nav a{font-size:14px;color:var(--ink2);padding:4px 0;border-bottom:1.5px solid transparent;transition:.15s}
+.nav a:hover{color:var(--ink)}
+.nav a.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:500}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.theme-btn{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;transition:.15s}
+.theme-btn:hover{border-color:var(--line2);color:var(--ink)}
+.swatch{width:9px;height:9px;border-radius:3px;background:var(--save)}
+.top-link{font-size:13.5px;color:var(--ink2);transition:.15s}
+.top-link:hover{color:var(--ink)}
+.balance{font-size:13px;color:var(--ink2)}
+.balance b{color:var(--ink);font-weight:500}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--bgSoft);border:1px solid var(--line);display:grid;place-items:center;font-size:12px;color:var(--ink2)}
+
+/* ---------- generic ---------- */
+section{padding:96px 0}
+.sec-head{margin-bottom:44px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);font-weight:500;margin-bottom:14px}
+h1{font-size:52px;line-height:1.15;font-weight:600;letter-spacing:-.02em}
+h2{font-size:30px;line-height:1.25;font-weight:600;letter-spacing:-.015em}
+h3{font-size:17px;font-weight:600}
+.lead{font-size:16px;color:var(--ink2);line-height:1.7}
+.muted{color:var(--ink2);font-size:14px}
+.hint{color:var(--ink3);font-size:13px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:50px;padding:0 28px;border-radius:11px;font-size:15px;font-weight:500;transition:.15s;white-space:nowrap}
+.btn-solid{background:var(--ink);color:var(--onInk)}
+.btn-solid:hover{opacity:.86}
+.btn-line{border:1px solid var(--line2);color:var(--ink)}
+.btn-line:hover{border-color:var(--ink)}
+.btn-text{color:var(--ink2);padding:0 4px;height:auto}
+.btn-text:hover{color:var(--ink)}
+.btn-sm{height:40px;padding:0 18px;font-size:14px;border-radius:9px}
+
+.card{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);transition:border-color .15s}
+.card:hover{border-color:var(--line2)}
+
+.tag{display:inline-block;font-size:12px;font-weight:500;padding:3px 9px;border-radius:999px;background:var(--saveSoft);color:var(--save)}
+.tag-grey{background:var(--bgSoft);color:var(--ink3)}
+
+/* ---------- hero ---------- */
+.hero{padding:80px 0 88px}
+.hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:72px;align-items:center}
+.hero h1{margin-bottom:22px}
+.hero .lead{max-width:460px;margin-bottom:34px}
+.cta-row{display:flex;align-items:center;gap:14px;margin-bottom:34px}
+.trust{display:flex;flex-wrap:wrap;gap:10px 26px}
+.trust span{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink2)}
+.tick{width:15px;height:15px;flex:none;color:var(--save)}
+
+/* price card */
+.pricecard{background:var(--bgSoft);border:1px solid var(--line);border-radius:22px;padding:32px}
+.pc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.pc-name{font-size:17px;font-weight:600}
+.pc-spec{font-size:13px;color:var(--ink3);margin-top:3px}
+.pc-price{font-size:64px;font-weight:600;letter-spacing:-.03em;line-height:1;color:var(--save);transition:color .18s}
+.pc-price.is-plain{color:var(--ink)}
+.pc-price small{font-size:26px;font-weight:500;margin-right:2px}
+.pc-unit{font-size:14px;color:var(--ink3);font-weight:400;margin-left:6px;letter-spacing:0}
+.pc-was{display:flex;align-items:center;gap:12px;margin-top:14px}
+.pc-was s{color:var(--ink3);font-size:14px}
+.pc-buy{width:100%;margin-top:26px}
+.pc-note{text-align:center;font-size:12.5px;color:var(--ink3);margin-top:14px}
+
+/* ---------- tiers ---------- */
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.tier{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:26px;text-align:left;position:relative;transition:.18s}
+.tier:hover{border-color:var(--line2)}
+.tier.on{border:1.5px solid var(--ink);background:var(--bg)}
+.tier-flag{position:absolute;top:-11px;left:26px;font-size:11.5px;font-weight:600;padding:2px 10px;border-radius:999px;background:var(--ink);color:var(--onInk)}
+.tier-name{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.tier-fee{font-size:13px;color:var(--ink2);margin-top:6px}
+.tier-price{font-size:32px;font-weight:600;letter-spacing:-.02em;margin-top:18px;color:var(--ink2);transition:color .18s}
+.tier.on[data-tier="normal"] .tier-price{color:var(--ink)}
+.tier.on:not([data-tier="normal"]) .tier-price{color:var(--save)}
+.tier-price span{font-size:14px;font-weight:400;color:var(--ink3);letter-spacing:0}
+.tier-meta{font-size:13px;color:var(--ink2);margin-top:10px;padding-top:14px;border-top:1px solid var(--line)}
+.radio{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--line2);flex:none}
+.tier.on .radio{border:5px solid var(--ink)}
+
+/* ---------- products ---------- */
+.prods{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.prod{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column}
+.prod:hover{border-color:var(--ink)}
+.prod-name{font-size:15px;font-weight:600}
+.prod-spec{font-size:12.5px;color:var(--ink3);margin-top:4px}
+.prod-price{font-size:30px;font-weight:600;letter-spacing:-.02em;color:var(--save);margin-top:20px;line-height:1.1;transition:color .18s}
+.prod-was{font-size:13px;color:var(--ink3);margin-top:6px}
+.prod-was s{margin-right:8px}
+.prod-btn{margin-top:22px;width:100%}
+.prods.is-plain .prod-price{color:var(--ink)}
+.prod.soon{background:var(--bgSoft)}
+.prod.soon .prod-price{color:var(--ink2)}
+
+/* ---------- steps ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--line)}
+.step{padding:32px 32px 0 0}
+.step-n{font-size:13px;color:var(--ink3);font-weight:500;margin-bottom:14px}
+.step h3{margin-bottom:8px}
+
+/* ---------- agent ---------- */
+.agent{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.agent-card{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:34px;display:flex;flex-direction:column}
+.agent-card:hover{border-color:var(--line2)}
+.agent-card h3{font-size:20px;margin-bottom:10px}
+.agent-card .lead{font-size:14.5px;margin-bottom:22px}
+.agent-list{list-style:none;margin-bottom:26px}
+.agent-list li{display:flex;gap:10px;font-size:14px;color:var(--ink2);padding:7px 0}
+.agent-list .tick{margin-top:3px}
+.agent-foot{margin-top:auto}
+
+/* code */
+.code{background:var(--ink);color:#D7DCE4;border-radius:12px;padding:18px 20px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.75;overflow-x:auto}
+.code .c{color:#7C8798}
+.code .k{color:#8CE0B0}
+.code .s{color:#F0C674}
+
+/* ---------- matrix ---------- */
+.matrix{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.matrix th,.matrix td{padding:18px 22px;text-align:left;border-bottom:1px solid var(--line);font-size:14.5px}
+.matrix thead th{background:var(--bgSoft);font-size:13px;color:var(--ink2);font-weight:500;padding:16px 22px}
+.matrix tbody tr:last-child td{border-bottom:0}
+.matrix td .p{font-size:20px;font-weight:600;color:var(--save)}
+.matrix td .p-was{font-size:12.5px;color:var(--ink3);display:block;margin-top:2px}
+.matrix td .p-off{font-size:12.5px;color:var(--save);display:block;margin-top:2px;font-weight:500}
+.matrix .col-on{background:var(--saveSoft2)}
+.matrix thead .col-on{background:var(--saveSoft)}
+.matrix .th-sub{display:block;font-size:11.5px;color:var(--ink3);margin-top:2px;font-weight:400}
+.matrix .th-sub.th-on{color:var(--save);font-weight:600}
+
+/* ---------- orders ---------- */
+.orders{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.order{display:grid;grid-template-columns:1fr auto auto;gap:20px;align-items:center;padding:22px 26px;border-bottom:1px solid var(--line)}
+.order:last-child{border-bottom:0}
+.order-name{font-size:14.5px;font-weight:500}
+.order-no{font-size:12.5px;color:var(--ink3);margin-top:3px;font-family:ui-monospace,Menlo,monospace}
+.order-amt{font-size:17px;font-weight:600;text-align:right}
+.order-amt span{font-size:12.5px;color:var(--ink3);font-weight:400;display:block}
+.order-act{display:flex;align-items:center;gap:10px;justify-content:flex-end;min-width:190px}
+.pill{font-size:12.5px;padding:3px 11px;border-radius:999px;background:var(--saveSoft);color:var(--save);font-weight:500}
+.pill-grey{background:var(--bgSoft);color:var(--ink3)}
+.copy{border:1px solid var(--line2);border-radius:8px;padding:6px 14px;font-size:13px}
+.copy:hover{border-color:var(--ink)}
+
+/* ---------- trust bar / footer ---------- */
+.trustbar{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:26px 0}
+.trustbar-in{display:flex;flex-wrap:wrap;gap:14px 40px;justify-content:center}
+.trustbar span{font-size:13.5px;color:var(--ink2);display:flex;align-items:center;gap:8px}
+footer{padding:44px 0 60px}
+.foot-in{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink3)}
+.foot-links{display:flex;gap:22px}
+.foot-links a:hover{color:var(--ink)}
+
+.page{display:none}
+.page.on{display:block}
+
+@media (max-width:960px){
+  .wrap{padding:0 20px}
+  section{padding:64px 0}
+  h1{font-size:36px}
+  h2{font-size:25px}
+  .hero{padding:48px 0 56px}
+  .hero-grid{grid-template-columns:1fr;gap:40px}
+  .tiers,.prods,.steps,.agent{grid-template-columns:1fr}
+  .prods{grid-template-columns:1fr 1fr}
+  .steps{border-top:0}
+  .step{padding:22px 0;border-top:1px solid var(--line)}
+  .pc-price{font-size:52px}
+  .top-in{height:56px;gap:14px}
+  .nav{gap:16px;margin-left:0}
+  .nav a{font-size:13.5px}
+  .balance,.avatar{display:none}
+  .top-right{gap:12px}
+  .logo-text{display:none}
+  #themeLabel{display:none}
+  .theme-btn{padding:5px 9px}
+  .order{grid-template-columns:1fr;gap:12px}
+  .order-act{justify-content:flex-start}
+  .matrix th,.matrix td{padding:12px 14px;font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="wrap top-in">
+    <div class="logo"><span class="logo-mark">KC</span><span class="logo-text">GPT 代充批发</span></div>
+    <nav class="nav">
+      <a href="#" class="on" data-nav="home">首页</a>
+      <a href="#" data-nav="price">价格</a>
+      <a href="#" data-nav="agent">代理</a>
+    </nav>
+    <div class="top-right">
+      <button class="theme-btn" id="themeBtn"><span class="swatch"></span><span id="themeLabel">配色 A</span></button>
+      <a href="#" class="top-link" data-nav="order">我的订单</a>
+      <span class="balance">余额 <b class="num">$0.00</b></span>
+      <span class="avatar">KC</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 首页 ==================== -->
+<div class="page on" id="page-home">
+
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <div class="eyebrow">代理批发 · 自动发卡</div>
+        <h1>ChatGPT 代充<br>会员价拿货</h1>
+        <p class="lead">自己用便宜，卖给客户更便宜。升级代理会员，<br>全场商品按代理价结算，最低 $8.50 起。</p>
+        <div class="cta-row">
+          <a href="#" class="btn btn-solid" data-nav="price">查看会员价</a>
+          <a href="#" class="btn btn-text">已有卡密？</a>
+        </div>
+        <div class="trust">
+          <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>自动发卡，分钟级到账</span>
+          <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>开通失败必退，不用催客服</span>
+          <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>开放 API，可对接你自己的站</span>
+        </div>
+      </div>
+
+      <div class="pricecard">
+        <div class="pc-top">
+          <div>
+            <div class="pc-name">ChatGPT Plus 代充</div>
+            <div class="pc-spec">有效期 30 天 · 官方渠道</div>
+          </div>
+          <span class="tag" id="heroTag">代理会员价</span>
+        </div>
+        <div class="pc-price num"><small>$</small><span data-price="plus" data-bare>9.90</span><span class="pc-unit">/ 个</span></div>
+        <div class="pc-was">
+          <s class="num" id="heroWas">原价 $15.00</s>
+          <span class="tag num" id="heroSave">省 34%</span>
+        </div>
+        <button class="btn btn-solid pc-buy" id="heroBuy">以会员价购买</button>
+        <div class="pc-note">付款后自动发卡密，3 分钟内完成开通</div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">会员档位</div>
+        <h2>选一个档位，价格立刻变</h2>
+        <p class="lead" style="margin-top:12px">点下面的档位卡片，页面所有商品价格会实时切换 —— 你能省多少，一眼看得出来。</p>
+      </div>
+
+      <div class="tiers" id="tiers">
+        <button class="tier" data-tier="normal">
+          <div class="tier-name"><span class="radio"></span>普通用户</div>
+          <div class="tier-fee">无需付费，注册即用</div>
+          <div class="tier-price num">$15.00 <span>起</span></div>
+          <div class="tier-meta">标准零售价 · 适合个人自用</div>
+        </button>
+
+        <button class="tier on" data-tier="agent">
+          <span class="tier-flag">最多人选</span>
+          <div class="tier-name"><span class="radio"></span>代理会员</div>
+          <div class="tier-fee">年费 $199 · 可开发票</div>
+          <div class="tier-price num">$9.90 <span>起</span></div>
+          <div class="tier-meta">立省 34% · <b style="color:var(--ink)">卖 20 单即回本</b></div>
+        </button>
+
+        <button class="tier" data-tier="super">
+          <div class="tier-name"><span class="radio"></span>超级代理</div>
+          <div class="tier-fee">月流水满 $3,000 自动升级</div>
+          <div class="tier-price num">$8.50 <span>起</span></div>
+          <div class="tier-meta">最低拿货价 · 专属对接人</div>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">全部商品</div>
+        <h2>当前档位：<span id="tierName" style="color:var(--save)">代理会员</span></h2>
+      </div>
+      <div class="prods">
+        <div class="prod">
+          <div class="prod-name">ChatGPT Plus 代充</div>
+          <div class="prod-spec">30 天 · 官方渠道</div>
+          <div class="prod-price num" data-price="plus">$9.90</div>
+          <div class="prod-was num" data-was="plus"><s>$15.00</s>省 34%</div>
+          <button class="btn btn-solid btn-sm prod-btn">立即购买</button>
+        </div>
+        <div class="prod">
+          <div class="prod-name">ChatGPT Pro 5x</div>
+          <div class="prod-spec">30 天 · 官方渠道</div>
+          <div class="prod-price num" data-price="pro5">$32.00</div>
+          <div class="prod-was num" data-was="pro5"><s>$42.00</s>省 24%</div>
+          <button class="btn btn-solid btn-sm prod-btn">立即购买</button>
+        </div>
+        <div class="prod">
+          <div class="prod-name">ChatGPT Pro 20x</div>
+          <div class="prod-spec">30 天 · 官方渠道</div>
+          <div class="prod-price num" data-price="pro20">$98.00</div>
+          <div class="prod-was num" data-was="pro20"><s>$118.00</s>省 17%</div>
+          <button class="btn btn-solid btn-sm prod-btn">立即购买</button>
+        </div>
+        <div class="prod soon">
+          <div class="prod-name">GPT 无套餐账号 <span class="tag tag-grey" style="margin-left:4px">即将上线</span></div>
+          <div class="prod-spec">纯净账号 · 无订阅</div>
+          <div class="prod-price num" data-price="raw">$3.90</div>
+          <div class="prod-was">开放后按当前档位结算</div>
+          <button class="btn btn-line btn-sm prod-btn">预约通知</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">三步</div>
+        <h2>拿到账号只需要三步</h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">01</div>
+          <h3>注册账号</h3>
+          <p class="muted">邮箱即可，30 秒完成，不需要实名。</p>
+        </div>
+        <div class="step">
+          <div class="step-n">02</div>
+          <h3>升级代理会员</h3>
+          <p class="muted">年费 $199，全场商品立刻按代理价结算。</p>
+        </div>
+        <div class="step">
+          <div class="step-n">03</div>
+          <h3>下单，拿卡密</h3>
+          <p class="muted">付款后自动发卡密，粘贴到开通页即可。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">给小代理</div>
+        <h2>把这里变成你的供货后台</h2>
+      </div>
+      <div class="agent">
+        <div class="agent-card">
+          <h3>接入 API</h3>
+          <p class="lead">把下单能力接进你自己的站点或机器人，客户下单自动发货，你不用手动发卡。</p>
+          <ul class="agent-list">
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>一个 Key 即可调用，无需备案</li>
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>余额预充值，按代理价扣费</li>
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>卡密同步返回，幂等防重复发货</li>
+          </ul>
+          <div class="agent-foot"><a href="#" class="btn btn-line btn-sm" data-nav="agent">查看接入文档</a></div>
+        </div>
+        <div class="agent-card">
+          <h3>白标建站</h3>
+          <p class="lead">没有自己的站？我们提供整套前台，换上你的域名就能开卖。</p>
+          <ul class="agent-list">
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>独立域名，客户看不到货源</li>
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>价格自己定，差价全归你</li>
+            <li><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>开通、发货、售后全部自动</li>
+          </ul>
+          <div class="agent-foot"><a href="#" class="btn btn-line btn-sm" data-nav="agent">了解建站方案</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="trustbar">
+    <div class="wrap trustbar-in">
+      <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>官方渠道货源</span>
+      <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>自动发卡 7×24</span>
+      <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>失败自动退款</span>
+      <span><svg class="tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>工单 2 小时内响应</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 价格页 ==================== -->
+<div class="page" id="page-price">
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">价格</div>
+        <h2>一张表看完所有价格</h2>
+        <p class="lead" style="margin-top:12px">商品是同一个商品，差别只在你的档位。升级后每单省下的钱，都是净利。</p>
+      </div>
+      <table class="matrix num">
+        <thead>
+          <tr>
+            <th style="width:34%">商品</th>
+            <th>普通用户<span class="th-sub">注册即用</span></th>
+            <th class="col-on">代理会员<span class="th-sub th-on">$199 / 年</span></th>
+            <th>超级代理<span class="th-sub">流水满 $3,000</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b style="font-weight:500">ChatGPT Plus 代充</b><span class="p-was">30 天</span></td>
+            <td><span class="p" style="color:var(--ink2)">$15.00</span></td>
+            <td class="col-on"><span class="p">$9.90</span><span class="p-off">省 $5.10</span></td>
+            <td><span class="p">$8.50</span><span class="p-off">省 $6.50</span></td>
+          </tr>
+          <tr>
+            <td><b style="font-weight:500">ChatGPT Pro 5x</b><span class="p-was">30 天</span></td>
+            <td><span class="p" style="color:var(--ink2)">$42.00</span></td>
+            <td class="col-on"><span class="p">$32.00</span><span class="p-off">省 $10.00</span></td>
+            <td><span class="p">$28.00</span><span class="p-off">省 $14.00</span></td>
+          </tr>
+          <tr>
+            <td><b style="font-weight:500">ChatGPT Pro 20x</b><span class="p-was">30 天</span></td>
+            <td><span class="p" style="color:var(--ink2)">$118.00</span></td>
+            <td class="col-on"><span class="p">$98.00</span><span class="p-off">省 $20.00</span></td>
+            <td><span class="p">$88.00</span><span class="p-off">省 $30.00</span></td>
+          </tr>
+          <tr>
+            <td><b style="font-weight:500">GPT 无套餐账号</b><span class="p-was">即将上线</span></td>
+            <td><span class="p" style="color:var(--ink3)">—</span></td>
+            <td class="col-on"><span class="p" style="color:var(--ink3)">待定</span></td>
+            <td><span class="p" style="color:var(--ink3)">待定</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:34px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <a href="#" class="btn btn-solid">升级代理会员 · $199/年</a>
+        <span class="hint">以 Plus 为例，卖 20 单即回本；卖 100 单，一年净省 $510。</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ==================== 代理页 ==================== -->
+<div class="page" id="page-agent">
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">代理</div>
+        <h2>把下单能力接进你的生意</h2>
+        <p class="lead" style="margin-top:12px">你的客户在你的站点下单，我们自动发货。你只管定价和卖，其他环节都不用碰。</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start">
+        <div>
+          <h3 style="margin-bottom:20px">接入 API · 三步</h3>
+          <div class="steps" style="grid-template-columns:1fr;border-top:0">
+            <div class="step" style="padding:0 0 22px">
+              <div class="step-n">01</div>
+              <h3>拿一个 Key</h3>
+              <p class="muted">后台「API 凭证」页自助生成，不用审批。</p>
+            </div>
+            <div class="step" style="padding:0 0 22px">
+              <div class="step-n">02</div>
+              <h3>调用下单接口</h3>
+              <p class="muted">传商品和你的客户单号，余额按代理价扣费。</p>
+            </div>
+            <div class="step" style="padding:0">
+              <div class="step-n">03</div>
+              <h3>拿到卡密</h3>
+              <p class="muted">响应里直接带回卡密，交给你的客户即可。</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="code">
+<span class="c"># 下单并拿卡密（响应对手发给你的客户）</span>
+curl -X POST https://api.example.com/api/open/v1/orders \
+  -H <span class="s">"X-Api-Key: sk_live_xxxxxxxx"</span> \
+  -H <span class="s">"X-Signature: &lt;HMAC-SHA256&gt;"</span> \
+  -d <span class="s">'{
+    "sku": "plus_30d",
+    "client_order_no": "your-order-001"
+  }'</span>
+
+<span class="c"># 返回</span>
+{
+  <span class="k">"card_key"</span>: <span class="s">"KC-XXXX-XXXX-XXXX"</span>,
+  <span class="k">"amount"</span>:   <span class="s">"9.90"</span>,
+  <span class="k">"status"</span>:   <span class="s">"delivered"</span>
+}
+          </div>
+          <p class="hint" style="margin-top:14px">完整的接口清单、签名规则与错误码见《API 接入文档》。</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:64px;padding:34px">
+        <div class="eyebrow" style="margin-bottom:16px">算一下你能赚多少</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:32px" class="num">
+          <div>
+            <div class="hint">你的拿货价</div>
+            <div style="font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:8px">$9.90</div>
+          </div>
+          <div>
+            <div class="hint">市场常见售价</div>
+            <div style="font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:8px;color:var(--ink2)">$18.00</div>
+          </div>
+          <div>
+            <div class="hint">每单净利</div>
+            <div style="font-size:30px;font-weight:600;letter-spacing:-.02em;margin-top:8px;color:var(--save)">$8.10</div>
+          </div>
+        </div>
+        <p class="hint" style="margin-top:20px">按每月 50 单计算，月净利约 $405 —— 会员年费在第 20 单就赚回来了。</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ==================== 订单页 ==================== -->
+<div class="page" id="page-order">
+  <section>
+    <div class="wrap">
+      <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px">
+        <div>
+          <div class="eyebrow">我的订单</div>
+          <h2>卡密在这里，点一下就复制</h2>
+        </div>
+        <a href="#" class="btn btn-text">兑换卡密 →</a>
+      </div>
+
+      <div class="orders">
+        <div class="order">
+          <div>
+            <div class="order-name">ChatGPT Plus 代充 · 30 天</div>
+            <div class="order-no">20261014161039576001</div>
+          </div>
+          <div class="order-amt num">$9.90<span>代理会员价</span></div>
+          <div class="order-act">
+            <span class="pill">已发货</span>
+            <button class="copy" data-copy="KC-7F3A-9E2B-4D51">复制卡密</button>
+          </div>
+        </div>
+        <div class="order">
+          <div>
+            <div class="order-name">ChatGPT Pro 5x 代充 · 30 天</div>
+            <div class="order-no">20261014151006955607</div>
+          </div>
+          <div class="order-amt num">$32.00<span>代理会员价</span></div>
+          <div class="order-act">
+            <span class="pill">已发货</span>
+            <button class="copy" data-copy="KC-2B8C-1A74-6E30">复制卡密</button>
+          </div>
+        </div>
+        <div class="order">
+          <div>
+            <div class="order-name">ChatGPT Plus 代充 · 30 天</div>
+            <div class="order-no">20261014141007071152</div>
+          </div>
+          <div class="order-amt num">$9.90<span>代理会员价</span></div>
+          <div class="order-act">
+            <span class="pill pill-grey">待支付</span>
+            <button class="copy">继续支付</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap foot-in">
+    <span>KC · GPT 代充批发 —— 静态原型 v1.0.0（示例数据，不含真实业务逻辑）</span>
+    <div class="foot-links">
+      <a href="#" data-nav="price">价格</a>
+      <a href="#" data-nav="agent">代理</a>
+      <a href="#">API 文档</a>
+      <a href="#">工单</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+var PRICES = {
+  plus:  { normal: 15.00,  agent: 9.90,  super: 8.50  },
+  pro5:  { normal: 42.00,  agent: 32.00, super: 28.00 },
+  pro20: { normal: 118.00, agent: 98.00, super: 88.00 },
+  raw:   { normal: 6.00,   agent: 3.90,  super: 3.20  }
+};
+var TIER_LABEL = { normal: '普通用户', agent: '代理会员', super: '超级代理' };
+var TIER_TAG   = { normal: '标准零售价', agent: '代理会员价', super: '超级代理价' };
+var ORDER = ['plus', 'pro5', 'pro20', 'raw'];
+var current = 'agent';
+
+function money(n) { return '$' + n.toFixed(2); }
+
+function each(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
+
+function render() {
+  ORDER.forEach(function (sku) {
+    var p = PRICES[sku];
+    var now = p[current];
+    each('[data-price="' + sku + '"]', function (el) {
+      el.textContent = el.hasAttribute('data-bare') ? now.toFixed(2) : money(now);
+    });
+    each('[data-was="' + sku + '"]', function (el) {
+      if (current === 'normal') { el.innerHTML = '<span style="color:var(--ink3)">标准价</span>'; return; }
+      var off = Math.round((1 - now / p.normal) * 100);
+      el.innerHTML = '<s>' + money(p.normal) + '</s><span style="color:var(--save);font-weight:500">省 ' + off + '%</span>';
+    });
+  });
+
+  var heroWas = document.getElementById('heroWas');
+  var heroSave = document.getElementById('heroSave');
+  var heroTag = document.getElementById('heroTag');
+  if (current === 'normal') {
+    heroWas.textContent = '标准零售价';
+    heroSave.style.display = 'none';
+    heroTag.className = 'tag tag-grey';
+  } else {
+    heroWas.textContent = '原价 ' + money(PRICES.plus.normal);
+    heroSave.textContent = '省 ' + Math.round((1 - PRICES.plus[current] / PRICES.plus.normal) * 100) + '%';
+    heroSave.style.display = '';
+    heroTag.className = 'tag';
+  }
+  heroTag.textContent = TIER_TAG[current];
+  var plain = current === 'normal';
+  document.querySelector('.pc-price').classList.toggle('is-plain', plain);
+  document.querySelector('.prods').classList.toggle('is-plain', plain);
+  var tn = document.getElementById('tierName');
+  tn.textContent = TIER_LABEL[current];
+  tn.style.color = plain ? 'var(--ink)' : 'var(--save)';
+  document.getElementById('heroBuy').textContent =
+    current === 'normal' ? '以标准价购买' : '以' + TIER_LABEL[current] + '价购买';
+
+  each('.tier', function (t) {
+    t.classList.toggle('on', t.getAttribute('data-tier') === current);
+  });
+}
+
+document.getElementById('tiers').addEventListener('click', function (e) {
+  var t = e.target.closest ? e.target.closest('.tier') : null;
+  if (!t) return;
+  current = t.getAttribute('data-tier');
+  render();
+});
+
+var PAGES = { home: 'page-home', price: 'page-price', agent: 'page-agent', order: 'page-order' };
+function go(name) {
+  if (!PAGES[name]) name = 'home';
+  var keys = Object.keys(PAGES);
+  for (var i = 0; i < keys.length; i++) {
+    document.getElementById(PAGES[keys[i]]).classList.toggle('on', keys[i] === name);
+  }
+  each('.nav a', function (a) {
+    a.classList.toggle('on', a.getAttribute('data-nav') === name);
+  });
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', function (e) {
+  var a = e.target.closest ? e.target.closest('[data-nav]') : null;
+  if (!a) return;
+  e.preventDefault();
+  go(a.getAttribute('data-nav'));
+});
+
+document.getElementById('themeBtn').addEventListener('click', function () {
+  var html = document.documentElement;
+  var next = html.getAttribute('data-theme') === 'a' ? 'b' : 'a';
+  html.setAttribute('data-theme', next);
+  document.getElementById('themeLabel').textContent = next === 'a' ? '配色 A' : '配色 B';
+});
+
+each('[data-copy]', function (b) {
+  b.addEventListener('click', function () {
+    var v = b.getAttribute('data-copy');
+    var done = function () { var o = b.textContent; b.textContent = '已复制'; setTimeout(function () { b.textContent = o; }, 1400); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(v).then(done, done); }
+      else { done(); }
+    } catch (e) { done(); }
+  });
+});
+
+render();
+</script>
+</body>
+</html>

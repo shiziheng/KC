@@ -76,7 +76,12 @@ class OrderService
                 throw new ApiException(__('The user does not exist'));
             }
 
-            if ($userService->isNotCompleteOrderByUserId($user->id)) {
+                    // KC-PATCH:ALLOW-CONCURRENT-ORDERS —— 允许同时存在多笔未支付/处理中订单（2026-10-13 产品决策）
+        // 原规则：只要存在 status in (0,1) 的订单就禁止再下单（提示「您有未付款或开通中的订单」）。
+        //        该规则与插件侧充值已移除的同类限制口径不一致；套餐不占库存、无防超发价值，
+        //        且待支付订单 30 分钟自动失效，保留它只会挡住正常复购与支付失败后的重开。
+        //        仅放开【用户侧下单】；管理员分配侧（V2/Admin/OrderController）保持原样。
+if (false && $userService->isNotCompleteOrderByUserId($user->id)) {
                 throw new ApiException(__('You have an unpaid or pending order, please try again later or cancel it'));
             }
 

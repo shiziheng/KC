@@ -1,0 +1,564 @@
+<!-- KC-BATCH2-BEGIN · v1.28.0 第二批：钱包流水页 / 订单状态筛选 / 待支付倒计时 / 详情时间线 / 售后入口
+     ⚠️ 本块是【独立的第 4 个 script 块】：custom_html 里的 3 个既有块各自 IIFE，
+        跨块按函数名调用会 ReferenceError，因此本块自带 token 读取与全部工具函数，不依赖任何外部函数。
+     数据来源（全部已实测可用）：
+       GET  /api/v1/user/info                 当前余额
+       GET  /user/kc/ledger?limit=50          余额流水（消费/入账，含 balance_before/after）
+       GET  /user/kc/topup/orders             充值台账（done/pending/overdue，含 balance_after）
+       GET  /api/v1/user/order/fetch          订单列表（含 created_at/paid_at/status）
+       GET  /api/v1/user/order/detail         订单详情
+       GET  /user/kc/card?trade_no=           卡密发放状态
+       GET  /user/kc/status?trade_no=         开通状态（kc_status + updated_at）
+       POST /user/kc/after-sales              提交售后（trade_no/request_type/message）
+-->
+<style>
+    /* ⚠️ 只用主题真实存在的 token（kc_theme_inject 的 :root / body.kc-dark 里定义）：
+       --kc-page-bg / --kc-card-bg / --kc-card-border / --kc-t1 / --kc-t2 / --kc-t3
+       --kc-brand / --kc-green / --kc-red。
+       用错名字（如 --kc-border/--kc-title）只会走 fallback，深色主题下会瞎。 */
+    #kc-wallet-page { position: fixed; inset: 0; z-index: 9994; background: var(--kc-page-bg, #f6f8fa); overflow-y: auto; display: none; flex-direction: column; }
+    #kc-wallet-page.kc-on { display: flex; }
+    .kc-w-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--kc-card-border, #e8edf2); background: var(--kc-card-bg, #fff); }
+    .kc-w-back { background: none; border: 0; font-size: 14px; color: var(--kc-t2, #475569); cursor: pointer; padding: 4px 0; }
+    .kc-w-title { font-size: 16px; font-weight: 600; color: var(--kc-t1, #0f172a); }
+    .kc-w-body { max-width: 720px; margin: 0 auto; padding: 18px; width: 100%; box-sizing: border-box; }
+    .kc-w-bal { background: var(--kc-card-bg, #fff); border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 12px; padding: 18px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .kc-w-bal b { font-size: 28px; color: var(--kc-t1, #0f172a); }
+    .kc-w-bal span { font-size: 12px; color: var(--kc-t2, #475569); }
+    .kc-w-sec { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--kc-t2, #475569); }
+    .kc-w-row { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid var(--kc-card-border, #e8edf2); font-size: 13px; }
+    .kc-w-row .kc-w-t { width: 128px; color: var(--kc-t2, #475569); flex: none; }
+    .kc-w-row .kc-w-k { flex: 1; color: var(--kc-t1, #0f172a); }
+    .kc-w-row .kc-w-a { font-weight: 700; flex: none; }
+    .kc-w-row .kc-w-a.in { color: var(--kc-green, #16a34a); }
+    .kc-w-row .kc-w-a.out { color: var(--kc-red, #ef4444); }
+    .kc-w-row .kc-w-a.dim { color: var(--kc-t2, #475569); font-weight: 400; }
+    .kc-w-row .kc-w-b { width: 88px; text-align: right; color: var(--kc-t2, #475569); flex: none; }
+    .kc-w-empty { padding: 40px 0; text-align: center; font-size: 13px; color: var(--kc-t2, #475569); }
+    /* 订单筛选 tab */
+    #kc-order-tabs { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+    .kc-otab { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--kc-card-border, #e8edf2); background: var(--kc-card-bg, #fff); color: var(--kc-t2, #475569); font-size: 13px; cursor: pointer; }
+    .kc-otab.kc-on { border-color: var(--kc-brand, #0d9488); color: var(--kc-brand, #0d9488); background: var(--kc-brand-soft, rgba(13, 148, 136, .10)); font-weight: 600; }
+    .kc-otab .kc-otab-n { opacity: .75; margin-left: 4px; font-size: 12px; }
+    /* 待支付倒计时 */
+    .kc-countdown { display: inline-block; margin-left: 6px; font-size: 12px; color: #f0a020; }
+    .kc-countdown.kc-dead { color: var(--kc-t3, #94a3b8); }
+    /* 时间线 */
+    .kc-tl { background: var(--kc-card-bg, #fff); border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 12px; padding: 16px 18px; margin: 12px 0; }
+    .kc-tl h4 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--kc-t1, #0f172a); }
+    .kc-tl-item { display: flex; gap: 12px; padding: 8px 0; }
+    .kc-tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: var(--kc-t3, #94a3b8); }
+    .kc-tl-item.done .kc-tl-dot { background: var(--kc-green, #16a34a); }
+    .kc-tl-item.doing .kc-tl-dot { background: #f0a020; }
+    .kc-tl-item.fail .kc-tl-dot { background: var(--kc-red, #ef4444); }
+    .kc-tl-main { flex: 1; font-size: 13px; color: var(--kc-t1, #0f172a); line-height: 1.6; }
+    .kc-tl-main small { display: block; color: var(--kc-t2, #475569); font-size: 12px; }
+    .kc-tl-time { flex: none; font-size: 12px; color: var(--kc-t2, #475569); }
+    .kc-tl-acts { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    /* 售后弹窗 */
+    #kc-as-mask { position: fixed; inset: 0; z-index: 9998; background: rgba(0, 0, 0, .45); display: none; align-items: center; justify-content: center; }
+    #kc-as-mask.kc-on { display: flex; }
+    #kc-as-box { width: 92%; max-width: 420px; background: var(--kc-card-bg, #fff); border-radius: 12px; padding: 18px; }
+    #kc-as-box h4 { margin: 0 0 12px; font-size: 15px; color: var(--kc-t1, #0f172a); }
+    #kc-as-type, #kc-as-msg { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 9px 10px; border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 8px; font-size: 13px; background: var(--kc-card-bg, #fff); color: var(--kc-t1, #0f172a); }
+    #kc-as-msg { min-height: 88px; resize: vertical; }
+    .kc-as-btns { display: flex; gap: 10px; justify-content: flex-end; }
+    .kc-btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--kc-card-border, #e8edf2); background: transparent; color: var(--kc-t2, #475569); }
+    .kc-btn.kc-primary { border: 0; background: var(--kc-brand, #0d9488); color: #fff; font-weight: 600; }
+    .kc-as-tip { font-size: 12px; margin-top: 10px; color: var(--kc-t2, #475569); min-height: 16px; }
+</style>
+<script>
+(function () {
+    'use strict';
+    if (window.__kcBatch2Loaded) { return; }
+    window.__kcBatch2Loaded = true;
+
+    var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
+    var TTL_MS = 30 * 60 * 1000;   // 待支付订单 30 分钟
+
+    function tok() {
+        try {
+            var raw = localStorage.getItem(TOKEN_KEY);
+            if (!raw) { return ''; }
+            var o = JSON.parse(raw);
+            return (o && o.value) ? String(o.value) : '';
+        } catch (e) { return ''; }
+    }
+    function apiGet(p) {
+        var t = tok();
+        if (!t) { return Promise.resolve(null); }
+        return fetch(p, { headers: { 'Authorization': 'Bearer ' + t, 'Accept': 'application/json' }, credentials: 'same-origin' })
+            .then(function (r) { return r.json(); }).catch(function () { return null; });
+    }
+    function apiPost(p, body) {
+        var t = tok();
+        if (!t) { return Promise.resolve(null); }
+        return fetch(p, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + t, 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body || {})
+        }).then(function (r) { return r.json(); }).catch(function () { return null; });
+    }
+    function fmt(c) { var n = Number(c || 0); return (n < 0 ? '-$' : '$') + (Math.abs(n) / 100).toFixed(2); }
+    function ts(s) {
+        var n = Number(s || 0);
+        if (!n) { return '—'; }
+        var d = new Date(n * 1000), p = function (x) { return x < 10 ? '0' + x : '' + x; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+    function parseTime(s) {
+        var m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (!m) { return 0; }
+        return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+    }
+    // ⚠️ Xboard 是 hash 路由，未知路由会被重写成 #/404 —— 所以不能只认 location.hash。
+    //    策略：① 点击入口时用 pushState 直接进 #/wallet（不触发 Vue router，不会被重写）
+    //          ② 直接访问 / 刷新时记住「曾出现 #/wallet」，重写成 #/404 后仍判定为钱包页
+    //          ③ 一旦跳到其它已知路由，立刻清除意图并关闭钱包
+    var walletMode = false;      // 钱包页由我们接管显示中
+    var walletShown = false;     // 本轮是否已渲染（防 MutationObserver 自触发无限重绘）
+    var sawWalletHash = (function () {
+        try {
+            if ((window.location.hash || '').indexOf('#/wallet') === 0) { return true; }
+            return sessionStorage.getItem('kc_wallet_intent') === '1';
+        } catch (e) { return (window.location.hash || '').indexOf('#/wallet') === 0; }
+    })();
+
+    function isWallet() {
+        var h = window.location.hash || '';
+        if (h.indexOf('#/wallet') === 0) { return true; }
+        if (h.indexOf('#/404') === 0) { return walletMode || sawWalletHash; }
+        return false;
+    }
+    function noteHash() {
+        var h = window.location.hash || '';
+        if (h.indexOf('#/wallet') === 0) {
+            sawWalletHash = true;
+            try { sessionStorage.setItem('kc_wallet_intent', '1'); } catch (e) { }
+            return;
+        }
+        if (h.indexOf('#/404') !== 0) {
+            sawWalletHash = false; walletMode = false;
+            try { sessionStorage.removeItem('kc_wallet_intent'); } catch (e) { }
+        }
+    }
+    function goWallet(e) {
+        if (e) {
+            if (e.preventDefault) { e.preventDefault(); }
+            if (e.stopPropagation) { e.stopPropagation(); }
+        }
+        try { history.pushState(null, '', '#/wallet'); } catch (err) { }
+        sawWalletHash = true;
+        openWallet();
+    }
+    function isOrderList() { var h = window.location.hash || ''; return h === '#/order' || h.indexOf('#/order?') === 0; }
+    function detailNo() {
+        var m = (window.location.hash || '').match(/^#\/order\/([A-Za-z0-9_-]+)$/);
+        return m ? m[1] : '';
+    }
+
+    // ==================== A. 钱包流水页 ====================
+    var ORDERS = null;
+    function loadOrders() {
+        if (ORDERS) { return Promise.resolve(ORDERS); }
+        return apiGet('/api/v1/user/order/fetch').then(function (j) {
+            ORDERS = (j && j.data) || [];
+            return ORDERS;
+        });
+    }
+
+    function walletEl() {
+        var p = document.getElementById('kc-wallet-page');
+        if (p) { return p; }
+        p = document.createElement('div');
+        p.id = 'kc-wallet-page';
+        p.innerHTML = '<div class="kc-w-head">' +
+            '<button class="kc-w-back" type="button" data-kcw="back">← 返回</button>' +
+            '<span class="kc-w-title">账户余额</span></div>' +
+            '<div class="kc-w-body" id="kc-w-body"><div class="kc-w-empty">加载中…</div></div>';
+        document.body.appendChild(p);
+        p.addEventListener('click', function (e) {
+            var b = e.target && e.target.closest ? e.target.closest('[data-kcw]') : null;
+            if (!b) { return; }
+            if (b.getAttribute('data-kcw') === 'back') { closeWallet(); try { history.back(); } catch (err) { } }
+        });
+        return p;
+    }
+    function closeWallet() {
+        walletMode = false;
+        walletShown = false;
+        var p = document.getElementById('kc-wallet-page');
+        if (p) { p.classList.remove('kc-on'); }
+    }
+    function openWallet() {
+        var p = walletEl();
+        p.classList.add('kc-on');
+        walletMode = true;
+        if (walletShown) { return; }   // 已渲染过，别被 MutationObserver 反复触发重绘
+        walletShown = true;
+        renderWallet();
+    }
+    function renderWallet() {
+        var body = document.getElementById('kc-w-body');
+        if (!body) { return; }
+        body.innerHTML = '<div class="kc-w-empty">加载中…</div>';
+        Promise.all([
+            apiGet('/api/v1/user/info'),
+            apiGet('/user/kc/ledger?limit=50'),
+            apiGet('/user/kc/topup/orders')
+        ]).then(function (rs) {
+            var info = (rs[0] && rs[0].data) || {};
+            var entries = ((rs[1] && rs[1].data && rs[1].data.entries) || []);
+            var tops = ((rs[2] && rs[2].data && rs[2].data.orders) || []);
+
+            var seen = {};
+            var items = [];
+            entries.forEach(function (e) {
+                if (e.trade_no) { seen[e.trade_no] = 1; }
+                items.push({
+                    t: e.created_at, dir: Number(e.amount) < 0 ? 'out' : 'in',
+                    k: e.type_cn || (Number(e.amount) < 0 ? '订单扣款' : '入账'),
+                    a: Math.abs(Number(e.amount) || 0), b: e.balance_after, no: e.trade_no || '', st: 'ok'
+                });
+            });
+            // 台账 status 实测取值：done / pending / overdue / failed
+            // ⚠️ 只有 done 才是真实入账（绿色 +）；其余都没有改变余额，必须中性灰、不带 + 号，
+            //    否则「充值已失效 +$14.00」会让人误以为钱到账了。
+            var TOP_LABEL = { pending: '充值待支付', overdue: '充值已超时', failed: '充值失败' };
+            tops.forEach(function (o) {
+                if (o.trade_no && seen[o.trade_no]) { return; }   // 已由流水记账 → 不重复
+                var done = (o.status === 'done');
+                items.push({
+                    t: (done ? (o.paid_at || o.created_at) : o.created_at),
+                    dir: done ? 'in' : 'flat',
+                    k: done ? '充值到账' : (TOP_LABEL[o.status] || '充值未完成'),
+                    a: Number(o.amount) || 0, b: done ? o.balance_after : null,
+                    no: o.trade_no || '', st: done ? 'ok' : 'dead',
+                    memo: done ? '' : (o.error_msg || '')
+                });
+            });
+            items.sort(function (x, y) { return (Number(y.t) || 0) - (Number(x.t) || 0); });
+
+            var html = '<div class="kc-w-bal"><div><span>当前余额</span><br><b>' + fmt(info.balance) + '</b></div>' +
+                '<span>共 ' + items.length + ' 条记录</span></div>';
+            html += '<div class="kc-w-sec">余额明细</div>';
+            if (!items.length) {
+                html += '<div class="kc-w-empty">还没有余额变动记录。<br>充值到账或下单消费后，这里会逐条记录。</div>';
+            } else {
+                items.forEach(function (it) {
+                    var cls = it.dir === 'out' ? 'out' : (it.dir === 'in' ? 'in' : 'dim');
+                    var sign = it.dir === 'out' ? '-' : (it.dir === 'in' ? '+' : '');
+                    var dim = it.st !== 'ok' ? ' style="opacity:.72;"' : '';
+                    var sub = esc(it.no || '') + (it.memo ? ' · ' + esc(it.memo) : '');
+                    html += '<div class="kc-w-row"' + dim + '>' +
+                        '<span class="kc-w-t">' + esc(ts(it.t)) + '</span>' +
+                        '<span class="kc-w-k">' + esc(it.k) + (sub ? '<br><small style="opacity:.65;font-size:11px;">' + (it.no ? '单号 ' : '') + sub + '</small>' : '') + '</span>' +
+                        '<span class="kc-w-a ' + cls + '">' + sign + fmt(it.a) + '</span>' +
+                        '<span class="kc-w-b">' + (it.b == null ? '—' : fmt(it.b)) + '</span></div>';
+                });
+            }
+            body.innerHTML = html;
+        }).catch(function () {
+            body.innerHTML = '<div class="kc-w-empty">加载失败，请稍后重试。</div>';
+        });
+    }
+
+    // ==================== B. 订单状态筛选 tab ====================
+    function statusClass(rowText) {
+        var s = String(rowText || '');
+        if (/待支付/.test(s)) { return 'pending'; }
+        if (/已完成|已开通|已发货/.test(s)) { return 'done'; }
+        if (/已取消|已关闭|已失效|已退款|已折抵/.test(s)) { return 'closed'; }
+        return 'other';
+    }
+    function buildOrderTabs() {
+        if (document.getElementById('kc-order-tabs')) { return; }
+        var rows = document.querySelectorAll('tbody tr');
+        if (!rows.length) { return; }
+        var anchor = rows[0].closest('table') || rows[0].closest('.n-data-table');
+        if (!anchor) { return; }
+        var host = anchor.parentElement;
+        if (!host) { return; }
+        var bar = document.createElement('div');
+        bar.id = 'kc-order-tabs';
+        bar.innerHTML = '<button class="kc-otab kc-on" type="button" data-kcot="all">全部</button>' +
+            '<button class="kc-otab" type="button" data-kcot="pending">待支付</button>' +
+            '<button class="kc-otab" type="button" data-kcot="done">已完成</button>' +
+            '<button class="kc-otab" type="button" data-kcot="closed">已关闭</button>';
+        host.insertBefore(bar, anchor);
+        bar.addEventListener('click', function (e) {
+            var b = e.target && e.target.closest ? e.target.closest('[data-kcot]') : null;
+            if (!b) { return; }
+            var k = b.getAttribute('data-kcot');
+            Array.prototype.forEach.call(bar.children, function (x) { x.classList.toggle('kc-on', x === b); });
+            Array.prototype.forEach.call(document.querySelectorAll('tbody tr'), function (tr) {
+                var tds = tr.querySelectorAll('td');
+                var st = tds.length > 3 ? statusClass(tds[3].textContent) : 'other';
+                tr.style.display = (k === 'all' || st === k) ? '' : 'none';
+            });
+            // 空态兜底：筛选后若无可见行，提示一句
+            var empty = document.getElementById('kc-order-empty');
+            var vis = 0;
+            Array.prototype.forEach.call(document.querySelectorAll('tbody tr'), function (tr) { if (tr.style.display !== 'none') { vis++; } });
+            if (!vis) {
+                if (!empty) {
+                    empty = document.createElement('div');
+                    empty.id = 'kc-order-empty';
+                    empty.style.cssText = 'padding:28px 0;text-align:center;font-size:13px;opacity:.7;';
+                    host.insertBefore(empty, anchor);
+                }
+                empty.textContent = '该状态下暂无订单。';
+                empty.style.display = '';
+            } else if (empty) { empty.style.display = 'none'; }
+        });
+        paintTabCounts();
+    }
+    function paintTabCounts() {
+        var bar = document.getElementById('kc-order-tabs');
+        if (!bar) { return; }
+        var n = { all: 0, pending: 0, done: 0, closed: 0, other: 0 };
+        Array.prototype.forEach.call(document.querySelectorAll('tbody tr'), function (tr) {
+            var tds = tr.querySelectorAll('td');
+            var k = tds.length > 3 ? statusClass(tds[3].textContent) : 'other';
+            n[k]++; n.all++;
+        });
+        Array.prototype.forEach.call(bar.children, function (b) {
+            var k = b.getAttribute('data-kcot');
+            var label = { all: '全部', pending: '待支付', done: '已完成', closed: '已关闭' }[k];
+            b.innerHTML = esc(label) + '<span class="kc-otab-n">' + (n[k] || 0) + '</span>';
+        });
+    }
+
+    // ==================== C. 待支付倒计时 ====================
+    var tick = null;
+    function paintCountdown() {
+        var rows = document.querySelectorAll('tbody tr');
+        var any = false;
+        Array.prototype.forEach.call(rows, function (tr) {
+            var tds = tr.querySelectorAll('td');
+            if (tds.length < 5) { return; }
+            if (statusClass(tds[3].textContent) !== 'pending') { return; }
+            any = true;
+            var created = parseTime(tds[4].textContent);
+            var el = tds[3].querySelector('.kc-countdown');
+            if (!el) {
+                el = document.createElement('span');
+                el.className = 'kc-countdown';
+                tds[3].appendChild(el);
+            }
+            if (!created) { el.textContent = ''; return; }
+            var left = created + TTL_MS - Date.now();
+            if (left <= 0) {
+                el.className = 'kc-countdown kc-dead';
+                el.textContent = ' 已超时';
+                // 超时后不再提供继续支付
+                Array.prototype.forEach.call(tds[5] ? tds[5].querySelectorAll('a,button') : [], function (a) {
+                    if (/继续支付|去支付|支付/.test(a.textContent || '')) { a.style.display = 'none'; }
+                });
+            } else {
+                var m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+                el.className = 'kc-countdown';
+                el.textContent = ' 剩 ' + m + ':' + (s < 10 ? '0' + s : s);
+            }
+        });
+        if (any && !tick) { tick = setInterval(paintCountdown, 1000); }
+        if (!any && tick) { clearInterval(tick); tick = null; }
+    }
+
+    // ==================== D. 详情时间线 + E. 售后入口 ====================
+    // ⚠️ 详情页有两套 DOM：已发卡订单有 #kc-activate-card（代充开通卡），
+    //    待支付 / 已取消订单没有 —— 必须两套锚点，否则时间线在待支付单上不出现。
+    function tlAnchor() {
+        var act = document.getElementById('kc-activate-card');
+        if (act && act.parentNode) { return { host: act, mode: 'after' }; }
+        var badge = document.getElementById('kc-status-text');
+        if (badge) {
+            var c = badge;
+            for (var i = 0; i < 6 && c; i++) {
+                if (c.classList && String(c.className).indexOf('kc-') === 0 && c.parentElement && c.parentElement.tagName === 'BODY') { return { host: c, mode: 'after' }; }
+                c = c.parentElement;
+            }
+        }
+        // 兜底：挂到详情页内容区（SECTION.cus-scroll-y）末尾
+        var sec = document.querySelector('#app section.cus-scroll-y');
+        if (sec) { return { host: sec, mode: 'append' }; }
+        return null;
+    }
+    function buildDetail() {
+        var no = detailNo();
+        if (!no) { return; }
+        if (document.getElementById('kc-tl-card')) { return; }
+        var a = tlAnchor();
+        if (!a) { return; }
+        var card = document.createElement('div');
+        card.className = 'kc-tl';
+        card.id = 'kc-tl-card';
+        card.innerHTML = '<h4>订单进度</h4><div id="kc-tl-list"><div style="font-size:13px;opacity:.7;">加载中…</div></div>' +
+            '<div class="kc-tl-acts">' +
+            '<button class="kc-btn" type="button" data-kctl="as">申请售后</button>' +
+            '<button class="kc-btn" type="button" data-kctl="ticket">联系客服</button></div>';
+        if (a.mode === 'append') { a.host.appendChild(card); }
+        else { a.host.parentNode.insertBefore(card, a.host.nextSibling); }
+        card.addEventListener('click', function (e) {
+            var b = e.target && e.target.closest ? e.target.closest('[data-kctl]') : null;
+            if (!b) { return; }
+            if (b.getAttribute('data-kctl') === 'ticket') { try { window.location.hash = '#/ticket'; } catch (err) { } }
+            else { openAfterSales(no); }
+        });
+        renderTimeline(no);
+    }
+    function renderTimeline(no) {
+        var box = document.getElementById('kc-tl-list');
+        if (!box) { return; }
+        Promise.all([
+            apiGet('/api/v1/user/order/detail?trade_no=' + encodeURIComponent(no)),
+            apiGet('/user/kc/status?trade_no=' + encodeURIComponent(no))
+        ]).then(function (rs) {
+            var o = (rs[0] && rs[0].data) || {};
+            var s = (rs[1] && rs[1].data) || {};
+            var paid = Number(o.paid_at || 0);
+            var created = Number(o.created_at || 0);
+            var issued = !!s.issued;
+            var kc = s.kc_status || 'pending';
+            var kcDone = (kc === 'completed');
+            var kcFail = (kc === 'failed');
+
+            var n1 = { k: '已下单', st: created ? 'done' : '', t: created ? ts(created) : '—', d: '订单已创建' };
+            var n2 = paid
+                ? { k: '已支付', st: 'done', t: ts(paid), d: '支付方式：' + (Number(o.balance_amount) > 0 ? '账户余额' : 'USDT') }
+                : { k: '待支付', st: 'doing', t: '—', d: '订单尚未支付，30 分钟后自动失效' };
+            var n3 = issued
+                ? { k: '卡密已发放', st: 'done', t: '—', d: '可在订单详情复制卡密去开通' }
+                : { k: '待发放卡密', st: '', t: '—', d: '支付完成后系统自动发放' };
+            var n4;
+            if (kcDone) { n4 = { k: '开通完成', st: 'done', t: s.updated_at ? ts(s.updated_at) : '—', d: 'ChatGPT 权益已开通' }; }
+            else if (kcFail) { n4 = { k: '开通失败', st: 'fail', t: s.updated_at ? ts(s.updated_at) : '—', d: '可申请售后处理' }; }
+            else if (kc === 'running') { n4 = { k: '开通中', st: 'doing', t: '—', d: s.message || '正在为你开通…' }; }
+            else { n4 = { k: '待开通', st: '', t: '—', d: s.message || '拿到卡密后去兑卡页完成开通' }; }
+
+            var html = '';
+            [n1, n2, n3, n4].forEach(function (n) {
+                html += '<div class="kc-tl-item ' + (n.st || '') + '"><span class="kc-tl-dot"></span>' +
+                    '<div class="kc-tl-main">' + esc(n.k) + '<small>' + esc(n.d) + '</small></div>' +
+                    '<span class="kc-tl-time">' + esc(n.t) + '</span></div>';
+            });
+            box.innerHTML = html;
+        }).catch(function () {
+            box.innerHTML = '<div style="font-size:13px;opacity:.7;">进度加载失败。</div>';
+        });
+    }
+    function openAfterSales(no) {
+        var mask = document.getElementById('kc-as-mask');
+        if (!mask) {
+            mask = document.createElement('div');
+            mask.id = 'kc-as-mask';
+            mask.innerHTML = '<div id="kc-as-box"><h4>申请售后</h4>' +
+                '<select id="kc-as-type">' +
+                '<option value="failed">开通失败</option>' +
+                '<option value="timeout">超时未到账</option>' +
+                '<option value="refund">申请退款</option>' +
+                '<option value="other">其他问题</option></select>' +
+                '<textarea id="kc-as-msg" placeholder="请说明遇到的问题（订单号已自动带上：' + esc(no) + '）"></textarea>' +
+                '<div class="kc-as-btns"><button class="kc-btn" type="button" data-kcas="cancel">取消</button>' +
+                '<button class="kc-btn kc-primary" type="button" data-kcas="submit">提交</button></div>' +
+                '<div class="kc-as-tip" id="kc-as-tip"></div></div>';
+            document.body.appendChild(mask);
+            mask.addEventListener('click', function (e) {
+                var b = e.target && e.target.closest ? e.target.closest('[data-kcas]') : null;
+                if (!b) { return; }
+                if (b.getAttribute('data-kcas') === 'cancel') { mask.classList.remove('kc-on'); return; }
+                var msg = (document.getElementById('kc-as-msg') || {}).value || '';
+                var type = (document.getElementById('kc-as-type') || {}).value || 'other';
+                var tip = document.getElementById('kc-as-tip');
+                if (!msg.trim()) { if (tip) { tip.textContent = '请填写问题描述'; } return; }
+                b.disabled = true;
+                if (tip) { tip.textContent = '提交中…'; }
+                apiPost('/user/kc/after-sales', { trade_no: no, request_type: type, message: msg }).then(function (j) {
+                    b.disabled = false;
+                    if (j && j.status === 'success') {
+                        if (tip) { tip.textContent = '已提交，客服会尽快处理。'; }
+                        setTimeout(function () { mask.classList.remove('kc-on'); }, 1200);
+                    } else {
+                        if (tip) { tip.textContent = '提交失败：' + ((j && j.message) || '请稍后重试'); }
+                    }
+                });
+            });
+        }
+        var cur = mask.getAttribute('data-no');
+        if (cur !== no) {
+            mask.setAttribute('data-no', no);
+            var m = document.getElementById('kc-as-msg');
+            if (m) { m.value = ''; }
+            var t2 = document.getElementById('kc-as-tip');
+            if (t2) { t2.textContent = ''; }
+        }
+        mask.classList.add('kc-on');
+    }
+
+    // ==================== 路由驱动 + 观察器 ====================
+    function syncRoute() {
+        noteHash();
+        if (isWallet()) { openWallet(); }
+        else { closeWallet(); }
+        var m = document.getElementById('kc-as-mask');
+        if (m) { m.classList.remove('kc-on'); }
+        if (isOrderList()) { buildOrderTabs(); paintTabCounts(); paintCountdown(); }
+        if (detailNo()) { buildDetail(); }
+    }
+    var pend = null;
+    function schedule() {
+        if (pend) { return; }
+        pend = setTimeout(function () { pend = null; syncRoute(); }, 300);
+    }
+    window.addEventListener('hashchange', function () { noteHash(); schedule(); });
+    // 浏览器前进/后退也会改 hash（popstate），同样记一次意图
+    window.addEventListener('popstate', function () { noteHash(); schedule(); });
+    try {
+        new MutationObserver(function () {
+            if (!isWallet() && !isOrderList() && !detailNo()) { return; }
+            schedule();
+        }).observe(document.body, { childList: true, subtree: true });
+    } catch (e) { }
+    setTimeout(syncRoute, 800);
+    setTimeout(syncRoute, 2500);
+
+    // ==================== 入口：顶栏余额 / 抽屉余额 → #/wallet ====================
+    // 捕获阶段全局拦截：任何 href="#/wallet" 的链接都不交给 Vue router，
+    // 否则 Xboard 会把未知路由重写成 #/404，钱包页永远出不来。
+    document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[href="#/wallet"], [data-kc-wallet]') : null;
+        if (!a) { return; }
+        goWallet(e);
+    }, true);
+
+    function bindEntries() {
+        try {
+            var b = document.getElementById('kc-tb-balance');
+            if (b && b.getAttribute('href') !== '#/wallet') {
+                b.setAttribute('href', '#/wallet');
+                b.setAttribute('title', '账户余额，点击查看余额明细');
+            }
+            var d = document.getElementById('kc-drawer-bal');
+            if (d && !d.getAttribute('data-kcw-bound')) {
+                d.setAttribute('data-kcw-bound', '1');
+                d.style.cursor = 'pointer';
+                var host = d.closest('.kc-drawer-bal') || d.parentElement;
+                if (host) {
+                    host.setAttribute('data-kc-wallet', '1');
+                    host.style.cursor = 'pointer';
+                }
+            }
+        } catch (e) { }
+    }
+    setInterval(bindEntries, 1500);
+    bindEntries();
+    setTimeout(syncRoute, 60);
+})();
+</script>
+<!-- KC-BATCH2-END -->
