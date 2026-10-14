@@ -137,6 +137,19 @@ if (false && $userService->isNotCompleteOrderByUserId($user->id)) {
 
             HookManager::call('order.open.before', $order);
 
+            // KC-PATCH:ENTITLEMENT-PACK —— 权益包商品（v2_plan.kc_card.category='entitlement'）
+            // 只把订单推进到 COMPLETED，**不进入订阅开通链路**：
+            //   权益包不是订阅，绝不能覆写用户的 plan_id / expired_at，
+            //   也不应产生流量重置、限速、设备数等副作用。
+            //   真正的权益发放由 KcIntegration 插件在 order.open.after 钩子里调 KC 集成端点完成。
+            if ($this->kcIsEntitlementPlan((int) $order->plan_id)) {
+                $order->status = Order::STATUS_COMPLETED;
+                if (!$order->save()) {
+                    throw new \RuntimeException('订单信息保存失败');
+                }
+                return $order;
+            }
+
             $this->user = User::lockForUpdate()->find($order->user_id);
 
             if ($order->surplus_credit) {
@@ -312,6 +325,30 @@ if (false && $userService->isNotCompleteOrderByUserId($user->id)) {
             return max(0, (int) admin_setting('kc_topup_commission_rate', 0));
         } catch (\Throwable $e) {
             return 0;
+        }
+    }
+
+    /**
+     * KC-PATCH：判断是否为「权益包」商品（v2_plan.kc_card.category='entitlement'）。
+     * 任何异常都返回 false（降级放行），确保不因配置缺失而中断正常履约。
+     */
+    private function kcIsEntitlementPlan(int $planId): bool
+    {
+        if ($planId <= 0) {
+            return false;
+        }
+        try {
+            $raw = \Illuminate\Support\Facades\DB::table('v2_plan')->where('id', $planId)->value('kc_card');
+            if (empty($raw)) {
+                return false;
+            }
+            $card = is_string($raw) ? json_decode($raw, true) : (is_array($raw) ? $raw : null);
+            if (!is_array($card)) {
+                return false;
+            }
+            return (string) ($card['category'] ?? '') === 'entitlement';
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 

@@ -21,7 +21,10 @@
        9. order 页表格卡片化 + 状态语义着色（按行内状态文本匹配，MutationObserver 保活）
        10. S4 机场字段过滤器：订单/列表/个人中心/菜单的机场字段屏蔽与代充化 + node/traffic 路由拦截（v1.22.0 · SP-2026-10-12-v1.1.0）
      路由映射（_recon-xb3.js 逐项点击实测）：
-       权益包→#/plan 订单→#/order（首页由左上 logo 承担，2026-10-14 Step 4：导航 5→4）
+       代充→#/plan 权益包→#/pack 我的订单→#/order（首页由左上 logo 承担）
+       ⚠️ 2026-10-15 纠偏：权益包 ≠ 代充。代充照旧（#/plan 三个分类页签：代充/成品号/建站服务）；
+          权益包是独立页（#/pack，买后让代充更便宜），点「权益包」绝不进代充流程。
+          「成品号」必须保留为分类页签 —— 商品页无页内分类切换 UI，脱离页签即不可达。
        个人中心→#/profile 邀请→#/invite 工单→#/ticket
        文档→#/knowledge 节点→#/node 流量→#/traffic
      充值/兑卡：程序化 click #kc-float-topup / #kc-float-redeem
@@ -1084,7 +1087,8 @@
               '<span class="kc-tb-logo-text">KC 直供</span>' +
             '</a>' +
             '<nav class="kc-tb-nav">' +
-              '<a href="#/plan" data-route="#/plan" data-cat="recharge">权益包</a>' +
+              '<a href="#/plan" data-route="#/plan" data-cat="recharge">代充</a>' +
+              '<a href="#/pack" data-route="#/pack" data-pack="1">权益包</a>' +
               '<a href="#/order" data-route="#/order">我的订单</a>' +
             '</nav>' +
             '<div class="kc-tb-right">' +
@@ -1115,7 +1119,8 @@
           '<div class="kc-drawer-bal"><span>账户余额</span><b id="kc-drawer-bal">--</b></div>' +
           '<div class="kc-drawer-cap">导航</div>' +
           '<nav class="kc-drawer-nav">' +
-            '<a href="#/plan" data-route="#/plan" data-cat="recharge">权益包</a>' +
+            '<a href="#/plan" data-route="#/plan" data-cat="recharge">代充</a>' +
+            '<a href="#/pack" data-route="#/pack" data-pack="1">权益包</a>' +
             '<a href="#/order" data-route="#/order">我的订单</a>' +
             '<button type="button" data-action="topup">充值</button>' +
             '<div class="kc-drawer-cap">更多功能</div>' +
@@ -3207,6 +3212,16 @@ function closeRechargePage() {
         var links = document.querySelectorAll('#kc-topbar [data-route], #kc-drawer [data-route]');
         for (var i = 0; i < links.length; i++) {
             var a = links[i];
+            // 权益包入口 = 独立页 #/pack（非商品页分类）。既认 #/pack，也认「#/404 + 意图」：
+            // 跨块铁律 —— 不能调用 Block B 的 isPack()，只能读 sessionStorage 意图（跨块唯一安全通道）
+            if (a.getAttribute('data-pack')) {
+                var packOn = h.indexOf('#/pack') === 0;
+                if (!packOn && h.indexOf('#/404') === 0) {
+                    try { packOn = sessionStorage.getItem('kc_pack_intent') === '1'; } catch (eP) { packOn = false; }
+                }
+                a.classList.toggle('kc-active', packOn);
+                continue;
+            }
             // 分类页签（代充/成品号/建站服务）都指向 #/plan：按当前分类决定是否高亮
             if (a.getAttribute('data-cat')) {
                 a.classList.toggle('kc-active', h.indexOf('#/plan') === 0 && a.getAttribute('data-cat') === curCat);
@@ -3318,6 +3333,11 @@ function closeRechargePage() {
                 closeDrawer();
             }
             syncActive();
+        }
+        // 权益包独立页入口（#/pack）：本块不掌握 Block B 的页面状态机，
+        // 只需在点击后同步一次高亮（页面接管由 Block B 的捕获监听负责）。
+        if (e.target.closest && e.target.closest('#kc-topbar a[data-pack], #kc-drawer a[data-pack]')) {
+            setTimeout(syncActive, 0);
         }
         // R3：游客顶栏锚点滚动（hash router 环境不能用 href="#id" 锚点）
         var sc = e.target.closest('[data-scroll]');
@@ -3739,6 +3759,33 @@ function closeRechargePage() {
     .kc-btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--kc-card-border, #e8edf2); background: transparent; color: var(--kc-t2, #475569); }
     .kc-btn.kc-primary { border: 0; background: var(--kc-brand, #00A862); color: #fff; font-weight: 600; }
     .kc-as-tip { font-size: 12px; margin-top: 10px; color: var(--kc-t2, #475569); min-height: 16px; }
+    /* ===== 权益包独立页（#kc-pack-page）—— 与钱包页同构，颜色一律走主题 token ===== */
+    #kc-pack-page { position: fixed; inset: 0; z-index: 9993; background: var(--kc-page-bg, #f6f8fa); overflow-y: auto; display: none; flex-direction: column; }
+    #kc-pack-page.kc-on { display: flex; }
+    .kc-p-body { max-width: 880px; margin: 0 auto; padding: 18px; width: 100%; box-sizing: border-box; }
+    .kc-p-hero { background: var(--kc-card-bg, #fff); border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 12px; padding: 18px; }
+    .kc-p-hero h3 { margin: 0 0 8px; font-size: 17px; color: var(--kc-t1, #0f172a); }
+    .kc-p-hero p { margin: 0; font-size: 13px; color: var(--kc-t2, #475569); line-height: 1.75; }
+    .kc-p-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 14px; }
+    .kc-p-card { background: var(--kc-card-bg, #fff); border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; }
+    .kc-p-card.kc-hot { border-color: var(--kc-brand, #00A862); }
+    .kc-p-name { font-size: 15px; font-weight: 600; color: var(--kc-t1, #0f172a); }
+    .kc-p-tag { font-size: 12px; color: var(--kc-t2, #475569); margin-top: 5px; min-height: 17px; }
+    .kc-p-price { font-size: 30px; font-weight: 700; color: var(--kc-t1, #0f172a); margin: 14px 0 2px; }
+    .kc-p-per { font-size: 12px; color: var(--kc-t2, #475569); }
+    .kc-p-feats { list-style: none; padding: 0; margin: 14px 0; font-size: 13px; color: var(--kc-t2, #475569); }
+    .kc-p-feats li { padding: 5px 0 5px 20px; position: relative; }
+    .kc-p-feats li::before { content: '·'; position: absolute; left: 6px; color: var(--kc-green, #16a34a); font-weight: 700; }
+    .kc-p-btn { margin-top: auto; width: 100%; padding: 11px 0; border-radius: 9px; border: 0; background: var(--kc-brand, #00A862); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .kc-p-btn:disabled { opacity: .55; cursor: not-allowed; }
+    .kc-p-sec { margin: 22px 0 10px; font-size: 13px; font-weight: 600; color: var(--kc-t2, #475569); }
+    .kc-p-grant { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 10px; background: var(--kc-card-bg, #fff); margin-bottom: 8px; font-size: 13px; color: var(--kc-t1, #0f172a); }
+    .kc-p-grant .kc-p-gr-l { flex: 1; }
+    .kc-p-grant .kc-p-gr-l small { display: block; color: var(--kc-t2, #475569); font-size: 12px; margin-top: 3px; }
+    .kc-p-grant b { color: var(--kc-green, #16a34a); font-size: 17px; }
+    .kc-p-empty { padding: 26px 0; text-align: center; font-size: 13px; color: var(--kc-t2, #475569); }
+    .kc-p-tip { font-size: 12px; color: var(--kc-t2, #475569); margin-top: 10px; min-height: 16px; line-height: 1.7; }
+    .kc-p-faq { background: var(--kc-card-bg, #fff); border: 1px solid var(--kc-card-border, #e8edf2); border-radius: 12px; padding: 4px 16px; margin-top: 14px; }
 </style>
 <script>
 (function () {
@@ -3810,6 +3857,7 @@ function closeRechargePage() {
         return false;
     }
     function noteHash() {
+        notePackHash();
         var h = window.location.hash || '';
         if (h.indexOf('#/wallet') === 0) {
             sawWalletHash = true;
@@ -3939,6 +3987,217 @@ function closeRechargePage() {
             body.innerHTML = html;
         }).catch(function () {
             body.innerHTML = '<div class="kc-w-empty">加载失败，请稍后重试。</div>';
+        });
+    }
+
+    // ==================== A2. 权益包独立页（#/pack） ====================
+    // 与钱包页（#/wallet）完全同构的接管范式：
+    //   ① 点击入口用 pushState 直接进 #/pack（不触发 Vue router，不会被重写成 #/404）
+    //   ② 直接访问 / 刷新时被重写成 #/404，靠 sessionStorage 意图继续判定为权益包页
+    //   ③ 跳到其它已知路由 → 清除意图并关闭本页
+    //
+    // ⚠️ 产品铁律：权益包 ≠ 代充。买权益包**绝不进入代充开通向导**——
+    //    本页只做「余额扣减开通（下单→余额全额抵扣→推进履约发权益）」，
+    //    代充照旧走原来的下单与开通流程，只是价格会自动取「权益价 vs 原价」中的低者。
+    var packMode = false;      // 权益包页由我们接管显示中
+    var packShown = false;     // 本轮是否已渲染（防 MutationObserver 自触发无限重绘）
+    var packFlashMsg = '';     // 重绘后要继续显示的一次性提示（如「开通成功」）
+    var packSeq = 0;           // 渲染序号：并发重绘时只认最新一次，避免旧结果覆盖新提示
+    var sawPackHash = (function () {
+        try {
+            if ((window.location.hash || '').indexOf('#/pack') === 0) { return true; }
+            return sessionStorage.getItem('kc_pack_intent') === '1';
+        } catch (e) { return (window.location.hash || '').indexOf('#/pack') === 0; }
+    })();
+
+    function isPack() {
+        var h = window.location.hash || '';
+        if (h.indexOf('#/pack') === 0) { return true; }
+        if (h.indexOf('#/404') === 0) { return packMode || sawPackHash; }
+        return false;
+    }
+    function notePackHash() {
+        var h = window.location.hash || '';
+        if (h.indexOf('#/pack') === 0) {
+            sawPackHash = true;
+            try { sessionStorage.setItem('kc_pack_intent', '1'); } catch (e) { }
+            return;
+        }
+        if (h.indexOf('#/404') !== 0) {
+            sawPackHash = false; packMode = false;
+            try { sessionStorage.removeItem('kc_pack_intent'); } catch (e) { }
+        }
+    }
+    // ⚠️ 刻意**不** stopPropagation：让事件继续冒泡，Block A 的「抽屉内路由链接点击后收起抽屉」
+    //    才能生效（跨块不能直调 closeDrawer，只能借事件冒泡）。
+    function goPack(e) {
+        if (e && e.preventDefault) { e.preventDefault(); }
+        try { history.pushState(null, '', '#/pack'); } catch (err) { }
+        sawPackHash = true;
+        try { sessionStorage.setItem('kc_pack_intent', '1'); } catch (e2) { }
+        openPack();
+    }
+    function packEl() {
+        var p = document.getElementById('kc-pack-page');
+        if (p) { return p; }
+        p = document.createElement('div');
+        p.id = 'kc-pack-page';
+        p.innerHTML = '<div class="kc-w-head">' +
+            '<button class="kc-w-back" type="button" data-kcp="back">← 返回</button>' +
+            '<span class="kc-w-title">权益包</span></div>' +
+            '<div class="kc-p-body" id="kc-p-inner"><div class="kc-p-empty">加载中…</div></div>';
+        document.body.appendChild(p);
+        p.addEventListener('click', function (e) {
+            var b = e.target && e.target.closest ? e.target.closest('[data-kcp]') : null;
+            if (!b) { return; }
+            var act = b.getAttribute('data-kcp') || '';
+            if (act === 'back') { closePack(); try { history.back(); } catch (err) { } return; }
+            if (act === 'topup') { packGoTopup(); return; }
+            if (act.indexOf('buy:') === 0) { buyPack(parseInt(act.slice(4), 10) || 0, b); return; }
+        });
+        return p;
+    }
+    function closePack() {
+        packMode = false;
+        packShown = false;
+        packFlashMsg = '';
+        var p = document.getElementById('kc-pack-page');
+        if (p) { p.classList.remove('kc-on'); }
+    }
+    function openPack() {
+        var p = packEl();
+        p.classList.add('kc-on');
+        packMode = true;
+        if (packShown) { return; }
+        packShown = true;
+        renderPack();
+    }
+    // 打开充值面板：跨块不能调用 Block A 的 openTopupPanel，改用其导出的浮动按钮点击（程序化）
+    function packGoTopup() {
+        closePack();
+        var tries = 0;
+        var t = setInterval(function () {
+            var x = document.getElementById('kc-float-topup');
+            if (x) { clearInterval(t); x.click(); }
+            else if (++tries > 20) { clearInterval(t); }
+        }, 150);
+    }
+    function renderPack() {
+        var box = document.getElementById('kc-p-inner');
+        if (!box) { return; }
+        var seq = ++packSeq;
+        box.innerHTML = '<div class="kc-p-empty">加载中…</div>';
+        Promise.all([
+            apiGet('/plan/kc-cards'),
+            apiGet('/user/kc/entitlements'),
+            apiGet('/api/v1/user/info')
+        ]).then(function (rs) {
+            if (seq !== packSeq) { return; } // 已有更新的渲染在跑，丢弃本次结果
+            var cfg = (rs[0] && rs[0].data) || {};
+            // packs 由 Xboard 插件返回（后台录入的「权益包商品」），是本页唯一的商品数据源
+            var packs = cfg.packs || [];
+            var faq = (cfg.faq || []).filter(function (f) { return f && (f.pack != null ? f.pack : true); });
+            var grants = (rs[1] && rs[1].data && rs[1].data.grants) || [];
+            var info = (rs[2] && rs[2].data) || {};
+            var bal = Number(info.balance || 0);
+
+            var html = '<div class="kc-p-hero"><h3>先买权益包，之后的每一次代充都更便宜</h3>' +
+                '<p>权益包和代充<b>不是替代关系</b>：代充照常下单、照常开通，买了权益包只是让你后续的代充按权益价结算。' +
+                '包里含若干次「权益次数」，下单时价格自动取低（权益价 vs 原价）；次数用完后自动回到原价，不影响你继续代充。</p></div>';
+
+            html += '<div class="kc-p-sec">我的权益</div>';
+            html += '<div class="kc-p-grant"><div class="kc-p-gr-l">账户余额<small>用于开通权益包</small></div><b>' + fmt(bal) + '</b></div>';
+            if (!grants.length) {
+                html += '<div class="kc-p-empty">还没有可用权益。<br>开通任意权益包后，这里会显示剩余次数与有效期。</div>';
+            } else {
+                grants.forEach(function (g) {
+                    var left = Number(g.remaining_uses || 0);
+                    var exp = g.expires_at ? ('有效期至 ' + String(g.expires_at).slice(0, 10)) : '长期有效';
+                    html += '<div class="kc-p-grant"><div class="kc-p-gr-l">' + esc(g.display_name || g.rule_code || '权益') +
+                        '<small>' + esc(exp) + ' · ' + (left < 0 ? '不限次数' : '剩余 ' + left + ' 次') + '</small></div>' +
+                        '<b>' + (left < 0 ? '∞' : String(left)) + '</b></div>';
+                });
+            }
+
+            html += '<div class="kc-p-sec">选择权益包</div>';
+            if (!packs.length) {
+                html += '<div class="kc-p-empty">权益包暂未上架，请稍后再来。</div>';
+            } else {
+                html += '<div class="kc-p-grid">';
+                packs.forEach(function (pk) {
+                    var fee = Number(pk.fee_cents || 0);
+                    var times = Number(pk.times || 0);
+                    var per = times > 0 ? Math.round(fee / times) : 0;
+                    var enough = bal >= fee;
+                    html += '<div class="kc-p-card' + (pk.highlight ? ' kc-hot' : '') + '">' +
+                        '<div class="kc-p-name">' + esc(pk.name || '权益包') + '</div>' +
+                        '<div class="kc-p-tag">' + esc(pk.tagline || '') + '</div>' +
+                        '<div class="kc-p-price">' + fmt(fee) + '</div>' +
+                        '<div class="kc-p-per">含 ' + times + ' 次权益 · 每次约 ' + fmt(per) + '</div>' +
+                        '<ul class="kc-p-feats">' +
+                        '<li>后续代充自动按权益价结算</li>' +
+                        '<li>不改变代充流程，只降低单次价格</li>' +
+                        '<li>购买即到账，无需等待发货</li></ul>' +
+                        '<button class="kc-p-btn" type="button" data-kcp="buy:' + Number(pk.plan_id || 0) + '"' +
+                        (enough ? '' : ' data-need-topup="1"') + '>' +
+                        (enough ? '用余额开通' : '余额不足 · 去充值') + '</button>' +
+                        '</div>';
+                });
+                html += '</div>';
+                html += '<div class="kc-p-tip" id="kc-p-tip">开通使用账户余额支付，订单完成后权益立即到账。</div>';
+            }
+
+            if (faq.length) {
+                html += '<div class="kc-p-sec">常见问题</div><div class="kc-p-faq">';
+                faq.forEach(function (f) {
+                    html += '<details><summary>' + esc(f.q || f.question || '') + '</summary>' +
+                        '<div class="kc-faq-a">' + esc(f.a || f.answer || '') + '</div></details>';
+                });
+                html += '</div>';
+            }
+
+            box.innerHTML = html;
+            // flash 采用「粘性」策略：设置后跨重绘保留，直到用户离开本页或发起下一次开通。
+            // （早期版本在首次重绘后就清空，会与并发重绘竞态，导致提示被静态文案覆盖）
+            if (packFlashMsg) {
+                var ft = document.getElementById('kc-p-tip');
+                if (ft) { ft.textContent = packFlashMsg; }
+            }
+        }).catch(function () {
+            if (seq !== packSeq) { return; }
+            box.innerHTML = '<div class="kc-p-empty">加载失败，请稍后重试。</div>';
+        });
+    }
+    // 开通：余额扣减开通。只走「权益包商品下单 → 余额全额抵扣 → 推进履约发权益」，
+    // 不进入任何代充开通向导（不粘贴 Session、不申领卡密）。
+    function buyPack(planId, btn) {
+        var tip = document.getElementById('kc-p-tip');
+        if (!planId) { if (tip) { tip.textContent = '该权益包暂未开放，请联系客服。'; } return; }
+        if (btn && btn.getAttribute('data-need-topup') === '1') { packGoTopup(); return; }
+        packFlashMsg = ''; // 新一次开通：先清掉上一次的粘性提示
+        if (btn) { btn.disabled = true; }
+        if (tip) { tip.textContent = '正在创建订单…'; }
+        apiPost('/api/v1/user/order/save', { plan_id: planId, period: 'onetime_price' }).then(function (j) {
+            j = j || {};
+            var tradeNo = typeof j.data === 'string' ? j.data : (j.data && j.data.trade_no);
+            if (j.status !== 'success' || !tradeNo) {
+                if (btn) { btn.disabled = false; }
+                if (tip) { tip.textContent = '下单失败：' + (j.message || '请稍后重试'); }
+                return;
+            }
+            if (tip) { tip.textContent = '正在用余额结算…'; }
+            apiPost('/kc/order/pay-balance', { trade_no: tradeNo }).then(function (r3) {
+                r3 = r3 || {};
+                var k = r3.data || {};
+                if (r3.status === 'success' && (k.status === 'paid' || k.status === 'already')) {
+                    packFlashMsg = '开通成功，权益已到账。';
+                    packShown = false;
+                    renderPack();
+                } else {
+                    if (btn) { btn.disabled = false; }
+                    if (tip) { tip.textContent = '结算失败：' + (r3.message || '请稍后重试') + '（订单 ' + tradeNo + ' 可在「我的订单」查看）'; }
+                }
+            });
         });
     }
 
@@ -4179,6 +4438,8 @@ function closeRechargePage() {
         noteHash();
         if (isWallet()) { openWallet(); }
         else { closeWallet(); }
+        if (isPack()) { openPack(); }
+        else { closePack(); }
         var m = document.getElementById('kc-as-mask');
         if (m) { m.classList.remove('kc-on'); }
         if (isOrderList()) { buildOrderTabs(); paintTabCounts(); paintCountdown(); }
@@ -4194,7 +4455,7 @@ function closeRechargePage() {
     window.addEventListener('popstate', function () { noteHash(); schedule(); });
     try {
         new MutationObserver(function () {
-            if (!isWallet() && !isOrderList() && !detailNo()) { return; }
+            if (!isWallet() && !isPack() && !isOrderList() && !detailNo()) { return; }
             schedule();
         }).observe(document.body, { childList: true, subtree: true });
     } catch (e) { }
@@ -4208,6 +4469,12 @@ function closeRechargePage() {
         var a = e.target && e.target.closest ? e.target.closest('a[href="#/wallet"], [data-kc-wallet]') : null;
         if (!a) { return; }
         goWallet(e);
+    }, true);
+    // 权益包入口同理：#/pack 是未知路由，交给 Vue router 会被重写成 #/404
+    document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[href="#/pack"], [data-kc-pack]') : null;
+        if (!a) { return; }
+        goPack(e);
     }, true);
 
     function bindEntries() {

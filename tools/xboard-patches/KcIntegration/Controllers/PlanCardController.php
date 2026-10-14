@@ -156,8 +156,43 @@ class PlanCardController extends PluginController
                 'notice' => mb_substr($cardBuyNotice !== '' ? $cardBuyNotice : "卡密 180 天有效 · 随时兑换 · 支持转赠\n兑换需提交目标账号的 Session · 卡密售出后不支持退款", 0, 300),
             ];
 
+            // 权益包商品（独立分类 merchandise，category='entitlement'）：
+            // 与代充商品**分开**——不参与代充分类筛选，也不出现在商品页卡片里，
+            // 只把配置吐给前台「权益包」独立页（#/pack）。商品由后台录入，前台零硬编码。
+            $packs = [];
+            try {
+                $packRows = DB::table('v2_plan')
+                    ->where('sell', 1)
+                    ->where(function ($q) {
+                        $q->whereNull('kc_is_topup')->orWhere('kc_is_topup', 0);
+                    })
+                    ->orderBy('sort')->orderBy('id')
+                    ->get(['id', 'name', 'prices', 'kc_card']);
+                foreach ($packRows as $pr) {
+                    if (empty($pr->kc_card)) { continue; }
+                    $pcard = json_decode((string) $pr->kc_card, true);
+                    if (!is_array($pcard) || (string) ($pcard['category'] ?? '') !== 'entitlement') { continue; }
+                    $pprices = json_decode((string) $pr->prices, true);
+                    $prices = is_array($pprices) ? $pprices : [];
+                    $fee = (int) round(((float) ($prices['onetime'] ?? 0)) * 100);
+                    if ($fee <= 0) { continue; }
+                    $packs[] = [
+                        'plan_id'   => (int) $pr->id,
+                        'key'       => mb_substr((string) ($pcard['pack_key'] ?? ('pack' . $pr->id)), 0, 32),
+                        'name'      => mb_substr((string) ($pcard['pack_name'] ?? $pr->name), 0, 40),
+                        'fee_cents' => $fee,
+                        'times'     => max(1, (int) ($pcard['times'] ?? 1)),
+                        'tagline'   => mb_substr((string) ($pcard['tagline'] ?? ''), 0, 60),
+                        'highlight' => !empty($pcard['highlight']),
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $packs = [];
+            }
+
             return $this->success([
                 'cards' => $cards,
+                'packs' => $packs,
                 'sellable' => $sellable,
                 'availability' => $availability,
                 'supplier_health' => $healthResult['health'],

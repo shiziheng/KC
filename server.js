@@ -4396,6 +4396,36 @@ app.post('/api/integration/entitlement/issue-after-cdk', requireIntegrationAuth,
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+// 集成端点：查询某用户的生效权益（grants），供 Xboard 插件代理给前台「权益包」页展示。
+// 只返回展示所需字段，不返回内部审计信息。
+// Query: ?user_id=123  ｜ Header: X-Integration-Key
+app.get('/api/integration/entitlement/grants', requireIntegrationAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const user_id = parseInt((req.query && req.query.user_id) || 0, 10);
+        if (!user_id) return res.status(400).json({ success: false, message: 'user_id 必填' });
+        const rows = await store.runQuery(
+            "SELECT g.id, g.rule_code, g.remaining_uses, g.total_uses, g.expires_at, g.status, g.source, g.created_at, " +
+            "r.display_name, r.discount_type, r.discount_value, r.min_order_cents, r.plan_scope " +
+            "FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code = g.rule_code " +
+            "WHERE g.user_id = ? AND g.status = 'active' ORDER BY g.created_at DESC LIMIT 50",
+            [user_id]
+        );
+        const grants = rows.map(r => ({
+            id: Number(r.id),
+            rule_code: r.rule_code,
+            display_name: r.display_name,
+            remaining_uses: Number(r.remaining_uses),
+            total_uses: Number(r.total_uses),
+            expires_at: r.expires_at ? String(r.expires_at).slice(0, 10) : null,
+            discount_type: r.discount_type,
+            discount_value: Number(r.discount_value),
+            min_order_cents: Number(r.min_order_cents || 0),
+        }));
+        res.json({ success: true, data: { grants } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 // 退款/失败回补：按 grant_id 与 order_trade_no 回滚一次扣次
 // Body: { user_id, grant_id, order_trade_no }
 // 幂等：uk_grant_order 重复调用不重复回补；如 grant 已 revoked/expired 也不再回补

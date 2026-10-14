@@ -9,6 +9,7 @@ use Plugin\KcIntegration\Controllers\PlanCardController;
 use Plugin\KcIntegration\Controllers\AfterSalesController;
 use Plugin\KcIntegration\Controllers\OrderPayController;
 use Plugin\KcIntegration\Controllers\CompensationController;
+use Plugin\KcIntegration\Controllers\EntitlementController;
 use Plugin\KcIntegration\Controllers\LedgerController;
 use Plugin\KcIntegration\Controllers\RiskController;
 use Plugin\KcIntegration\Controllers\AdminMenuController;
@@ -47,6 +48,8 @@ Route::prefix('user/kc')->middleware('user')->group(function () {
     Route::get('/cards', [CardController::class, 'list']);
     // 查询某订单的 KC 侧开通状态（服务端代理，绕开 KC 无 CORS 的限制）
     Route::get('/status', [StatusController::class, 'status']);
+    // 权益包：查询当前登录用户的生效权益（服务端代理 KC 集成接口）
+    Route::get('/entitlements', [EntitlementController::class, 'mine']);
     // ── FEAT-004 · D3：充值 ──
     // 把金额落成一次性充值套餐，返回 plan_id（前台随后走原生 save→checkout）
     Route::post('/topup/prepare', [TopupController::class, 'prepare'])->middleware('throttle:10,1');

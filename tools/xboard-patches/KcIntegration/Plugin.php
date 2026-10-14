@@ -257,6 +257,27 @@ class Plugin extends AbstractPlugin
 
             $userRef = $this->resolveUserRef($order);
 
+            // ── 权益包（category='entitlement'）：不发卡、不人工交付，只发权益（grant）
+            //    权益包与代充**完全分离**：买权益包本身不产生卡密、不进人工交付队列，
+            //    只是让**后续代充**按权益价结算（价格引擎在 KC 侧按 grant 取低）。
+            //    因此本分支必须早于人工交付分支，且 order.open 已被 OrderService 短路
+            //    （不覆写用户订阅），详见 OrderService.php 的 ENTITLEMENT-PACK 补丁。
+            if ($this->manualDeliveryCategory((int) $order->plan_id) === 'entitlement') {
+                $grant = $this->callKcEntitlementIssueAfterCdk($tradeNo, (int) $order->user_id, (int) $order->plan_id, '');
+                if ($grant['ok']) {
+                    $this->record($tradeNo, $order, '', KcCard::STATUS_SKIPPED, '权益包开通成功，权益已到账', $userRef);
+                    Log::channel('daily')->info('[KcIntegration] 权益包开通成功', ['trade_no' => $tradeNo]);
+                } else {
+                    $this->record($tradeNo, $order, '', KcCard::STATUS_FAILED, '权益发放失败: ' . $grant['error'], $userRef);
+                    (new CompensationService())->handleTerminalFailure($order, 'entitlement_issue_failed', '权益包发放失败');
+                    Log::channel('daily')->warning('[KcIntegration] 权益包开通失败', [
+                        'trade_no' => $tradeNo,
+                        'error'    => $grant['error'],
+                    ]);
+                }
+                return;
+            }
+
             // ── FEAT-009：非代充类商品（成品号 / 建站服务等）走人工交付，不自动发卡
             //    判断依据是套餐的卡片配置分类（kc_card.category），非 recharge 即人工交付。
             $manualCat = $this->manualDeliveryCategory((int) $order->plan_id);
@@ -510,13 +531,21 @@ class Plugin extends AbstractPlugin
      * 入参：tradeNo, userId, planId, cdk
      * 行为：调 KC POST /api/integration/entitlement/issue-after-cdk
      */
-    protected function callKcEntitlementIssueAfterCdk(string $tradeNo, int $userId, int $planId, string $cdk): void
+    /**
+     * 调 KC 集成端点按 plan_code 触发权益发放（grant）。
+     *
+     * 返回值用于「权益包」主路径判断成功与否；代充发卡后的附加动作忽略返回值。
+     * 本方法**不抛异常**（发卡主路径不能因它失败）。
+     *
+     * @return array{ok: bool, error: string}
+     */
+    protected function callKcEntitlementIssueAfterCdk(string $tradeNo, int $userId, int $planId, string $cdk): array
     {
         try {
             $baseUrl = rtrim((string) $this->getConfig('kc_base_url', ''), '/');
             $apiKey  = (string) $this->getConfig('integration_key', '');
             if ($baseUrl === '' || $apiKey === '') {
-                return;
+                return ['ok' => false, 'error' => 'KC 集成未配置'];
             }
             $timeout = (int) $this->getConfig('http_timeout', self::DEFAULT_TIMEOUT);
             if ($timeout < 1 || $timeout > 5) {
@@ -542,11 +571,26 @@ class Plugin extends AbstractPlugin
                 'status'   => $response->status(),
                 'body'     => mb_substr((string) $response->body(), 0, 300),
             ]);
+
+            if ($response->failed()) {
+                return ['ok' => false, 'error' => 'HTTP ' . $response->status()];
+            }
+            $json = $response->json();
+            // KC 约定：有 granted/issued 字段即视为发放成功（无匹配规则时 granted 为空数组）
+            if (!is_array($json) || ($json['success'] ?? false) !== true) {
+                return ['ok' => false, 'error' => 'KC 返回失败'];
+            }
+            $granted = $json['data']['granted'] ?? $json['granted'] ?? null;
+            if (is_array($granted) && count($granted) === 0) {
+                return ['ok' => false, 'error' => '未匹配到权益规则'];
+            }
+            return ['ok' => true, 'error' => ''];
         } catch (\Throwable $e) {
             // 不上抛：发卡已成功，自动发权益失败仅记录
             Log::channel('daily')->warning('[KcIntegration] 自动发权益回调异常: ' . $e->getMessage(), [
                 'trade_no' => $tradeNo,
             ]);
+            return ['ok' => false, 'error' => $e->getMessage()];
         }
     }
 

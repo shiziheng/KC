@@ -9,6 +9,51 @@
 
 ---
 
+## v1.33.0 · 2026-10-14 · 权益包独立页 `#/pack`（≠ 代充 · 不进代充流程 · 买后不覆写订阅）
+
+**一句话概括**：把「权益包」从代充商品页里**彻底拆出来**、做成**独立页 `#/pack`** —— 导航定型为 **代充 / 成品号 / 建站服务 / 权益包 / 我的订单**（5 项）；买权益包只走「余额扣减 → KC 发权益（N 次按权益价下单的机会）」这一条链，**不进入代充开通向导、不粘贴 Session、不发卡密**，也**不覆写用户已有订阅**。同时**作废 v1.32.0 里「原代充改名权益包→`#/plan`」的口径**（该口径违反「权益包 ≠ 代充」产品铁律）。
+
+### 新增
+
+- **权益包独立页 `#/pack`**（`tools/kc_theme_inject.html` 注入块内新增「A2. 权益包独立页」段）：Hero（方案说明 + 与代充的关系）+ 商品卡（配置驱动，来自后台录入的权益包商品）+ 「我的权益」（余额 + 已开通权益剩余次数/有效期）+ FAQ + 「用余额开通」按钮。`#/pack` 用 `pushState` + `sessionStorage.kc_pack_intent` 意图记忆接管（**即使 Vue 把 hash 重写成 `#/404` 仍展示本页**）。
+- **导航新增「权益包」入口**：顶栏 `HTML_TOPBAR` 与移动端抽屉 `HTML_DRAWER` **两处同步**新增 `<a href="#/pack" data-route="#/pack" data-pack="1">权益包</a>`；`syncActive()` 新增 `data-pack` 分支（读 `sessionStorage` 意图，遵守跨块铁律）。
+- **后台可录的权益包商品**：`v2_plan` 新增 2 档（`id=21 轻享权益包` $60.00 / 5 次、`id=22 尊享权益包` $600.00 / 50 次；`show=0`、`sell=1`、`kc_card.category='entitlement'`）；插件 `PlanCardController::index()` 新增 `packs` 字段，前台**零硬编码**（种子脚本 `tools/xboard-pack-seed.php`）。
+- **权益规则**（KC `kc_entitlement_rules`）：`pack_light_off40 ← xplan_21`（5 次）、`pack_pro_off40 ← xplan_22`（50 次），`percent 40`（6 折）、`plan_scope=[]`（全商品适用）、`grant_period_days=180`（种子脚本 `tools/kc-seed-entitlement-rules.js`）。
+- **KC 集成端点**：`GET /api/integration/entitlement/grants?user_id=`（`X-Integration-Key` 鉴权，JOIN 规则返回剩余次数/有效期/折扣）。
+- **插件用户态代理**：`EntitlementController::mine()` + 路由 `GET /user/kc/entitlements`（服务端代理 KC，绕开 KC 无 CORS / 无用户态鉴权）。
+- 验收脚本 `tools/_v133_pack_verify.js`（**27 项断言**）+ 验收辅助 `tools/_v133_user.php`。
+
+### 变更
+
+- **导航定型 5 项**（置代 v1.32.0 的 4 项口径）：`代充`（保留，→ `#/plan`）/ `成品号` / `建站服务` / `权益包`（**新增，→ `#/pack`**）/ `我的订单`。首项文案回正为「代充」（`data-cat="recharge"`）；`setupNavCategories()` 的文案回写仍保持删除。
+- **Xboard 内核补丁 +2**（`tools/xboard-patch-check.js` 核查项 6 → 8）：
+  - **P1b `PlanService`**：权益包商品（`kc_card.category='entitlement'`）豁免 `show` 校验（锚点 `kc_entitlement_pack`，幂等）；
+  - **P7 `OrderService::open()`**：权益包商品**短路开通** —— 直接置 `Order::STATUS_COMPLETED` 返回，**不写用户订阅、不覆写 `plan_id`/`expired_at`**（锚点 `ENTITLEMENT-PACK`）。
+- **插件 `Plugin::onOrderOpened()`**：新增 `category='entitlement'` 分支（调 KC 发权益；失败走 `CompensationService`），**不进人工交付/不发卡**；`callKcEntitlementIssueAfterCdk()` 由 `void` 改为返回 `array{ok,error}`。
+- **前端渲染竞态修复**：`renderPack()` 引入渲染序号 `packSeq`（并发重绘只认最新一次）；成功提示 `packFlashMsg` 改为**粘性**（跨重绘保留，离开页面或发起下一次开通才清）——修「开通成功提示被静态文案覆盖」。
+
+### 验证
+
+- `node tools/_v133_pack_verify.js` **27/27 全绿**（截图 `logs/v133-pack/2026-10-14T16-31-25-872Z/`）：导航 5 项与三页一致、`#/pack` 接管与直访意图识别、商品两档价格/次数、我的权益空态与余额行、**权益包≠代充机检**（页内零「Session / 卡密」）、余额开通端到端（下单 → 余额抵扣 → 履约发权益 → 「剩余 5 次」）、深色可读（亮度 187.7）、主色恒 `rgb(0,168,98)`、窄屏零横向溢出、运行期 JS 错误 `[]`。
+- **买权益包不覆写订阅（实测铁证）**：购买 `轻享权益包`（订单 `plan_id=21`）后，`v2_user` 的 `plan_id=1`、`expired_at=1804213647` **未变**。
+- **结算口径实测**：`v2_order` 订单 `balance_amount=468` + `surplus_amount=5532` = **6000 分 = $60.00**（价格正确；Xboard 采用「旧订单剩余价值折抵优先、余额补差」，故「用余额开通」按钮下**余额扣减额可小于包价**）。
+- 首轮 21/27 → 暴露并修复 3 类问题（顶栏高亮未同步、结算路径 404、并发重绘冲掉提示）后复跑全绿。
+- `node tools/xboard-patch-check.js` 全部 **8/8** 补丁在位。
+
+### 影响与风险
+
+- **未接线项（已登记为 Step 7）**：`#/plan` 双价卡上的 `quotaPrice` 是 `site-config` 的**全局配置**，与「当前用户有没有权益」无关；**Xboard 下单金额仍取自 `v2_plan.prices`，结算层尚未按用户 grant 折算** ⇒ 当前「买权益包 → 代充更便宜」**只有展示层**。代价最小接线方案见 `docs/改版进度.md`「二 / Step 7」。
+- **回滚**：删 `HTML_TOPBAR`/`HTML_DRAWER` 的 `data-pack` 项 + 删 Block B「A2」整段后重新部署（`node tools/xboard-apply-custom-html.js`）；商品侧将 `v2_plan` id 21/22 的 `show` 改回 0，并按 `tools/xboard-patch-check.js` 撤 P1b/P7。
+
+### 下一步
+
+- **Step 7 · 接线「代充按用户权益价结算」**（本版本已登记的关键缺口）：`#/plan` 双价卡的 `quotaPrice` 是 `site-config` 全局配置，结算层未按用户 grant 折算。
+  - 代价最小方案：插件新增用户态报价路由 `POST /kc/order/quote`（代理 KC 的权益折扣引擎 `/api/pricing/quote` 语义）→ Xboard 下单前按报价改写 `total_amount` → 交付成功后调 KC 扣次（`order_trade_no` 幂等；失败/退款走已有 `POST /api/integration/entitlement/refund` 退次）。
+  - 验收口径：有权益用户下单金额 = 权益价 / 无权益用户 = 原价 / 下单失败或退款退次。
+  - 明细见 `docs/改版进度.md`「二、下一步 / Step 7」与 `docs/方案/前台改版MVP方案-v1.0.0.md`「Step 7」。
+
+---
+
 ## v1.32.0 · 2026-10-14 · 前台改版（KC 直供）Step 1-5：全局配色 + 首页门户双价 + 商品页双价 + 导航收敛 + 收尾
 
 **一句话概括**：把 `design/前台改版demo-v2.1.0.html` 落地到线上商城（**注入式改版，不改主题块内核**）——统一墨黑 + 省钱绿配色、首页把价格前置并可直观看到「权益价 vs 市场价」、商品页承接同款双价、顶栏导航收敛 5→4 并把「权益包」做成主入口，最后完成术语与深色收口。本版本同时把 v1.28.2（后台 UX 流）与 v1.29~v1.31（前台改版流）**合并登记为同一版本号 v1.32.0**。
@@ -24,6 +69,7 @@
 
 - **Step 1 全局配色**（`tools/kc_theme_inject.html` 设计 token）：品牌强调色 teal `#0d9488` → **墨黑 + 省钱绿 `#00A862`**；hover `#00915A`；soft `rgba(0,168,98,.10)`（深色 `.18`）；渐变 `#14b8a6→#34D399`、阴影/文字色同步换绿，**旧青绿残留 0**。
 - **Step 4 导航收敛 5→4**（`tools/kc_theme_inject.html`）：顶栏 `HTML_TOPBAR .kc-tb-nav` 与移动端抽屉 `HTML_DRAWER .kc-drawer-nav` **两处同步**去掉冗余「首页」（改由左上 logo 承担回首页），原「代充」项改名 **「权益包」**（仍指向 `#/plan` 权益价/购买区）→ 结果 = **权益包 / 成品号 / 建站服务 / 我的订单**；并**删除 `setupNavCategories()` 里 `anchor.textContent = cats[0].name` 的回写**（否则「权益包」文案会被后台分类名「代充」覆盖，仅保留 `data-cat` 同步）。
+  - ⚠️ **本条口径已被 v1.33.0 作废**：把「代充」改名「权益包」并指向 `#/plan`，违反「权益包 ≠ 代充」产品铁律（且会让用户在代充商品页买"权益包"从而落进代充流程）。v1.33.0 已回正为：**保留「代充 → `#/plan`」+ 新增独立「权益包 → `#/pack`」**，导航 5 项。此处仅作历史留档。
 - **部署链**：`tools/xboard-set-custom-html.php` 的 `$srcs` 增加 `/www/kc_home_portal.html` 与 `/www/kc_plan_double_price.html`；`tools/xboard-apply-custom-html.js` 增加对应拷源行（custom_html 361806 → 361800 字符）。部署：`node tools/xboard-apply-custom-html.js`。
 
 ### 验证
