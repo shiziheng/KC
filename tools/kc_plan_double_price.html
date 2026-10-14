@@ -1,0 +1,214 @@
+<!-- KC-PLAN-DP-BEGIN · v1.32 Step 3 商品页 #/plan 双价承接
+     目标：让 #/plan 商品页的商品卡套用与首页同款的「双价」口径 ——
+           权益价（绿，大字）+ 原价（划线）+ 「省 $X」（前端按数字实时算）。
+     做法：不改主题块（主题块负责渲卡片本体与 .kc-cb-* 结构），本块在卡片就绪后
+           ① 压制主题块的单价格行 `.kc-cb-price`（加 .kcdp-has 类，只对被改造卡生效）
+           ② 在价格行原位置插入独立标注层 `.kcdp-box`
+           ③ 600ms 守护 + hashchange，抵住 Vue 重建 / 路由切换（沿用首页块保活模式）
+     数据源：GET {KC_BASE}/api/public/site-config（权益价，缓存键 kc_site_config 与主题块/首页块共用）
+             GET /api/v1/user/plan/fetch（登录态，取商品原价；失败则退化用卡上 data-kc-price-fen）
+     视觉标准：design/前台改版demo-v2.1.0.html 的 .good 双价卡 / 首页块 .hp-good
+     ⚠️ 跨块铁律：本块自带全部工具函数，绝不调用其它 script 块的函数。
+     ⚠️ 作用域：仅 #/plan 列表页生效（#/plan/<id> 详情页与其它页自动清除，无残留）。
+     ⚠️ 退化：site-config.plans 未配置该商品权益价时 → 不改造，主题原价保持原样。
+-->
+<style>
+  /* 压制主题块单价格行：只对被本块改造过的卡生效（.kcdp-has） */
+  .card-container .kc-card.kcdp-has .kc-cb-price { display: none !important; }
+
+  /* 双价标注层（与首页 .hp-good 同款视觉） */
+  .card-container .kc-card .kcdp-box { margin: 0 0 2px; }
+  .card-container .kc-card .kcdp-price {
+    font-size: 32px; font-weight: 800; letter-spacing: -.025em; line-height: 1.1;
+    color: var(--kc-brand, #00a862); font-variant-numeric: tabular-nums;
+  }
+  .card-container .kc-card .kcdp-price.is-plain { color: var(--kc-t1, #0e1116); }
+  .card-container .kc-card .kcdp-tag {
+    display: inline-block; margin-left: 8px; vertical-align: 6px;
+    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    background: var(--kc-brand-soft, rgba(0, 168, 98, .10)); color: var(--kc-brand, #00a862);
+  }
+  .card-container .kc-card .kcdp-sub { margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--kc-brand, #00a862); }
+  .card-container .kc-card .kcdp-sub.is-plain { color: var(--kc-t3, #8c94a3); font-weight: 400; }
+  .card-container .kc-card .kcdp-alt { margin-top: 4px; font-size: 13px; color: var(--kc-t3, #8c94a3); }
+  .card-container .kc-card .kcdp-alt s { color: var(--kc-t3, #8c94a3); }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__kcPlanDpLoaded) { return; }
+  window.__kcPlanDpLoaded = true;
+
+  var KC_BASE = 'http://localhost:3100';
+  var CACHE_KEY = 'kc_site_config';           // 与主题块 / 首页块共用（存 raw config 对象）
+  var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
+  var CFG = null;      // site-config
+  var GOODS = null;    // /api/v1/user/plan/fetch 的 data 数组（用于「与首页同源」的原价口径）
+  var TIMER = null;
+
+  // ---------- 自带工具（不跨块调用）----------
+  function money(n) { return '$' + Number(n || 0).toFixed(2); }
+  function num(n) { var v = Number(n); return Number.isFinite(v) ? v : 0; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function readToken() {
+    try {
+      var raw = localStorage.getItem(TOKEN_KEY);
+      if (!raw) { return ''; }
+      var obj = JSON.parse(raw);
+      if (obj && obj.value) { return String(obj.value); }
+      return typeof obj === 'string' ? obj : '';
+    } catch (e) { return ''; }
+  }
+  // 仅 #/plan 列表页（排除 #/plan/<id> 详情页）
+  function isPlanList() {
+    var h = window.location.hash || '';
+    return h.indexOf('#/plan') === 0 && !/^#\/plan\/\d+/.test(h);
+  }
+  // 与首页块完全一致的原价口径：取第一个 >0 的周期价（分）
+  function planPriceCents(p) {
+    var keys = ['month_price', 'quarter_price', 'half_year_price', 'year_price', 'two_year_price', 'three_year_price', 'onetime_price'];
+    for (var i = 0; i < keys.length; i++) { if (typeof p[keys[i]] === 'number' && p[keys[i]] > 0) { return p[keys[i]]; } }
+    return 0;
+  }
+
+  // ---------- 数据 ----------
+  function fetchConfig() {
+    return fetch(KC_BASE + '/api/public/site-config', { credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.success && j.config) {
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(j.config)); } catch (e) { }
+          return j.config;
+        }
+        return null;
+      }).catch(function () { return null; });
+  }
+  function fetchGoods() {
+    var token = readToken();
+    if (!token) { return Promise.resolve(null); }
+    return fetch('/api/v1/user/plan/fetch', {
+      method: 'GET', headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }, credentials: 'same-origin'
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      return (j && j.data) ? j.data : null;
+    }).catch(function () { return null; });
+  }
+  function savedMap(cfg) {
+    var m = {};
+    ((cfg && cfg.plans) || []).forEach(function (p) {
+      var id = p.planId != null ? p.planId : p.id;
+      if (id != null) { m[String(id)] = p; }
+    });
+    return m;
+  }
+  function goodsPriceMap(plans) {
+    var m = {};
+    (plans || []).forEach(function (p) {
+      var c = planPriceCents(p);
+      if (c > 0) { m[String(p.id)] = c / 100; }
+    });
+    return m;
+  }
+
+  // ---------- 渲染 ----------
+  function boxHtml(m) {
+    var tag = m.tag ? '<span class="kcdp-tag">' + esc(m.tag) + '</span>' : '';
+    return '<div class="kcdp-price"><span class="kcdp-num">' + money(m.quota) + '</span>' + tag + '</div>' +
+      '<div class="kcdp-sub">用 1 次权益 · 省 ' + money(m.save) + '</div>' +
+      '<div class="kcdp-alt">原价 <s>' + money(m.list) + '</s></div>';
+  }
+
+  function annotate() {
+    var cards = document.querySelectorAll('.card-container .n-card[data-kc-card="1"][data-kc-plan-id]');
+    if (!cards.length) { return; }
+    var saved = savedMap(CFG);
+    var gmap = goodsPriceMap(GOODS);
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var id = card.getAttribute('data-kc-plan-id');
+      var cfgPlan = saved[String(id)] || {};
+      var quota = (cfgPlan.quotaPrice != null) ? num(cfgPlan.quotaPrice) : null;
+      var priceEl = card.querySelector('.kc-cb-price');
+      var exist = card.querySelector('.kcdp-box');
+
+      // 未配置权益价 / 卡片未就绪 → 不改造，保持主题原价（并清理历史标注）
+      if (quota == null || !priceEl) {
+        if (exist && exist.parentNode) { exist.parentNode.removeChild(exist); }
+        card.classList.remove('kcdp-has');
+        continue;
+      }
+
+      // 原价：优先用商品接口（与首页同源同算法），退化用卡上 data-kc-price-fen
+      var list = (gmap[String(id)] != null) ? gmap[String(id)]
+        : (Number(card.getAttribute('data-kc-price-fen') || 0) / 100);
+      var tagEl = card.querySelector('.kc-cb-tag');
+      var m = {
+        quota: quota, list: list,
+        save: Math.max(0, +(list - quota).toFixed(2)),
+        tag: tagEl ? (tagEl.textContent || '').trim() : ''
+      };
+      var sig = m.quota + '|' + m.list.toFixed(2) + '|' + m.save.toFixed(2) + '|' + m.tag;
+
+      card.classList.add('kcdp-has');   // 压制主题单价格行
+
+      if (exist && exist.getAttribute('data-kcdp-sig') === sig) { continue; }  // 无变化不重绘
+      if (exist && exist.parentNode) { exist.parentNode.removeChild(exist); }
+
+      var box = document.createElement('div');
+      box.className = 'kcdp-box';
+      box.setAttribute('data-kcdp-sig', sig);
+      box.innerHTML = boxHtml(m);
+      if (priceEl.nextSibling) { priceEl.parentNode.insertBefore(box, priceEl.nextSibling); }
+      else { priceEl.parentNode.appendChild(box); }
+    }
+  }
+
+  // 离开商品页：清干净（去掉压制类 + 标注层），确保其它页无残留
+  function clear() {
+    var cards = document.querySelectorAll('.card-container .kc-card.kcdp-has');
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.remove('kcdp-has');
+      var b = cards[i].querySelector('.kcdp-box');
+      if (b && b.parentNode) { b.parentNode.removeChild(b); }
+    }
+  }
+
+  function tick() {
+    if (!isPlanList()) { clear(); return; }
+    annotate();
+  }
+
+  function start() {
+    if (!isPlanList()) { clear(); return; }
+    CFG = readCache();                     // ① 缓存先上，首帧即双价，不闪原价
+    annotate();
+    fetchConfig().then(function (c) {      // ② 拉最新配置（改后台权益价 → 刷新/进页即变）
+      if (c) { CFG = c; annotate(); }
+    });
+    fetchGoods().then(function (p) {       // ③ 拉商品（原价，与首页同源）
+      if (p) { GOODS = p; annotate(); }
+    });
+  }
+
+  window.addEventListener('hashchange', function () {
+    if (isPlanList()) { start(); } else { clear(); }
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      start();
+      if (TIMER) { clearInterval(TIMER); }
+      TIMER = setInterval(tick, 600);      // ④ 守护：抵住 Vue 重建 / 路由切换
+    });
+  } else {
+    start();
+    setInterval(tick, 600);
+  }
+})();
+</script>
+<!-- KC-PLAN-DP-END -->

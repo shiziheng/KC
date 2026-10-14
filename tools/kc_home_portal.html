@@ -1,0 +1,562 @@
+<!-- KC-HOME-PORTAL-BEGIN · v1.32 首页门户改版（Step 2）
+     目标：把 dashboard 首页改造成「价格前置」门户 —— 压制旧版门户(#kc-portal)，
+           注入：价格前置 Hero + 门槛对比 + 三步 + 商品双价卡 + 权益包三档。
+     数据源：GET {KC_BASE}/api/public/site-config（品牌 / 权益包 / 商品权益价 / 文案）
+             GET /api/v1/user/plan/fetch（登录态，取商品原价；失败则退化为仅配置）
+     视觉标准：design/前台改版demo-v2.1.0.html
+     ⚠️ 跨块铁律：本块自带全部工具函数，绝不调用其它 script 块的函数。
+     ⚠️ 与主题块协作：主题块负责顶栏与 #kc-portal；本块「压制 portal + 挂自己的容器」，
+        不改主题块代码。容器用 <section>（不是 <div>）—— 主题块的压制规则只针对直接子 `div`。
+     ⚠️ 配置驱动：价格/省钱文案全部由前端按数字实时计算；改后台权益价 → 刷新首页即变。
+-->
+<style>
+  /* —— 压制旧版 dashboard 门户：仅当本块生效（body.kc-home-v2）时隐藏 #kc-portal —— */
+  body.kc-home-v2 #kc-portal { display: none !important; }
+
+  /* —— 新门户容器：只在 dashboard 显示 —— */
+  #kc-home-portal { display: none; }
+  body.kc-home-v2.kc-on-dashboard #kc-home-portal { display: block; }
+
+  #kc-home-portal {
+    --hp-bg: var(--kc-card-bg, #ffffff);
+    --hp-soft: var(--kc-page-bg, #f6f7f9);
+    --hp-ink: var(--kc-t1, #0e1116);
+    --hp-ink2: var(--kc-t2, #5a6270);
+    --hp-ink3: var(--kc-t3, #8c94a3);
+    --hp-line: var(--kc-card-border, #e8eaee);
+    --hp-line2: #d8dce3;
+    --hp-save: var(--kc-brand, #00a862);
+    --hp-save-soft: var(--kc-brand-soft, rgba(0, 168, 98, .10));
+    --hp-save-soft2: rgba(0, 168, 98, .05);
+    --hp-on-ink: #ffffff;
+    --hp-warn: #b7791f;
+    --hp-warn-soft: #fdf6e7;
+    --hp-radius: 16px;
+    max-width: 1200px; margin: 0 auto; width: 100%;
+    padding: 4px 4px 28px; color: var(--hp-ink);
+    font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  body.kc-dark #kc-home-portal {
+    --hp-line: #2a2a30; --hp-line2: #3a3a42; --hp-save-soft2: rgba(0, 168, 98, .10);
+  }
+  #kc-home-portal * { box-sizing: border-box; }
+  #kc-home-portal .hp-num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  #kc-home-portal .hp-sec { padding: 40px 0; }
+  #kc-home-portal .hp-eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--hp-ink3); font-weight: 500; margin-bottom: 12px; }
+  #kc-home-portal h1 { font-size: 44px; line-height: 1.14; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+  #kc-home-portal h2 { font-size: 27px; line-height: 1.25; font-weight: 700; letter-spacing: -.015em; margin: 0; }
+  #kc-home-portal h3 { font-size: 17px; font-weight: 600; margin: 0; }
+  #kc-home-portal .hp-lead { font-size: 16px; color: var(--hp-ink2); line-height: 1.7; margin: 0; }
+  #kc-home-portal .hp-muted { color: var(--hp-ink2); font-size: 14px; margin: 0; }
+  #kc-home-portal .hp-hint { color: var(--hp-ink3); font-size: 13px; margin: 0; }
+  #kc-home-portal .hp-save { color: var(--hp-save); }
+  #kc-home-portal .hp-head { margin-bottom: 32px; }
+  #kc-home-portal .hp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 50px; padding: 0 26px; border-radius: 11px; font-size: 15px; font-weight: 500; white-space: nowrap; text-decoration: none; border: 1px solid transparent; cursor: pointer; font-family: inherit; }
+  #kc-home-portal .hp-btn-solid { background: var(--hp-ink); color: var(--hp-on-ink); }
+  #kc-home-portal .hp-btn-solid:hover { opacity: .86; }
+  #kc-home-portal .hp-btn-save { background: var(--hp-save); color: #fff; }
+  #kc-home-portal .hp-btn-save:hover { opacity: .88; }
+  #kc-home-portal .hp-btn-line { border-color: var(--hp-line2); color: var(--hp-ink); background: transparent; }
+  #kc-home-portal .hp-btn-line:hover { border-color: var(--hp-ink); }
+  #kc-home-portal .hp-btn-sm { height: 40px; padding: 0 18px; font-size: 14px; border-radius: 9px; }
+  #kc-home-portal .hp-btn-block { width: 100%; }
+  #kc-home-portal .hp-card { background: var(--hp-bg); border: 1px solid var(--hp-line); border-radius: var(--hp-radius); }
+  #kc-home-portal .hp-tag { display: inline-block; font-size: 12px; font-weight: 500; padding: 3px 9px; border-radius: 999px; background: var(--hp-save-soft); color: var(--hp-save); }
+  #kc-home-portal .hp-tag-grey { background: var(--hp-soft); color: var(--hp-ink3); }
+  #kc-home-portal .hp-tick { width: 15px; height: 15px; flex: none; color: var(--hp-save); margin-top: 3px; }
+
+  /* Hero */
+  #kc-home-portal .hp-hero { padding: 34px 0 36px; }
+  #kc-home-portal .hp-hero-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 48px; align-items: center; }
+  #kc-home-portal .hp-cond { font-size: 13.5px; color: var(--hp-ink2); background: var(--hp-soft); border: 1px solid var(--hp-line); border-radius: 10px; padding: 11px 15px; display: inline-block; margin: 18px 0 22px; }
+  #kc-home-portal .hp-cond b { color: var(--hp-ink); font-weight: 600; }
+  #kc-home-portal .hp-cta { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
+  #kc-home-portal .hp-trust { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+  #kc-home-portal .hp-trust span { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--hp-ink2); }
+  #kc-home-portal .hp-trust .hp-tick { margin-top: 0; }
+
+  #kc-home-portal .hp-packcard { background: var(--hp-soft); border: 1px solid var(--hp-line); border-radius: 22px; padding: 26px; }
+  #kc-home-portal .hp-pc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  #kc-home-portal .hp-pc-name { font-size: 16px; font-weight: 600; }
+  #kc-home-portal .hp-pl-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-pl-row:last-child { border-bottom: 0; }
+  #kc-home-portal .hp-pl-name { font-size: 13.5px; color: var(--hp-ink2); }
+  #kc-home-portal .hp-pl-list { font-size: 13px; color: var(--hp-ink3); text-decoration: line-through; }
+  #kc-home-portal .hp-pl-arrow { font-size: 12px; color: var(--hp-ink3); }
+  #kc-home-portal .hp-pl-disc { font-size: 18px; font-weight: 700; color: var(--hp-save); }
+  #kc-home-portal .hp-pc-times { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 13px 0; border-top: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-pc-times b { font-size: 13.5px; font-weight: 600; }
+  #kc-home-portal .hp-pc-concl { margin-top: 12px; padding: 13px 15px; background: var(--hp-save-soft2); border-radius: 11px; font-size: 13.5px; color: var(--hp-ink2); line-height: 1.65; }
+  #kc-home-portal .hp-pc-concl b { color: var(--hp-save); font-weight: 700; }
+  #kc-home-portal .hp-pc-buy { margin-top: 16px; width: 100%; }
+  #kc-home-portal .hp-dots { display: inline-flex; gap: 6px; vertical-align: middle; }
+  #kc-home-portal .hp-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--hp-line2); flex: none; }
+  #kc-home-portal .hp-dot.on { background: var(--hp-save); }
+
+  /* 门槛对比 */
+  #kc-home-portal .hp-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
+  #kc-home-portal .hp-vs-col { border-radius: var(--hp-radius); padding: 28px 30px; }
+  #kc-home-portal .hp-vs-old { background: var(--hp-soft); border: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-vs-new { background: var(--hp-save-soft2); border: 1.5px solid var(--hp-save); }
+  #kc-home-portal .hp-vs-label { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; margin-bottom: 14px; }
+  #kc-home-portal .hp-vs-old .hp-vs-label { color: var(--hp-ink3); }
+  #kc-home-portal .hp-vs-new .hp-vs-label { color: var(--hp-save); }
+  #kc-home-portal .hp-vs-item { padding: 13px 0; border-bottom: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-vs-item:last-child { border-bottom: 0; }
+  #kc-home-portal .hp-vs-k { font-size: 13px; color: var(--hp-ink3); margin-bottom: 4px; }
+  #kc-home-portal .hp-vs-v { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+  #kc-home-portal .hp-vs-old .hp-vs-v { color: var(--hp-ink2); }
+  #kc-home-portal .hp-vs-new .hp-vs-v { color: var(--hp-save); }
+  #kc-home-portal .hp-vs-v small { font-size: 12.5px; font-weight: 400; color: var(--hp-ink3); margin-left: 6px; letter-spacing: 0; }
+
+  /* 三步 */
+  #kc-home-portal .hp-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-step { padding: 26px 30px 0 0; }
+  #kc-home-portal .hp-step-n { font-size: 13px; color: var(--hp-ink3); font-weight: 500; margin-bottom: 10px; }
+  #kc-home-portal .hp-step h3 { margin-bottom: 6px; }
+  #kc-home-portal .hp-step-last .hp-step-n, #kc-home-portal .hp-step-last h3 { color: var(--hp-warn); }
+
+  /* 商品双价卡 */
+  #kc-home-portal .hp-goods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  #kc-home-portal .hp-good { background: var(--hp-bg); border: 1px solid var(--hp-line); border-radius: var(--hp-radius); padding: 24px; display: flex; flex-direction: column; transition: border-color .15s; }
+  #kc-home-portal .hp-good:hover { border-color: var(--hp-ink); }
+  #kc-home-portal .hp-good-name { font-size: 15px; font-weight: 600; }
+  #kc-home-portal .hp-good-spec { font-size: 12.5px; color: var(--hp-ink3); margin-top: 4px; }
+  #kc-home-portal .hp-good-price { font-size: 32px; font-weight: 700; letter-spacing: -.025em; line-height: 1.1; margin-top: 18px; color: var(--hp-save); }
+  #kc-home-portal .hp-good-price.is-plain { color: var(--hp-ink); }
+  #kc-home-portal .hp-good-sub { font-size: 13px; margin-top: 6px; color: var(--hp-save); font-weight: 600; }
+  #kc-home-portal .hp-good-sub.is-plain { color: var(--hp-ink3); font-weight: 400; }
+  #kc-home-portal .hp-good-hr { height: 1px; background: var(--hp-line); margin: 15px 0; }
+  #kc-home-portal .hp-good-alt { font-size: 13px; color: var(--hp-ink3); }
+  #kc-home-portal .hp-good-alt s { margin-right: 6px; }
+  #kc-home-portal .hp-good-alt b { color: var(--hp-save); font-weight: 600; }
+  #kc-home-portal .hp-good-btn { margin-top: 18px; width: 100%; }
+  #kc-home-portal .hp-good-note { margin-top: 10px; font-size: 12.5px; color: var(--hp-ink3); text-align: center; }
+
+  /* 权益包三档 */
+  #kc-home-portal .hp-packs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+  #kc-home-portal .hp-pk { background: var(--hp-bg); border: 1px solid var(--hp-line); border-radius: var(--hp-radius); padding: 26px; position: relative; display: flex; flex-direction: column; }
+  #kc-home-portal .hp-pk.hot { border: 1.5px solid var(--hp-ink); }
+  #kc-home-portal .hp-pk-flag { position: absolute; top: -11px; left: 26px; font-size: 11.5px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--hp-ink); color: var(--hp-on-ink); }
+  #kc-home-portal .hp-pk-name { font-size: 16px; font-weight: 600; }
+  #kc-home-portal .hp-pk-tag { font-size: 12.5px; color: var(--hp-ink3); margin-top: 5px; }
+  #kc-home-portal .hp-pk-fee { font-size: 34px; font-weight: 700; letter-spacing: -.025em; margin-top: 12px; line-height: 1.1; }
+  #kc-home-portal .hp-pk-fee small { font-size: 14px; font-weight: 400; color: var(--hp-ink3); margin-left: 3px; }
+  #kc-home-portal .hp-pk-times { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 13.5px; color: var(--hp-ink2); }
+  #kc-home-portal .hp-pk-list { list-style: none; margin: 18px 0 0; padding: 16px 0 0; border-top: 1px solid var(--hp-line); }
+  #kc-home-portal .hp-pk-list li { display: flex; gap: 9px; font-size: 13.5px; color: var(--hp-ink2); padding: 5px 0; }
+  #kc-home-portal .hp-pk-list b { color: var(--hp-ink); font-weight: 600; }
+  #kc-home-portal .hp-pk-btn { margin-top: 20px; width: 100%; }
+
+  @media (max-width: 900px) {
+    #kc-home-portal h1 { font-size: 32px; }
+    #kc-home-portal h2 { font-size: 22px; }
+    #kc-home-portal .hp-hero-grid { grid-template-columns: 1fr; gap: 28px; }
+    #kc-home-portal .hp-goods, #kc-home-portal .hp-packs { grid-template-columns: 1fr; }
+    #kc-home-portal .hp-steps { grid-template-columns: 1fr; border-top: 0; }
+    #kc-home-portal .hp-step { padding: 18px 0; border-top: 1px solid var(--hp-line); }
+    #kc-home-portal .hp-vs { grid-template-columns: 1fr; }
+  }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__kcHomePortalLoaded) { return; }
+  window.__kcHomePortalLoaded = true;
+
+  var KC_BASE = 'http://localhost:3100';
+  var CACHE_KEY = 'kc_site_config';
+  var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
+  var HOST_ID = 'kc-home-portal';
+  var CFG = null;          // site-config
+  var GOODS = null;        // 商品（含原价）
+  var LAST_SIG = '';       // 渲染签名（避免无谓重绘）
+  var TIMER = null;
+
+  // ---------- 自带工具（不跨块调用）----------
+  function money(n) { return '$' + Number(n || 0).toFixed(2); }
+  function num(n) { var v = Number(n); return Number.isFinite(v) ? v : 0; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+  }
+  function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function readToken() {
+    try {
+      var raw = localStorage.getItem(TOKEN_KEY);
+      if (!raw) { return ''; }
+      var obj = JSON.parse(raw);
+      if (obj && obj.value) { return String(obj.value); }
+      return typeof obj === 'string' ? obj : '';
+    } catch (e) { return ''; }
+  }
+  function isDashboard() {
+    var h = window.location.hash || '';
+    return h === '' || h === '/' || h === '#/' || h.indexOf('#/dashboard') === 0;
+  }
+  function TICK() {
+    return '<svg class="hp-tick" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>';
+  }
+  // 装饰性圆点：最多 5 个（次数再多也不铺满，与 demo 一致）
+  function dots(on, total) {
+    var cap = Math.min(5, Math.max(0, total));
+    var onCap = Math.min(cap, Math.max(0, on));
+    var s = '<span class="hp-dots">';
+    for (var i = 0; i < cap; i++) { s += '<span class="hp-dot' + (i < onCap ? ' on' : '') + '"></span>'; }
+    return s + '</span>';
+  }
+
+  // ---------- 数据 ----------
+  function fetchConfig() {
+    return fetch(KC_BASE + '/api/public/site-config', { credentials: 'omit' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.success && j.config) {
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(j.config)); } catch (e) { }
+          return j.config;
+        }
+        return null;
+      }).catch(function () { return null; });
+  }
+  function planPriceCents(p) {
+    var keys = ['month_price', 'quarter_price', 'half_year_price', 'year_price', 'two_year_price', 'three_year_price', 'onetime_price'];
+    for (var i = 0; i < keys.length; i++) { if (typeof p[keys[i]] === 'number' && p[keys[i]] > 0) { return p[keys[i]]; } }
+    return 0;
+  }
+  function fetchGoods() {
+    var token = readToken();
+    if (!token) { return Promise.resolve([]); }
+    return fetch('/api/v1/user/plan/fetch', {
+      method: 'GET', headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }, credentials: 'same-origin'
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      return (j && j.data) ? j.data : [];
+    }).catch(function () { return []; });
+  }
+  // 把「商品 + 配置」合成渲染用数据结构
+  function buildModel(cfg, plans) {
+    var saved = {};
+    ((cfg && cfg.plans) || []).forEach(function (p) {
+      var id = p.planId != null ? p.planId : p.id;
+      if (id != null) { saved[String(id)] = p; }
+    });
+    return (plans || []).filter(function (p) {
+      return p.show && p.sell && planPriceCents(p) > 0;
+    }).sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); }).map(function (p) {
+      var c = saved[String(p.id)] || {};
+      var list = planPriceCents(p) / 100;
+      var quota = c.quotaPrice != null ? num(c.quotaPrice) : null;
+      var market = c.marketPrice != null ? num(c.marketPrice) : null;
+      var save = (quota != null) ? Math.max(0, +(list - quota).toFixed(2)) : 0;
+      return {
+        id: p.id, name: p.name || ('#' + p.id),
+        spec: (p.content ? String(p.content).slice(0, 22) : ''),
+        list: list, quota: quota, market: market, save: save
+      };
+    });
+  }
+
+  // ---------- 渲染 ----------
+  function pickMain(goods) {
+    if (!goods.length) { return null; }
+    var best = goods[0];
+    goods.forEach(function (g) {
+      var rank = (g.market != null ? g.market - (g.quota || g.list) : g.save);
+      var bestRank = (best.market != null ? best.market - (best.quota || best.list) : best.save);
+      if (rank > bestRank) { best = g; }
+    });
+    return best;
+  }
+
+  function heroHtml(cfg, goods) {
+    var brand = cfg.brand || {};
+    var packs = cfg.packs || [];
+    var light = packs[0] || { name: '权益包', fee: 0, times: 0 };
+    var main = pickMain(goods);
+    var mainName = main ? esc(main.name) : '共享账号';
+    var mainPrice = main && main.quota != null ? money(main.quota) : (main ? money(main.list) : '');
+    var marketLine = '';
+    if (main && main.market != null) {
+      marketLine = esc(cfg.copy && cfg.copy.marketLabel || '市场行情') + ' ' + money(main.market) + '+。';
+    }
+    var others = goods.filter(function (g) { return !main || g.id !== main.id; });
+    var othersLine = others.map(function (g) {
+      return esc(g.name) + ' 只要 ' + money(g.quota != null ? g.quota : g.list);
+    }).join('，');
+
+    var h1 = mainPrice
+      ? (mainName + '<br>只要 <span class="hp-save hp-num">' + mainPrice + '</span>')
+      : ('低门槛<br><span class="hp-save">批发价</span>');
+    var lead = (marketLine + (othersLine ? (marketLine ? '' : '') + othersLine + '。' : '')).trim();
+
+    var cond = '$' + num(light.fee) + ' 权益包解锁 <b>' + num(light.times) + ' 次</b>低价拿货机会 · 用完可续，不用先压几千美元';
+
+    var trust = [
+      '开通即到账，次数立刻可用',
+      '自动发卡，分钟级到账',
+      '用完可续，无需长期占用资金'
+    ].map(function (t) { return '<span>' + TICK() + esc(t) + '</span>'; }).join('');
+
+    // 右侧对照卡
+    var rows = goods.map(function (g) {
+      var disc = g.quota != null ? money(g.quota) : money(g.list);
+      return '<div class="hp-pl-row">' +
+        '<span class="hp-pl-name">' + esc(g.name) + '</span>' +
+        '<span class="hp-pl-list hp-num">' + money(g.list) + '</span>' +
+        '<span class="hp-pl-arrow">→</span>' +
+        '<span class="hp-pl-disc hp-num">' + disc + '</span>' +
+        '</div>';
+    }).join('') || '<div class="hp-pl-row"><span class="hp-pl-name">商品加载中…</span></div>';
+
+    var maxSave = goods.reduce(function (m, g) { return Math.max(m, g.save); }, 0);
+    var tag = maxSave > 0 ? '<span class="hp-tag">最高省 ' + money(maxSave) + ' / 次</span>' : '';
+
+    var concl = '';
+    if (main && num(light.times) > 0) {
+      var total = +(num(light.times) * main.save).toFixed(2);
+      var net = +(total - num(light.fee)).toFixed(2);
+      concl = num(light.times) + ' 次全买 ' + esc(main.name) + '：省 <b>' + money(total) + '</b>，扣掉包费<b>' + (net >= 0 ? '净赚 ' : '还差 ') + money(Math.abs(net)) + '</b>';
+    }
+
+    return '<section class="hp-hero"><div class="hp-hero-grid">' +
+      '<div>' +
+        '<div class="hp-eyebrow">' + esc((brand.sub || '代充批发') + ' · 权益价') + '</div>' +
+        '<h1>' + h1 + '</h1>' +
+        (lead ? '<p class="hp-lead" style="margin-top:14px">' + lead + '</p>' : '') +
+        '<div class="hp-cond">' + cond + '</div>' +
+        '<div class="hp-cta">' +
+          '<a class="hp-btn hp-btn-solid" href="#/plan" data-hp-nav>查看全部权益价</a>' +
+          '<span class="hp-hint">已登录 · 下单即按权益价结算</span>' +
+        '</div>' +
+        '<div class="hp-trust">' + trust + '</div>' +
+      '</div>' +
+      '<div class="hp-packcard">' +
+        '<div class="hp-pc-top">' +
+          '<div><div class="hp-pc-name">权益价对照</div><div class="hp-hint" style="margin-top:5px">原价 → 用权益价（消耗 1 次）</div></div>' +
+          tag +
+        '</div>' +
+        rows +
+        '<div class="hp-pc-times">' + dots(num(light.times), num(light.times)) + '<b>$' + num(light.fee) + ' ' + esc(light.name) + '解锁 ' + num(light.times) + ' 次</b></div>' +
+        (concl ? '<div class="hp-pc-concl">' + concl + '</div>' : '') +
+        '<a class="hp-btn hp-btn-solid hp-pc-buy" href="#/plan" data-hp-nav>开通' + esc(light.name) + ' · $' + num(light.fee) + '</a>' +
+      '</div>' +
+    '</div></section>';
+  }
+
+  function thresholdHtml(cfg, goods) {
+    var cp = cfg.copy || {};
+    var packs = cfg.packs || [];
+    var light = packs[0] || { fee: 0, times: 0 };
+    var fee = num(light.fee), times = num(light.times);
+    var title = cp.thresholdTitle || '拿这个价，不用先押几千美元';
+    var oldT = cp.oldSideTitle || '行业常见做法';
+    var newT = cp.newSideTitle || '我们';
+
+    function itemNew(k, nv, nSmall) {
+      return '<div class="hp-vs-item"><div class="hp-vs-k">' + esc(k) + '</div>' +
+        '<div class="hp-vs-v hp-num">' + esc(nv) + (nSmall ? '<small>' + esc(nSmall) + '</small>' : '') + '</div></div>';
+    }
+    return '<section class="hp-sec"><div class="hp-head">' +
+        '<div class="hp-eyebrow">门槛</div>' +
+        '<h2>' + esc(title) + '</h2>' +
+        '<p class="hp-lead" style="margin-top:12px">同样是批发价，差别在你要先把多少钱压在别人账上。</p>' +
+      '</div>' +
+      '<div class="hp-vs">' +
+        '<div class="hp-vs-col hp-vs-old">' +
+          '<div class="hp-vs-label">' + esc(oldT) + '</div>' +
+          '<div class="hp-vs-item"><div class="hp-vs-k">拿货门槛</div><div class="hp-vs-v hp-num">先充值数千美元起</div></div>' +
+          '<div class="hp-vs-item"><div class="hp-vs-k">资金占用</div><div class="hp-vs-v hp-num">长期压在平台账上</div></div>' +
+          '<div class="hp-vs-item"><div class="hp-vs-k">试错成本</div><div class="hp-vs-v hp-num">押错平台 = 全亏</div></div>' +
+        '</div>' +
+        '<div class="hp-vs-col hp-vs-new">' +
+          '<div class="hp-vs-label">' + esc(newT) + '</div>' +
+          itemNew('拿货门槛', '$' + fee + ' / 月', times + ' 次低价机会') +
+          itemNew('资金占用', '随时可停', '不用就退场') +
+          itemNew('试错成本', '$' + fee + ' 试 ' + times + ' 单', '跑通再放量') +
+        '</div>' +
+      '</div>' +
+      (cp.thresholdNote ? '<p class="hp-hint" style="margin-top:16px">' + esc(cp.thresholdNote) + '</p>' : '') +
+    '</section>';
+  }
+
+  function stepsHtml() {
+    var s = [
+      ['买权益包', '开通后 N 次低价购买权立刻到账。'],
+      ['用权益价下单', '每次下单消耗 1 次，按权益价结算。'],
+      ['次数用完，恢复原价', '用完就按原价买，想继续享权益价随时续包。']
+    ];
+    return '<section class="hp-sec"><div class="hp-head">' +
+        '<div class="hp-eyebrow">怎么用</div><h2>三步，多说一句都嫌多</h2></div>' +
+      '<div class="hp-steps">' + s.map(function (x, i) {
+        return '<div class="hp-step' + (i === 2 ? ' hp-step-last' : '') + '">' +
+          '<div class="hp-step-n">0' + (i + 1) + '</div><h3>' + esc(x[0]) + '</h3>' +
+          '<p class="hp-muted">' + esc(x[1]) + '</p></div>';
+      }).join('') + '</div></section>';
+  }
+
+  function goodsHtml(cfg, goods) {
+    var packs = cfg.packs || [];
+    var light = packs[0] || { times: 0 };
+    if (!goods.length) {
+      return '<section class="hp-sec"><div class="hp-head"><div class="hp-eyebrow">全部商品</div><h2>价格随你的权益状态变</h2></div>' +
+        '<p class="hp-hint">商品加载中…若长时间为空，请确认已配置商品与权益价。</p></section>';
+    }
+    var cards = goods.map(function (g) {
+      var hasQuota = g.quota != null;
+      var mainPrice = hasQuota ? g.quota : g.list;
+      var sub = hasQuota ? ('用 1 次权益 · 省 ' + money(g.save)) : ('开通权益包可享权益价');
+      var alt = hasQuota ? ('原价 <s>' + money(g.list) + '</s>') : ('用权益每次省 <b>' + money(g.save) + '</b>');
+      var btn = hasQuota
+        ? '<a class="hp-btn hp-btn-save hp-btn-sm hp-good-btn" href="#/plan" data-hp-nav>用权益购买</a>'
+        : '<a class="hp-btn hp-btn-solid hp-btn-sm hp-good-btn" href="#/plan" data-hp-nav>买权益包</a>';
+      var note = num(light.times) > 0 ? (num(light.times) + ' 次机会，用满更划算') : '';
+      return '<div class="hp-good">' +
+        '<div class="hp-good-name">' + esc(g.name) + '</div>' +
+        (g.spec ? '<div class="hp-good-spec">' + esc(g.spec) + '</div>' : '') +
+        '<div class="hp-good-price hp-num' + (hasQuota ? '' : ' is-plain') + '">' + money(mainPrice) + '</div>' +
+        '<div class="hp-good-sub' + (hasQuota ? '' : ' is-plain') + '">' + sub + '</div>' +
+        '<div class="hp-good-hr"></div>' +
+        '<div class="hp-good-alt">' + alt + '</div>' +
+        btn +
+        (note ? '<div class="hp-good-note">' + esc(note) + '</div>' : '') +
+        '</div>';
+    }).join('');
+    return '<section class="hp-sec"><div class="hp-head">' +
+        '<div class="hp-eyebrow">全部商品</div><h2>价格随你的权益状态变</h2></div>' +
+      '<div class="hp-goods">' + cards + '</div></section>';
+  }
+
+  function packsHtml(cfg, goods) {
+    var packs = cfg.packs || [];
+    var building = cfg.building || null;
+    if (!packs.length && !building) { return ''; }
+    var maxSave = goods && goods.length ? goods.reduce(function (m, g) { return Math.max(m, g.save); }, 0) : 0;
+    var main = goods && goods.length ? pickMain(goods) : null;
+
+    var cards = packs.map(function (p, i) {
+      var fee = num(p.fee), times = num(p.times);
+      var perCost = times > 0 ? +(fee / times).toFixed(2) : 0;
+      var items = [];
+      if (times > 0) { items.push('每次机会成本 ' + money(perCost)); }
+      if (maxSave > 0 && times > 0) {
+        var need = Math.max(1, Math.ceil(fee / maxSave));
+        items.push('买 ' + need + ' 次' + (main ? esc(main.name) : '') + '即回本');
+      }
+      var isHot = i === 0;
+      return '<div class="hp-pk' + (isHot ? ' hot' : '') + '">' +
+        (isHot ? '<span class="hp-pk-flag">起步首选</span>' : '') +
+        '<div class="hp-pk-name">' + esc(p.name) + '</div>' +
+        (p.tagline ? '<div class="hp-pk-tag">' + esc(p.tagline) + '</div>' : '') +
+        '<div class="hp-pk-fee hp-num">$' + fee + '<small>/ 月</small></div>' +
+        '<div class="hp-pk-times">' + dots(times, times) + times + ' 次权益</div>' +
+        '<ul class="hp-pk-list">' + items.map(function (t) {
+          return '<li>' + TICK() + '<span>' + t + '</span></li>';
+        }).join('') + '</ul>' +
+        '<a class="hp-btn ' + (isHot ? 'hp-btn-solid' : 'hp-btn-line') + ' hp-pk-btn" href="#/plan" data-hp-nav>开通' + esc(p.name) + '</a>' +
+        '</div>';
+    }).join('');
+
+    var buildCard = '';
+    if (building) {
+      buildCard = '<div class="hp-pk">' +
+        '<div class="hp-pk-name">' + esc(building.name || '建站支持') + '</div>' +
+        '<div class="hp-pk-fee hp-num">$' + num(building.fee) + '<small>/ ' + esc(building.unit || '月') + '</small></div>' +
+        '<div class="hp-pk-times"><span class="hp-tag-grey hp-tag">开放 API</span></div>' +
+        '<ul class="hp-pk-list">' +
+          '<li>' + TICK() + '<span>API 全量开放，可对接自建站</span></li>' +
+          '<li>' + TICK() + '<span>换上自己的域名，客户看不到货源</span></li>' +
+          '<li>' + TICK() + '<span>开通、发货、售后全部自动</span></li>' +
+        '</ul>' +
+        '<a class="hp-btn hp-btn-line hp-pk-btn" href="#/plan" data-hp-nav>了解套餐内容</a>' +
+        '</div>';
+    }
+    var cols = packs.length + (building ? 1 : 0);
+    return '<section class="hp-sec"><div class="hp-head">' +
+        '<div class="hp-eyebrow">权益包</div><h2>先验证市场，跑通了再放量</h2>' +
+        '<p class="hp-lead" style="margin-top:12px">小包是给还没验证的人，大包是给已经稳定出货的人。</p></div>' +
+      '<div class="hp-packs" style="grid-template-columns:repeat(' + Math.min(3, Math.max(1, cols)) + ',1fr)">' +
+        cards + buildCard + '</div></section>';
+  }
+
+  function buildHtml(cfg, goods) {
+    return '<div class="hp-wrap">' +
+      heroHtml(cfg, goods || []) +
+      thresholdHtml(cfg, goods || []) +
+      stepsHtml() +
+      goodsHtml(cfg, goods || []) +
+      packsHtml(cfg, goods || []) +
+      '</div>';
+  }
+
+  function render(force) {
+    if (!CFG) { return; }
+    var node = document.getElementById(HOST_ID);
+    if (!node) { return; }
+    var sig = JSON.stringify([CFG.plans, CFG.packs, CFG.building, (GOODS || []).map(function (g) { return [g.id, g.list]; })]);
+    if (!force && sig === LAST_SIG) { return; }
+    LAST_SIG = sig;
+    node.innerHTML = buildHtml(CFG, GOODS);
+  }
+
+  // ---------- 挂载 / 保活 ----------
+  function ensureMounted() {
+    if (!isDashboard()) { return false; }
+    var host = document.querySelector('section.cus-scroll-y');
+    if (!host) { return false; }
+    document.body.classList.add('kc-home-v2');
+    var node = document.getElementById(HOST_ID);
+    if (!node) {
+      node = document.createElement('section');
+      node.id = HOST_ID;
+      node.setAttribute('aria-label', 'KC 首页门户');
+      host.insertBefore(node, host.firstChild);
+      node.innerHTML = CFG ? buildHtml(CFG, GOODS) : '<div class="hp-wrap"></div>';
+      if (CFG) { render(true); }
+    } else if (node.parentElement !== host) {
+      host.insertBefore(node, host.firstChild);
+    }
+    return true;
+  }
+
+  function tick() {
+    if (!isDashboard()) {
+      document.body.classList.remove('kc-home-v2');
+      var n = document.getElementById(HOST_ID);
+      if (n && !isDashboard()) { /* 留在 DOM 也无妨；隐藏由 CSS 处理 */ }
+      if (TIMER) { clearInterval(TIMER); TIMER = null; }
+      return;
+    }
+    ensureMounted();
+    render(false);
+  }
+
+  function start() {
+    CFG = readCache();                                   // ① 缓存先上，首帧不闪
+    ensureMounted();
+    if (CFG) { render(true); }
+    fetchConfig().then(function (c) {                      // ② 拉最新配置
+      if (c) { CFG = c; LAST_SIG = ''; render(true); }
+    });
+    fetchGoods().then(function (plans) {                   // ③ 拉商品（原价）
+      GOODS = buildModel(CFG || readCache() || {}, plans);
+      render(true);
+    });
+    if (TIMER) { clearInterval(TIMER); }
+    TIMER = setInterval(tick, 600);                        // ④ 守护：抵住 Vue 重建 / 路由切换
+  }
+
+  // 路由变化：进出 dashboard 时立即显隐（不等守护 tick）
+  window.addEventListener('hashchange', function () {
+    if (isDashboard()) { start(); }
+    else { document.body.classList.remove('kc-home-v2'); }
+  });
+
+  // 等 DOM 就绪再起
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+<!-- KC-HOME-PORTAL-END -->

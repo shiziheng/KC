@@ -7,7 +7,7 @@ require __DIR__ . '/vendor/autoload.php';
 $app = require_once __DIR__ . '/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-$srcs = ['/www/kc_activate_inject.html', '/www/kc_panel_inject.html', '/www/kc_theme_inject.html'];
+$srcs = ['/www/kc_activate_inject.html', '/www/kc_panel_inject.html', '/www/kc_theme_inject.html', '/www/kc_home_portal.html', '/www/kc_plan_double_price.html'];
 $parts = [];
 foreach ($srcs as $src) {
     if (!file_exists($src)) {
@@ -39,6 +39,7 @@ echo "包含兑卡面板(kcPanelLoaded): " . (strpos($val, 'kcPanelLoaded') !== 
 echo "包含充值入口(kc-float-topup): " . (strpos($val, 'kc-float-topup') !== false ? 'YES' : 'NO') . "\n";
 echo "包含主题注入(kcThemeLoaded): " . (strpos($val, 'kcThemeLoaded') !== false ? 'YES' : 'NO') . "\n";
 echo "包含顶部导航(kc-topbar): " . (strpos($val, 'kc-topbar') !== false ? 'YES' : 'NO') . "\n";
+echo "包含首页门户(kc-home-portal): " . (strpos($val, 'kc-home-portal') !== false ? 'YES' : 'NO') . "\n";
 echo "\n--- 前后各 120 字符 ---\n";
 echo "HEAD: " . substr($val, 0, 120) . "\n";
 echo "TAIL: " . substr($val, -120) . "\n";

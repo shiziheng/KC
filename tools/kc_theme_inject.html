@@ -21,7 +21,7 @@
        9. order 页表格卡片化 + 状态语义着色（按行内状态文本匹配，MutationObserver 保活）
        10. S4 机场字段过滤器：订单/列表/个人中心/菜单的机场字段屏蔽与代充化 + node/traffic 路由拦截（v1.22.0 · SP-2026-10-12-v1.1.0）
      路由映射（_recon-xb3.js 逐项点击实测）：
-       首页→#/dashboard 商品→#/plan 订单→#/order
+       权益包→#/plan 订单→#/order（首页由左上 logo 承担，2026-10-14 Step 4：导航 5→4）
        个人中心→#/profile 邀请→#/invite 工单→#/ticket
        文档→#/knowledge 节点→#/node 流量→#/traffic
      充值/兑卡：程序化 click #kc-float-topup / #kc-float-redeem
@@ -1084,8 +1084,7 @@
               '<span class="kc-tb-logo-text">KC 直供</span>' +
             '</a>' +
             '<nav class="kc-tb-nav">' +
-              '<a href="#/dashboard" data-route="#/dashboard">首页</a>' +
-              '<a href="#/plan" data-route="#/plan" data-cat="recharge">代充</a>' +
+              '<a href="#/plan" data-route="#/plan" data-cat="recharge">权益包</a>' +
               '<a href="#/order" data-route="#/order">我的订单</a>' +
             '</nav>' +
             '<div class="kc-tb-right">' +
@@ -1116,8 +1115,7 @@
           '<div class="kc-drawer-bal"><span>账户余额</span><b id="kc-drawer-bal">--</b></div>' +
           '<div class="kc-drawer-cap">导航</div>' +
           '<nav class="kc-drawer-nav">' +
-            '<a href="#/dashboard" data-route="#/dashboard">首页</a>' +
-            '<a href="#/plan" data-route="#/plan" data-cat="recharge">代充</a>' +
+            '<a href="#/plan" data-route="#/plan" data-cat="recharge">权益包</a>' +
             '<a href="#/order" data-route="#/order">我的订单</a>' +
             '<button type="button" data-action="topup">充值</button>' +
             '<div class="kc-drawer-cap">更多功能</div>' +
@@ -1881,7 +1879,7 @@ function closeRechargePage() {
                 if (!root) { return; }
                 var anchor = root.querySelector('a[data-route="#/plan"]');
                 if (!anchor) { return; }
-                anchor.textContent = cats[0].name;
+                // 2026-10-14 Step 4：首项固定为「权益包」入口文案（不再回写成后台分类名），仅同步 data-cat
                 anchor.setAttribute('data-cat', cats[0].key);
                 var olds = root.querySelectorAll('a.kc-cat-dyn');
                 for (var k = 0; k < olds.length; k++) { olds[k].remove(); }

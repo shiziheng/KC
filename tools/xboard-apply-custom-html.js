@@ -26,6 +26,8 @@ console.log('1) 拷源文件进容器');
 run(['cp', `${PROJ}/tools/kc_activate_inject.html`, 'xboard:/www/kc_activate_inject.html']);
 run(['cp', `${PROJ}/tools/kc_panel_inject.html`, 'xboard:/www/kc_panel_inject.html']);
 run(['cp', `${PROJ}/tools/kc_theme_inject.html`, 'xboard:/www/kc_theme_inject.html']);
+run(['cp', `${PROJ}/tools/kc_home_portal.html`, 'xboard:/www/kc_home_portal.html']);
+run(['cp', `${PROJ}/tools/kc_plan_double_price.html`, 'xboard:/www/kc_plan_double_price.html']);
 run(['cp', `${PROJ}/tools/xboard-set-custom-html.php`, 'xboard:/www/xboard-set-custom-html.php']);
 
 console.log('2) 写入主题配置');
