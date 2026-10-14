@@ -1,8 +1,8 @@
 {
-  "version": "1.28.2",
-  "version_tag": "v1.28.2",
+  "version": "1.32.0",
+  "version_tag": "v1.32.0",
   "date": "2026-10-14",
-  "title": "后台管理体验修复（19 页 UX 走查：权益弹窗 P0 + 表单/列表中文化）",
+  "title": "前台改版（KC 直供）Step 1-5：全局配色 + 首页门户双价 + 商品页双价 + 导航收敛 + 收尾",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -63,6 +63,9 @@
   },
   "latest": {
     "added": [
+      "v1.32.0 · 注入块 tools/kc_home_portal.html（首页门户）：压制旧 dashboard 门户 + 价格前置 Hero（权益价大字 + 市场行情对照 + 解锁条件）+ 门槛对比（数千美元 vs 权益价）+ 商品双价卡 + 权益包三档；配置驱动、600ms 守护保活、仅 dashboard 生效",
+      "v1.32.0 · 注入块 tools/kc_plan_double_price.html（商品页 #/plan 双价）：压制主题单价格行 .kc-cb-price + 插入 .kcdp-box 双价标注层（权益价绿字 + 「用 1 次权益 · 省 $X」+ 原价划线）；与首页同源同值、配置驱动、仅 #/plan 列表页生效",
+      "v1.32.0 · 顶栏/抽屉导航收敛 5→4：去冗余「首页」（由 logo 承担）+ 原「代充」项改名「权益包」（指向 #/plan），并把「权益包」做成导航主入口",
       "v1.28.2 · GET /api/admin/entitlements/user-lookup（只读、鉴权保护）：邮箱 → Xboard user_id；权益页查询框兼容邮箱/数字 ID 双格式",
       "v1.28.1 · 去掉「有未付款订单不能再下单」限制：用户侧下单不再校验 isNotCompleteOrderByUserId，可同时存在多笔待支付/处理中订单（内核补丁 P5+P6，幂等脚本 tools/xboard-patch-allow-concurrent-orders.php)",
       "工具 tools/_v130_verify_concurrent.js：验证「已有待支付单时仍能连续下单」并自动清理测试单",
@@ -71,6 +74,10 @@
       "v1.28.0 · 订单详情四节点时间线「订单进度」+「申请售后」弹窗（POST /user/kc/after-sales）与「联系客服」入口"
     ],
     "changed": [
+      "v1.32.0 · 全局配色 token（tools/kc_theme_inject.html）：品牌强调色 teal #0d9488 → 墨黑+省钱绿 #00A862；hover #00915A；soft rgba(0,168,98,.10/.18 深色)；渐变/阴影/文字色同步换绿，旧青绿残留 0",
+      "v1.32.0 · 导航收敛（tools/kc_theme_inject.html）：HTML_TOPBAR 的 .kc-tb-nav 与 HTML_DRAWER 的 .kc-drawer-nav 两处同步 5→4；并删除 setupNavCategories() 里 anchor.textContent = cats[0].name 的回写（否则「权益包」文案会被后台分类名「代充」覆盖）",
+      "v1.32.0 · 部署链更新：xboard-set-custom-html.php 的 $srcs 增加 /www/kc_home_portal.html 与 /www/kc_plan_double_price.html；xboard-apply-custom-html.js 增加对应拷源行（custom_html 361800 字符）",
+      "v1.32.0 · 文档同步：新增 docs/改版进度.md 为前台改版进度单一事实源（含全部决策/坐标/已知坑/测试用例/下一步）",
       "v1.28.2 · 后台 19 页 UX 走查修复：补 dialog-backdrop/dialog-card CSS（P0 权益弹窗裸渲染）、权益表单 $ 输入+逗号分隔 scope+枚举中文化、任务管理状态中文/日期不折行、自动化阶段列宽修复、toast 移右上角、导航「任务与日志」分组+删隐藏残留、权益页头文案去表名",
       "v1.28.1 · Xboard 内核补丁由 4 处增至 6 处（P5 OrderService / P6 V1 OrderController），已纳入 tools/xboard-patch-check.js 核查与 --fix 重打；并回拷更新了 tools/xboard-patches/OrderService.php（P3 整文件覆盖会冲掉 P5，顺序已调整）",
       "v1.28.0 · 充值档位定为 $100/$300/$500 + 自定义金额（$1~$500）；删除订阅相关提示文案（任何账号点「充值」直接进选额页）",
@@ -79,6 +86,10 @@
       "v1.28.0 · tools/_v128_ux_batch1b.js 加防御性去重（kcTopupSubHint 无条件清理），修复替换结果自身为历史形态前缀导致的重复累积"
     ],
     "verified": [
+      "v1.32.0 · 前台改版 Step 1-5 验收全绿：Step1 配色（截图 logs/v132-theme/2026-10-14T13-39-15-497Z）；Step2 首页门户 13/13（tools/_v132_home_verify.js）；Step3 商品页双价 14/14（tools/_v132_plan_verify.js）；Step4 导航收敛 20/20（tools/_v132_nav_verify.js）；Step5 术语+深色 10/10（tools/_v132_final_verify.js）",
+      "v1.32.0 · 回归扫描（证明 Step 1-4 无回退）：复跑 home 13/13 + plan 14/14 + nav 20/20 全绿",
+      "v1.32.0 · 配置驱动铁证：后台改权益价 $12→$10→$12，首页与商品页价格即变即还原；三页运行期 JS 错误均为 []；旧 teal 残留 0",
+      "v1.32.0 · 每个 Step 均落「功能测试工程师 ≥3 条 + UX 专家 ≥3 条」测试用例并实测（明细见 docs/改版进度.md「四、已完成」各 Step 段）",
       "v1.28.2 · tools/_v1282_ux_verify.js：内联脚本 node --check 1/1、15 项改动点核对全 PASS、server.js --check 通过；浏览器实测权益弹窗居中/任务管理/自动化任务/toast/导航截图 v1282_*.png；user-lookup 无 token 401、带 token 200（user_id=1）；check-docs-sync + check-currency 通过",
       "v1.28.1 · tools/_v130_verify_concurrent.js：下单前已有 1 笔待支付单 → 连续下 2 单均 HTTP 200（新单 2026101316100695560752664 / 2026101316100707115214796），下单后待支付/处理中=3，取消清理 2 单后归零；限制已去除",
       "v1.28.1 · tools/xboard-patch-check.js：6/6 全部在位（P1/P2/P3/P4/P5/P6）；php -l 双文件无错误；octane:reload 完成；容器内两文件均留 .pre-concurrent.bak",
@@ -88,6 +99,10 @@
       "tools/check-docs-sync.js 与 tools/check-currency.js 均通过"
     ],
     "risks": [
+      "⭐版本账本合并决策（v1.32.0 收口）：v1.28.2（后台 UX 流）+ v1.29~v1.31（前台改版流：KC 直供 / 站点与定价页 / 机场痕迹收尾 / 三份注入源）+ 本批（前台改版 Step 1-5）同处一工作区，现统一登记为 v1.32.0 —— 两条流合并入同一版本号，原 docs/00_项目状态.md 的「版本账本归属待定」项据此收口",
+      "⭐注入式改版回滚约定：Step 2/3 注入块回滚＝从 tools/xboard-set-custom-html.php 的 $srcs 移除对应文件后重新部署（约 2 分钟即恢复主题原貌）；Step 1/4 为 theme 块内改动，按 docs/改版进度.md 各 Step「如何回滚」段复原",
+      "导航主入口「权益包」为静态文案，依赖 setupNavCategories() 不再回写 textContent；后续若改分类配置渲染逻辑，须保留该约束（否则首项会被后台分类名「代充」覆盖）",
+      "深色模式由 detectDark() 按 body 背景亮度自动判定，无手动开关；注入块（门户/双价）的深色 token 全量派生自主题 token，故与主题深色同步（Step 5 已实测可读、主色不漂移）",
       "⭐内核补丁顺序陷阱：P3 重打是整文件覆盖 tools/xboard-patches/OrderService.php，会冲掉 P5 —— P5/P6 必须排在 P3 之后；改过容器内 OrderService.php 后必须回拷更新该成品文件",
       "⭐运维红线：任何直接改 DB custom_html 的注入改动，收尾必须跑 tools/_v129_sync_sources_from_db.js --write 回灌本地源，否则下次全量部署会静默回滚",
       "v1.28.2 用户决策：续费管理页保持现状不改（危险操作无确认/无生效列表）；自动化任务 SUCCESS 与 Checkout 未打开的口径对齐属数据层语义，待产品确认",
@@ -99,6 +114,7 @@
     ]
   },
   "next": [
+    "前台改版（KC 直供）客侧可选增强（非本版本范围，需另立需求）：移动端 ≤480px 首屏排布打磨、深色模式手动开关（现为自动判定）、真实下单/支付全链路走查",
     "第三批（走查方案剩余项）：收银台 CNY 基准币文案（定价层决策，需先确认）、订单列表分页/加载更多、钱包页导出明细、售后与工单联动",
     "用户执行：$1 真实充值测试与小额真实首单（收款链路最终验收；用户已确认暂缓，等其安排）",
     "评审《系统低耦合重整与上线路线》D1–D6 与《后台形态选型》方案稿",
