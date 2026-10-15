@@ -606,6 +606,23 @@ async function ensureEntitlementUsesTable() {
     try { await runExecute('ALTER TABLE kc_entitlement_uses ADD COLUMN note VARCHAR(255) NOT NULL DEFAULT "" AFTER discount_cents'); } catch (e) { /* 已存在则忽略 */ }
 }
 
+// v1.35.0 · 权益报价（权益包 × 商品 一口价）—— Step 8 起权益定价的唯一事实源
+// 替代 v1.18.0 的「规则级统一折扣」：不同权益包对同一商品可有不同报价；未配置 = 按原价（不优惠）
+const ENTITLEMENT_PRICES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_prices (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    rule_code VARCHAR(64) NOT NULL COMMENT '→ kc_entitlement_rules.code（权益包）',
+    plan_code VARCHAR(64) NOT NULL COMMENT '→ 商品（xplan_<v2id>）',
+    price_cents INT UNSIGNED NOT NULL COMMENT '该权益包下该商品一口价（分）',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_rule_plan (rule_code, plan_code),
+    KEY idx_rule (rule_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权益报价（权益包×商品 一口价）'`;
+
+async function ensureEntitlementPricesTable() { await ensureTable('kc_entitlement_prices', ENTITLEMENT_PRICES_TABLE_SQL); }
+
 // v1.20.0 · 权益·动作流水（SP §R6 事件型权益）
 const ENTITLEMENT_ACTIONS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_actions (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -899,6 +916,7 @@ async function ensureReady() {
     await ensureEntitlementRulesTable();
     await ensureEntitlementGrantsTable();
     await ensureEntitlementUsesTable();
+    await ensureEntitlementPricesTable();
     await ensureEntitlementActionsTable();
     await initializeBaseData();
     await ensureAdminSecurityDefaults();

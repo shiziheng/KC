@@ -107,10 +107,13 @@ function scan(text) {
         await nav(BASE + '/#/login', 5500);
         await ev("(function(){var b=document.querySelector('#kc-guest [data-action=\"guest-login\"]');if(b)b.click();})()");
         await sleep(1600);
-        const boxStr = await ev("(function(){var ins=document.querySelectorAll('.wh-full.flex.items-center input');for(var i=0;i<ins.length;i++){if((ins[i].type||'')!=='password'){var r=ins[i].getBoundingClientRect();return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)});}}return null;})()");
+        const boxStr = await ev("(function(){var ins=document.querySelectorAll('#kc-gl-modal input');for(var i=0;i<ins.length;i++){if((ins[i].type||'')!=='password'){var r=ins[i].getBoundingClientRect();return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)});}}return null;})()");
         if (boxStr) { const b = JSON.parse(boxStr); await clickAt(b.x, b.y); await sleep(250); await typeText(EMAIL); await sleep(350); await key('Tab', 'Tab', 9); await sleep(250); await typeText(PASS); await sleep(400); }
-        await key('Enter', 'Enter', 13);
+        // 自建登录层为原生 <form>：Enter 需带 text 才会触发浏览器隐式提交（keypress）
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' }, sid);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, sid);
         let ok = false; for (let i = 0; i < 40; i++) { await sleep(500); if (await ev("localStorage.getItem('VUE_NAIVE_ACCESS_TOKEN')?1:0")) { ok = true; break; } }
+        if (!ok) { await ev("(function(){var b=document.getElementById('kc-gl-submit');if(b)b.click();return 'ok';})()"); for (let i = 0; i < 24; i++) { await sleep(500); if (await ev("localStorage.getItem('VUE_NAIVE_ACCESS_TOKEN')?1:0")) { ok = true; break; } } }
         addCheck('登录测试账号', ok, EMAIL);
         if (!ok) throw new Error('登录失败');
 
@@ -140,7 +143,8 @@ function scan(text) {
         const dJ = JSON.parse(dDump || '{}');
         report.pages.push({ name: '04_order_detail_dump', tradeNo: detailNo, dump: dJ });
         const rowsStr = (dJ.rows || []).join(' | ');
-        addCheck('详情·「服务周期：30 天」替换到位', rowsStr.indexOf('服务周期') >= 0 && rowsStr.indexOf('30 天') >= 0, rowsStr.slice(0, 200));
+        // 期望值随「最近订单」的 period 变化（月付/一次性/权益包兑换等），故断言映射后落在合法值域
+        addCheck('详情·「服务周期」替换到位（映射到合法值域）', /服务周期：\s*(单次|30 天|90 天|180 天|365 天|730 天|1095 天)/.test(rowsStr), rowsStr.slice(0, 200));
         addCheck('详情·「交付方式：卡密自动发放」替换到位', rowsStr.indexOf('交付方式') >= 0 && rowsStr.indexOf('卡密自动发放') >= 0, rowsStr.slice(0, 200));
         addCheck('详情·无「类型/周期」「产品流量」残留', rowsStr.indexOf('类型/周期') < 0 && rowsStr.indexOf('产品流量') < 0);
         addCheck('详情·无「查看使用教程」按钮', (dJ.buttons || []).indexOf('查看使用教程') < 0, (dJ.buttons || []).join(','));

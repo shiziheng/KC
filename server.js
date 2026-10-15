@@ -4463,13 +4463,16 @@ app.post('/api/integration/entitlement/refund', requireIntegrationAuth, async (r
 //       「用户手里的 grant」折算进 Xboard 的订单金额：
 //         quote   —— 下单前按 base_cents 折算权益价（并落盘 snapshot 记住用了哪个 grant）
 //         consume —— 交付成功后按 trade_no 幂等扣次（失败/退款走已有的 /refund）
-// 折扣算法与 /api/pricing/quote 的权益分支**完全一致**（percent / fixed_cents / fixed_price_cents）。
+// v1.35.0 · 权益定价口径：一律取自「权益报价」表 kc_entitlement_prices（权益包 × 商品 一口价），
+//   与 /api/pricing/quote 的权益分支共用同一 helper（pickBestEntitlementPrice）；
+//   未配置该商品报价 → 不优惠（按原价）。旧的规则级统一折扣（percent/fixed）已废弃。
 
-// 取某用户当前「生效中」的权益 grant（含规则折扣字段）。查询失败返回空数组，不阻塞报价。
+// 取某用户当前「生效中」的权益 grant。查询失败返回空数组，不阻塞报价。
+// v1.35.0：定价不再读规则级折扣字段，故 SELECT 只取 grant 侧字段（r.status 仍在 JOIN 条件里过滤）。
 async function entitlementActiveGrants(user_id) {
     try {
         return await store.runQuery(
-            'SELECT g.id, g.rule_code, g.remaining_uses, g.expires_at, r.discount_type, r.discount_value, r.min_order_cents, r.plan_scope, r.priority ' +
+            'SELECT g.id, g.rule_code, g.remaining_uses, g.expires_at ' +
             'FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code=g.rule_code ' +
             'WHERE g.user_id=? AND g.status=? AND r.status=?',
             [user_id, 'active', 'active']
@@ -4479,27 +4482,43 @@ async function entitlementActiveGrants(user_id) {
     }
 }
 
-// 从 grants 中挑出对 (baseCents, planCode) 最优（折扣后价最低）的一条。
-// 过期 / 次数用尽 / 未达门槛 / 不在 plan_scope 的 grant 一律跳过。
-function bestGrantFor(grants, baseCents, planCode, now) {
+// 批量读取「权益报价」（权益包 × 商品 一口价），返回索引 { [rule_code]: { [plan_code]: price_cents } }。
+// 查询失败返回空索引（= 全部按原价），不阻塞报价。
+async function loadEntitlementPrices(ruleCodes) {
+    const codes = Array.from(new Set((ruleCodes || []).map(c => String(c || '').trim()).filter(Boolean)));
+    const index = {};
+    if (!codes.length) return index;
+    try {
+        const placeholders = codes.map(() => '?').join(',');
+        const rows = await store.runQuery(
+            'SELECT rule_code, plan_code, price_cents FROM kc_entitlement_prices WHERE status=? AND rule_code IN (' + placeholders + ')',
+            ['active', ...codes]
+        );
+        for (const r of rows) {
+            const rc = String(r.rule_code);
+            if (!index[rc]) index[rc] = {};
+            index[rc][String(r.plan_code)] = Number(r.price_cents);
+        }
+    } catch (e) { /* 查询失败 → 空索引（按原价） */ }
+    return index;
+}
+
+// 从 grants 中挑出对 (baseCents, planCode) 最优（报价最低）的一条。
+// v1.35.0 · 每商品单独报价：定价一律取自 kc_entitlement_prices（权益包 × 商品 一口价）；
+//   过期 / 次数用尽的 grant 跳过；**未配置该商品报价 → 该 grant 不产生优惠（按原价）**。
+function pickBestEntitlementPrice(grants, priceIndex, baseCents, planCode, now) {
     let best = null;
     for (const g of grants) {
         if (g.expires_at && new Date(g.expires_at) < now) continue;
         if (Number(g.remaining_uses) <= 0) continue;
-        if (baseCents < Number(g.min_order_cents || 0)) continue;
-        let scope = [];
-        try { scope = typeof g.plan_scope === 'string' ? JSON.parse(g.plan_scope) : (g.plan_scope || []); } catch (e) { scope = []; }
-        if (Array.isArray(scope) && scope.length && planCode && !scope.includes(planCode)) continue;
-        let discounted = baseCents;
-        if (g.discount_type === 'percent') {
-            discounted = Math.max(0, Math.round(baseCents * (1 - Number(g.discount_value) / 100)));
-        } else if (g.discount_type === 'fixed_cents') {
-            discounted = Math.max(0, baseCents - Number(g.discount_value));
-        } else if (g.discount_type === 'fixed_price_cents') {
-            discounted = Math.max(0, Number(g.discount_value));
-        }
-        if (best == null || discounted < best.cents) {
-            best = { cents: discounted, rule_code: g.rule_code, grant_id: Number(g.id) };
+        const byPlan = priceIndex ? priceIndex[g.rule_code] : null;
+        if (!byPlan) continue;
+        const raw = byPlan[planCode];
+        if (raw == null) continue;                       // 未配置该商品 → 不优惠
+        const price = Math.max(0, Math.floor(Number(raw)));
+        if (!(price < baseCents)) continue;              // 报价不低于原价 → 无优惠意义
+        if (best == null || price < best.cents) {
+            best = { cents: price, rule_code: g.rule_code, grant_id: Number(g.id) };
         }
     }
     return best;
@@ -4528,6 +4547,7 @@ app.post('/api/integration/entitlement/quote', requireIntegrationAuth, async (re
 
         const now = new Date();
         const grants = await entitlementActiveGrants(user_id);
+        const priceIndex = await loadEntitlementPrices(grants.map(g => g.rule_code));
         const quotes = [];
         for (const it of items) {
             const planCode = String(it.plan_code || '').trim().slice(0, 64);
@@ -4538,7 +4558,7 @@ app.post('/api/integration/entitlement/quote', requireIntegrationAuth, async (re
                 quotes.push({ plan_code: planCode, base_cents: baseCents, final_cents: baseCents, applied_source: 'none', applied_grant_id: null, applied_rule_code: null, discount_cents: 0 });
                 continue;
             }
-            const best = bestGrantFor(grants, baseCents, planCode, now);
+            const best = pickBestEntitlementPrice(grants, priceIndex, baseCents, planCode, now);
             const useEnt = best != null && best.cents < baseCents;
             const finalCents = useEnt ? (best.cents * qtyN) : (baseCents * qtyN);
             if (useEnt && tradeNo) {
@@ -5367,44 +5387,20 @@ async function priceQuote({ plan_code, user_id = null, qty = 1, trade_no = null 
     const base = candidates.find(r => r.source === 'manual') || picked;
     const qtyN = Math.max(1, Number(qty) || 1);
 
-    // v1.18.0 · 权益分支（R4）：查询 user 的 active grants，按规则计算折扣后价，与 picked 比谁低谁优
+    // v1.18.0 起 · 权益分支（R4）；v1.35.0 起改为读「权益报价」表（权益包 × 商品 一口价），
+    // 与集成 quote 端点共用同一 helper；未配置该商品报价 → 不优惠（按原价）
     let bestEntCents = null;
     let bestEntRuleId = null;
     let bestEntGrantId = null;
     if (user_id) {
         try {
-            const grants = await store.runQuery(
-                'SELECT g.id, g.rule_code, g.remaining_uses, g.expires_at, r.discount_type, r.discount_value, r.min_order_cents, r.plan_scope, r.priority ' +
-                'FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code=g.rule_code ' +
-                'WHERE g.user_id=? AND g.status=? AND r.status=?',
-                [user_id, 'active', 'active']
-            );
-            const baseCents = Number(base.amount_cents);
-            for (const g of grants) {
-                // 过期校验
-                if (g.expires_at && new Date(g.expires_at) < now) continue;
-                // 次数校验（0=不限）
-                if (Number(g.remaining_uses) <= 0) continue;
-                // 门槛
-                if (baseCents < Number(g.min_order_cents || 0)) continue;
-                // plan_scope
-                let scope = [];
-                try { scope = typeof g.plan_scope === 'string' ? JSON.parse(g.plan_scope) : (g.plan_scope || []); } catch (e) { scope = []; }
-                if (Array.isArray(scope) && scope.length && !scope.includes(p.code)) continue;
-                // 折扣计算
-                let discounted = baseCents;
-                if (g.discount_type === 'percent') {
-                    discounted = Math.max(0, Math.round(baseCents * (1 - Number(g.discount_value) / 100)));
-                } else if (g.discount_type === 'fixed_cents') {
-                    discounted = Math.max(0, baseCents - Number(g.discount_value));
-                } else if (g.discount_type === 'fixed_price_cents') {
-                    discounted = Math.max(0, Number(g.discount_value));
-                }
-                if (bestEntCents == null || discounted < bestEntCents) {
-                    bestEntCents = discounted;
-                    bestEntRuleId = g.rule_code;
-                    bestEntGrantId = g.id;
-                }
+            const grants = await entitlementActiveGrants(user_id);
+            const priceIndex = await loadEntitlementPrices(grants.map(g => g.rule_code));
+            const bestEnt = pickBestEntitlementPrice(grants, priceIndex, Number(base.amount_cents), p.code, now);
+            if (bestEnt != null) {
+                bestEntCents = bestEnt.cents;
+                bestEntRuleId = bestEnt.rule_code;
+                bestEntGrantId = bestEnt.grant_id;
             }
         } catch (e) { /* 权益查询失败不阻塞 manual/promotion */ }
     }
@@ -5545,6 +5541,82 @@ app.patch('/api/admin/entitlements/rules/:code', requireSecondaryAuth, async (re
             [n.display_name, n.plan_scope, n.discount_type, n.discount_value, n.min_order_cents, n.grant_uses, n.grant_period_days, n.priority, n.status, n.source, n.trigger_plan_code, n.valid_from, n.valid_until, n.note, code]
         );
         res.json({ success: true, data: { code } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// ============================================================
+// v1.35.0 · 权益报价（权益包 × 商品 一口价）—— Step 8 后台维护入口
+// 路由：/api/admin/entitlements/prices
+// 语义：每个权益包对每个商品可配置独立一口价；未配置 = 按原价（不优惠）
+// ============================================================
+// 取商品「我方原价」（分）：与前台 #/plan / 首页同口径 —— 按周期顺序取第一个 >0 的价 ×100
+// 注意：v2_plan.prices 存的是「主单位」（如 {"monthly":15} = $15），Xboard 出 API 时 ×100 转成分
+const EP_PERIOD_ORDER = ['monthly', 'quarterly', 'half_yearly', 'yearly', 'two_yearly', 'three_yearly', 'onetime'];
+function entitlementListPriceCents(pricesRaw) {
+    try {
+        const p = typeof pricesRaw === 'string' ? JSON.parse(pricesRaw) : pricesRaw;
+        if (!p || typeof p !== 'object' || Array.isArray(p)) return 0;
+        for (const k of EP_PERIOD_ORDER) { const v = Number(p[k]); if (v > 0) return Math.round(v * 100); }
+    } catch (e) { /* ignore */ }
+    return 0;
+}
+
+app.get('/api/admin/entitlements/prices', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rule_code = String(req.query.rule_code || '').trim().slice(0, 64);
+        const packs = await store.runQuery('SELECT code, display_name FROM kc_entitlement_rules WHERE status=? ORDER BY priority DESC, id DESC', ['active']);
+        const priceMap = {};
+        if (rule_code) {
+            const cur = await store.runQuery('SELECT plan_code, price_cents FROM kc_entitlement_prices WHERE rule_code=? AND status=?', [rule_code, 'active']);
+            cur.forEach(r => { priceMap[String(r.plan_code)] = Number(r.price_cents); });
+        }
+        const rows = await store.runQuery(
+            'SELECT k.code AS plan_code, COALESCE(NULLIF(p.name, ""), k.display_name, k.code) AS name, p.prices AS prices ' +
+            'FROM kc_plans k LEFT JOIN xboard.v2_plan p ON p.id = CAST(SUBSTRING(k.code, 7) AS UNSIGNED) ' +
+            'WHERE k.code REGEXP "^xplan_[0-9]+$" AND (k.status IS NULL OR k.status <> ?) ORDER BY k.code ASC',
+            ['archived']
+        );
+        const products = rows.map(r => {
+            const pc = priceMap[String(r.plan_code)];
+            return { plan_code: String(r.plan_code), name: String(r.name || r.plan_code), list_price_cents: entitlementListPriceCents(r.prices), price_cents: pc != null ? pc : null };
+        });
+        res.json({ success: true, data: { rule_code, packs: packs.map(p => ({ code: p.code, display_name: p.display_name || p.code })), products } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 批量保存某权益包的逐商品报价：price_cents 为空/null → 删除该行（= 未配置 = 原价）
+app.post('/api/admin/entitlements/prices', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const body = req.body || {};
+        const rule_code = String(body.rule_code || '').trim().slice(0, 64);
+        if (!rule_code) return res.status(400).json({ success: false, message: 'rule_code 必填' });
+        const ruleRows = await store.runQuery('SELECT code FROM kc_entitlement_rules WHERE code=? LIMIT 1', [rule_code]);
+        if (!ruleRows.length) return res.status(400).json({ success: false, message: '权益包不存在：' + rule_code });
+        const items = Array.isArray(body.items) ? body.items : [];
+        if (!items.length) return res.status(400).json({ success: false, message: 'items 不能为空' });
+        if (items.length > 200) return res.status(400).json({ success: false, message: 'items 最多 200 条' });
+        let saved = 0, cleared = 0;
+        for (const it of items) {
+            const planCode = String(it.plan_code || '').trim().slice(0, 64);
+            if (!/^xplan_[0-9]+$/.test(planCode)) return res.status(400).json({ success: false, message: '非法 plan_code：' + planCode });
+            const raw = it.price_cents;
+            if (raw == null || raw === '') {
+                await store.runExecute('DELETE FROM kc_entitlement_prices WHERE rule_code=? AND plan_code=?', [rule_code, planCode]);
+                cleared++;
+                continue;
+            }
+            const cents = Math.floor(Number(raw));
+            if (!(cents > 0)) return res.status(400).json({ success: false, message: '报价必须为正数：' + planCode });
+            await store.runExecute(
+                'INSERT INTO kc_entitlement_prices (rule_code, plan_code, price_cents, status) VALUES (?, ?, ?, ?) ' +
+                'ON DUPLICATE KEY UPDATE price_cents=VALUES(price_cents), status=VALUES(status)',
+                [rule_code, planCode, cents, 'active']
+            );
+            saved++;
+        }
+        res.json({ success: true, data: { rule_code, saved, cleared } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

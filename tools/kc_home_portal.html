@@ -1,8 +1,11 @@
 <!-- KC-HOME-PORTAL-BEGIN · v1.32 首页门户改版（Step 2）
      目标：把 dashboard 首页改造成「价格前置」门户 —— 压制旧版门户(#kc-portal)，
            注入：价格前置 Hero + 门槛对比 + 三步 + 商品双价卡 + 权益包三档。
-     数据源：GET {KC_BASE}/api/public/site-config（品牌 / 权益包 / 商品权益价 / 文案）
-             GET /api/v1/user/plan/fetch（登录态，取商品原价；失败则退化为仅配置）
+     数据源：GET {KC_BASE}/api/public/site-config（品牌 / 权益包 / 文案）
+             GET /api/v1/user/plan/fetch（登录态，取商品原价）
+             POST /user/kc/quotes（登录态，取「当前用户真实权益报价」——Step 8 起口径与 #/plan 商品页完全同源）
+     ⚠️ Step 8（v1.35）：不再读 site_config.plans[].quotaPrice/marketPrice；权益价一律来自真实报价，
+         未登录 / 无权益 / 未配置报价 → 显示我方原价（与商品页一致）。
      视觉标准：design/前台改版demo-v2.1.0.html
      ⚠️ 跨块铁律：本块自带全部工具函数，绝不调用其它 script 块的函数。
      ⚠️ 与主题块协作：主题块负责顶栏与 #kc-portal；本块「压制 portal + 挂自己的容器」，
@@ -168,8 +171,11 @@
   var CACHE_KEY = 'kc_site_config';
   var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
   var HOST_ID = 'kc-home-portal';
-  var CFG = null;          // site-config
-  var GOODS = null;        // 商品（含原价）
+  var CFG = null;          // site-config（仅取 brand / packs / building / copy）
+  var GOODS = null;        // 商品（含我方原价）
+  var RAW = null;          // /api/v1/user/plan/fetch 原始商品列表（用于报价到达后重新合成模型）
+  var QUOTES = null;       // POST /user/kc/quotes 返回的报价 → 以 plan_id 索引（Step 8 真实权益报价）
+  var LAST_FETCH = 0;      // 报价节流时间戳
   var LAST_SIG = '';       // 渲染签名（避免无谓重绘）
   var TIMER = null;
 
@@ -233,25 +239,50 @@
       return (j && j.data) ? j.data : [];
     }).catch(function () { return []; });
   }
-  // 把「商品 + 配置」合成渲染用数据结构
-  function buildModel(cfg, plans) {
-    var saved = {};
-    ((cfg && cfg.plans) || []).forEach(function (p) {
-      var id = p.planId != null ? p.planId : p.id;
-      if (id != null) { saved[String(id)] = p; }
+  // 报价：按商品已知的我方原价（分）向自家后端要「当前登录用户真实权益报价」
+  // 与 #/plan 商品页完全同源（同一 /user/kc/quotes 端点），口径统一为「我方原价」
+  function buildItems() {
+    var items = [];
+    (GOODS || []).forEach(function (g) {
+      var base = Math.round(num(g.list) * 100);
+      if (g.id && base > 0) { items.push({ plan_id: Number(g.id), base_cents: base }); }
     });
+    return items;
+  }
+  function fetchQuotes() {
+    var token = readToken();
+    if (!token) { QUOTES = {}; return Promise.resolve(); }
+    var now = Date.now();
+    if (QUOTES && (now - LAST_FETCH) < 4000) { return Promise.resolve(); }   // 4s 内不重复拉
+    var items = buildItems();
+    if (!items.length) { return Promise.resolve(); }                        // 商品未就绪，等下一 tick
+    LAST_FETCH = now;
+    return fetch('/user/kc/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + token },
+      credentials: 'same-origin',
+      body: JSON.stringify({ items: items })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var map = {};
+      var list = (j && j.data && j.data.quotes) || [];
+      for (var k = 0; k < list.length; k++) { map[String(list[k].plan_id)] = list[k]; }
+      QUOTES = map;
+    }).catch(function () { QUOTES = {}; });
+  }
+  // 把「商品 + 真实权益报价」合成渲染用数据结构（不再读 site-config.plans[].quotaPrice/marketPrice）
+  function buildModel(plans) {
     return (plans || []).filter(function (p) {
       return p.show && p.sell && planPriceCents(p) > 0;
     }).sort(function (a, b) { return (a.sort || 0) - (b.sort || 0); }).map(function (p) {
-      var c = saved[String(p.id)] || {};
       var list = planPriceCents(p) / 100;
-      var quota = c.quotaPrice != null ? num(c.quotaPrice) : null;
-      var market = c.marketPrice != null ? num(c.marketPrice) : null;
+      var q = QUOTES ? QUOTES[String(p.id)] : null;
+      var useEnt = q && q.applied_source === 'entitlement' && num(q.final_cents) > 0 && num(q.final_cents) < Math.round(list * 100);
+      var quota = useEnt ? num(q.final_cents) / 100 : null;
       var save = (quota != null) ? Math.max(0, +(list - quota).toFixed(2)) : 0;
       return {
         id: p.id, name: p.name || ('#' + p.id),
         spec: (p.content ? String(p.content).slice(0, 22) : ''),
-        list: list, quota: quota, market: market, save: save
+        list: list, quota: quota, save: save
       };
     });
   }
@@ -260,11 +291,7 @@
   function pickMain(goods) {
     if (!goods.length) { return null; }
     var best = goods[0];
-    goods.forEach(function (g) {
-      var rank = (g.market != null ? g.market - (g.quota || g.list) : g.save);
-      var bestRank = (best.market != null ? best.market - (best.quota || best.list) : best.save);
-      if (rank > bestRank) { best = g; }
-    });
+    goods.forEach(function (g) { if (g.save > best.save) { best = g; } });   // 口径统一：按「省多少」挑主推
     return best;
   }
 
@@ -275,10 +302,6 @@
     var main = pickMain(goods);
     var mainName = main ? esc(main.name) : '共享账号';
     var mainPrice = main && main.quota != null ? money(main.quota) : (main ? money(main.list) : '');
-    var marketLine = '';
-    if (main && main.market != null) {
-      marketLine = esc(cfg.copy && cfg.copy.marketLabel || '市场行情') + ' ' + money(main.market) + '+。';
-    }
     var others = goods.filter(function (g) { return !main || g.id !== main.id; });
     var othersLine = others.map(function (g) {
       return esc(g.name) + ' 只要 ' + money(g.quota != null ? g.quota : g.list);
@@ -287,7 +310,7 @@
     var h1 = mainPrice
       ? (mainName + '<br>只要 <span class="hp-save hp-num">' + mainPrice + '</span>')
       : ('低门槛<br><span class="hp-save">批发价</span>');
-    var lead = (marketLine + (othersLine ? (marketLine ? '' : '') + othersLine + '。' : '')).trim();
+    var lead = othersLine ? (othersLine + '。') : '';
 
     var cond = '$' + num(light.fee) + ' 权益包解锁 <b>' + num(light.times) + ' 次</b>低价拿货机会 · 用完可续，不用先压几千美元';
 
@@ -405,7 +428,7 @@
       var hasQuota = g.quota != null;
       var mainPrice = hasQuota ? g.quota : g.list;
       var sub = hasQuota ? ('用 1 次权益 · 省 ' + money(g.save)) : ('开通权益包可享权益价');
-      var alt = hasQuota ? ('原价 <s>' + money(g.list) + '</s>') : ('用权益每次省 <b>' + money(g.save) + '</b>');
+      var alt = hasQuota ? ('原价 <s>' + money(g.list) + '</s>') : '开通权益包，解锁权益价';
       var btn = hasQuota
         ? '<a class="hp-btn hp-btn-save hp-btn-sm hp-good-btn" href="#/plan" data-hp-nav>用权益购买</a>'
         : '<a class="hp-btn hp-btn-solid hp-btn-sm hp-good-btn" href="#/plan" data-hp-nav>买权益包</a>';
@@ -492,7 +515,7 @@
     if (!CFG) { return; }
     var node = document.getElementById(HOST_ID);
     if (!node) { return; }
-    var sig = JSON.stringify([CFG.plans, CFG.packs, CFG.building, (GOODS || []).map(function (g) { return [g.id, g.list]; })]);
+    var sig = JSON.stringify([CFG.packs, CFG.building, (GOODS || []).map(function (g) { return [g.id, g.list, g.quota]; })]);
     if (!force && sig === LAST_SIG) { return; }
     LAST_SIG = sig;
     node.innerHTML = buildHtml(CFG, GOODS);
@@ -524,25 +547,32 @@
       var n = document.getElementById(HOST_ID);
       if (n && !isDashboard()) { /* 留在 DOM 也无妨；隐藏由 CSS 处理 */ }
       if (TIMER) { clearInterval(TIMER); TIMER = null; }
+      QUOTES = null; LAST_FETCH = 0;      // 离开首页：清报价缓存，回来重新拉
       return;
     }
     ensureMounted();
-    render(false);
+    fetchQuotes().then(function () { render(false); });
   }
 
   function start() {
     CFG = readCache();                                   // ① 缓存先上，首帧不闪
     ensureMounted();
     if (CFG) { render(true); }
-    fetchConfig().then(function (c) {                      // ② 拉最新配置
+    fetchConfig().then(function (c) {                      // ② 拉最新配置（brand/packs/building/copy）
       if (c) { CFG = c; LAST_SIG = ''; render(true); }
     });
     fetchGoods().then(function (plans) {                   // ③ 拉商品（原价）
-      GOODS = buildModel(CFG || readCache() || {}, plans);
+      RAW = plans || [];
+      GOODS = buildModel(RAW);
+      LAST_SIG = '';
       render(true);
-    });
+      return fetchQuotes();                                // ④ 拉「当前用户真实权益报价」（与商品页同源）
+    }).then(function () {
+      GOODS = buildModel(RAW);
+      render(true);
+    }).catch(function () { /* 单个环节失败不阻塞门户 */ });
     if (TIMER) { clearInterval(TIMER); }
-    TIMER = setInterval(tick, 600);                        // ④ 守护：抵住 Vue 重建 / 路由切换
+    TIMER = setInterval(tick, 600);                        // ⑤ 守护：抵住 Vue 重建 / 路由切换
   }
 
   // 路由变化：进出 dashboard 时立即显隐（不等守护 tick）

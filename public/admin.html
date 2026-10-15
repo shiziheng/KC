@@ -1858,6 +1858,10 @@
                 <i data-lucide="ticket-percent"></i>
                 <span>权益</span>
             </div>
+            <div class="nav-item" onclick="switchPage('entitlement_prices', this)" data-page="entitlement_prices">
+                <i data-lucide="badge-dollar-sign"></i>
+                <span>权益报价</span>
+            </div>
             <div class="nav-item" onclick="switchPage('upstreams', this)" data-page="upstreams">
                 <i data-lucide="server-cog"></i>
                 <span>上游管理</span>
@@ -3454,7 +3458,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
             <div class="panel" style="margin-bottom:16px;">
                 <h2 class="panel-title">商品权益价</h2>
-                <p style="color:var(--text-dim); font-size:12.5px; margin:6px 0 12px;">「原价」在商品管理页；这里配置「权益价」（消耗 1 次权益）与「市场参考价」（用于页面上的对比锚点）。省多少由前台按数字自动计算。</p>
+                <p style="color:var(--text-dim); font-size:12.5px; margin:6px 0 12px;">「原价」在商品管理页。<strong>注意：该面板已不再影响前台展示</strong> —— 前台权益价一律按「权益报价」页维护的（权益包 × 商品）一口价展示，请到 <a href="javascript:void(0)" onclick="switchPage('entitlement_prices', document.querySelector('[data-page=entitlement_prices]'))" style="color:var(--brand,#00a862);">权益报价</a> 页维护。</p>
                 <div id="sc-plans"></div>
             </div>
 
@@ -3666,6 +3670,26 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <button class="btn" onclick="loadEntitlementGrants()"><i data-lucide="search"></i> 查询</button>
                 </div>
                 <div id="ent_grants_list"><p style="color:var(--text-dim);">输入用户邮箱或 user_id，查询该用户持有的权益与历史使用记录。</p></div>
+            </div>
+        </div>
+
+        <div id="entitlement_prices" class="page-view">
+            <div class="page-header">
+                <h1>权益报价</h1>
+                <p>按权益包逐商品维护一口价：先选权益包，再给商品填价；保存后前台展示与下单结算即时生效。<strong>未填写的商品 = 该权益包对它不优惠（按原价）。</strong></p>
+            </div>
+
+            <div class="card">
+                <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
+                    <span style="color:var(--text-dim); font-size:13px;">权益包：</span>
+                    <select id="ep_pack" onchange="onEntitlementPackChange()" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; min-width:240px;"></select>
+                    <button class="btn" onclick="loadEntitlementPrices(false)"><i data-lucide="refresh-cw"></i> 加载</button>
+                    <span style="flex:1;"></span>
+                    <button class="btn btn-primary" onclick="saveEntitlementPrices()"><i data-lucide="save"></i> 保存全部</button>
+                    <span id="ep_msg" style="color:var(--text-dim); font-size:13px;"></span>
+                </div>
+                <p style="color:var(--text-dim); font-size:12.5px; margin:0 0 12px;">「原价」取自商品管理页；此处填写的是消耗 1 次权益后的一口价。可先只配主力商品，其余留空。</p>
+                <div id="ep_list"><p style="color:var(--text-dim);">请选择权益包后点「加载」。</p></div>
             </div>
         </div>
     </main>
@@ -5354,6 +5378,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (pId === 'entitlements') {
                 loadEntitlementsList().catch((error) => {
                     console.error('Failed to load entitlements list', error);
+                });
+            }
+
+            if (pId === 'entitlement_prices') {
+                loadEntitlementPrices(true).catch((error) => {
+                    console.error('Failed to load entitlement prices', error);
                 });
             }
 
@@ -10684,6 +10714,96 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 loadEntitlementGrants();
             } catch (e) { showMessage(e.message || '撤销失败', 'error'); }
         }
+
+        // ===================== v1.35.0 · 权益报价（权益包 × 商品 一口价）=====================
+        // Step 8：废弃规则级统一折扣，改为每个权益包对每个商品单独报价；未填 = 按原价（不优惠）
+        let epData = null;   // GET /api/admin/entitlements/prices 的 data
+
+        function epEsc(s) { return escapeHtml(String(s == null ? '' : s)); }
+        function epMoney(cents) { return cents > 0 ? '$' + (cents / 100).toFixed(2) : '—'; }
+
+        async function loadEntitlementPrices(silent) {
+            const msg = document.getElementById('ep_msg');
+            const sel = document.getElementById('ep_pack');
+            try {
+                const baseRes = await authFetch('/api/admin/entitlements/prices');
+                const bj = await baseRes.json();
+                if (!bj.success) { showMessage(bj.message || '读取失败', 'error'); return; }
+                const packs = (bj.data && bj.data.packs) || [];
+                if (sel) {
+                    const cur = sel.value;
+                    sel.innerHTML = packs.map(p => '<option value="' + epEsc(p.code) + '">' + epEsc(p.display_name) + '（' + epEsc(p.code) + '）</option>').join('');
+                    if (cur && packs.some(p => p.code === cur)) sel.value = cur;
+                }
+                const ruleCode = sel ? sel.value : '';
+                const box = document.getElementById('ep_list');
+                if (!ruleCode) {
+                    if (box) box.innerHTML = '<p style="color:var(--text-dim)">（暂无启用中的权益包，请先在「权益」页新建并启用规则）</p>';
+                    return;
+                }
+                const r = await authFetch('/api/admin/entitlements/prices?rule_code=' + encodeURIComponent(ruleCode));
+                const j = await r.json();
+                if (!j.success) { showMessage(j.message || '读取失败', 'error'); return; }
+                epData = j.data;
+                renderEntitlementPrices();
+                if (msg && !silent) msg.textContent = '已加载';
+            } catch (e) { if (msg) msg.textContent = ''; showMessage(e.message || '读取失败', 'error'); }
+        }
+
+        function renderEntitlementPrices() {
+            const box = document.getElementById('ep_list');
+            if (!box) return;
+            const products = (epData && epData.products) || [];
+            if (!products.length) { box.innerHTML = '<p style="color:var(--text-dim)">（未读到商品，请先在「商品管理」页配置）</p>'; return; }
+            box.innerHTML = products.map(p => {
+                const val = p.price_cents != null ? (p.price_cents / 100).toFixed(2) : '';
+                return '<div style="display:grid; grid-template-columns:1fr 110px 200px; gap:12px; align-items:center; margin-bottom:10px;">' +
+                    '<span>' + epEsc(p.name) + ' <span style="color:var(--text-dim);font-size:12px;">(' + epEsc(p.plan_code) + ')</span></span>' +
+                    '<span style="color:var(--text-dim); font-size:13px;">原价 ' + epMoney(p.list_price_cents) + '</span>' +
+                    '<span style="display:flex; gap:6px;">' +
+                    '<input data-plan-code="' + epEsc(p.plan_code) + '" type="number" step="0.01" min="0" value="' + val + '" placeholder="未配置 = 按原价" style="width:100%; padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">' +
+                    '<button type="button" class="btn" title="清除（= 按原价）" onclick="this.previousElementSibling.value=\'\'">清除</button>' +
+                    '</span>' +
+                    '</div>';
+            }).join('');
+        }
+
+        async function saveEntitlementPrices() {
+            const msg = document.getElementById('ep_msg');
+            const sel = document.getElementById('ep_pack');
+            const ruleCode = sel ? sel.value : '';
+            if (!ruleCode) { showMessage('请先选择权益包', 'error'); return; }
+            const products = (epData && epData.products) || [];
+            const items = [];
+            document.querySelectorAll('#ep_list [data-plan-code]').forEach(function (el) {
+                const planCode = el.getAttribute('data-plan-code');
+                const raw = el.value.trim();
+                let price_cents = null;
+                if (raw !== '') {
+                    const n = parseFloat(raw);
+                    price_cents = isNaN(n) ? null : Math.round(n * 100);
+                }
+                const orig = products.find(p => p.plan_code === planCode);
+                const origCents = orig && orig.price_cents != null ? orig.price_cents : null;
+                if (price_cents !== origCents) items.push({ plan_code: planCode, price_cents: price_cents });
+            });
+            if (!items.length) { if (msg) msg.textContent = '无改动'; return; }
+            if (msg) msg.textContent = '保存中…';
+            try {
+                const res = await authFetch('/api/admin/entitlements/prices', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rule_code: ruleCode, items: items })
+                });
+                const j = await res.json();
+                if (!j.success) { if (msg) msg.textContent = ''; showMessage(j.message || '保存失败', 'error'); return; }
+                showMessage('已保存（写入 ' + ((j.data && j.data.saved) || 0) + ' 条 / 清除 ' + ((j.data && j.data.cleared) || 0) + ' 条）', 'success');
+                await loadEntitlementPrices(true);
+                if (msg) msg.textContent = '已保存';
+            } catch (e) { if (msg) msg.textContent = ''; showMessage(e.message || '保存失败', 'error'); }
+        }
+
+        async function onEntitlementPackChange() { await loadEntitlementPrices(true); }
 
         bootAdmin();
     </script>

@@ -56,7 +56,8 @@
     --kc-blue: #3b82f6;
     --kc-red: #ef4444;
   }
-  body.kc-has-topbar.kc-dark {
+  /* 深色 token：不绑 kc-has-topbar，游客态（无顶栏）也能跟随站点深色 */
+  body.kc-dark {
     --kc-brand-soft: rgba(0, 168, 98, .18);
     --kc-tb-bg: #1c1c1f;
     --kc-tb-border: #2f2f33;
@@ -257,7 +258,9 @@
     padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
   }
   #kc-guest-topbar .kc-gt-login:hover { opacity: .92; }
-  body.kc-guest-on .wh-full.flex.items-center { display: none !important; }
+  /* 自建登录层 #kc-gl-modal 复用同样的类名会被这条规则误伤 → 显式排除；
+     继续用「类选择器」而非新 id，是因为 Vue 重渲染会换掉原生登录卡元素，按类匹配更抗重渲染 */
+  body.kc-guest-on .wh-full.flex.items-center:not(#kc-gl-modal) { display: none !important; }
   /* 游客落地页滚动修复：原生登录页把 html/body 锁成 overflow:hidden + height:100%（为居中卡片设计），
      落地页内容超出后被裁切且无任何可滚动容器 → 游客态解除锁定 */
   html.kc-guest-scroll, html.kc-guest-scroll body {
@@ -266,11 +269,9 @@
   html.kc-guest-scroll body { min-height: 100vh; }
   /* 游客落地页首帧压制：落地页挂载前，原生登录卡不可见（避免「先闪登录页再变落地页」） */
   html.kc-pre-guest .wh-full.flex.items-center { display: none !important; }
-  body.kc-guest-login .wh-full.flex.items-center {
-    display: flex !important; position: fixed !important; inset: 0; z-index: 9990;
-    background: rgba(4, 52, 44, .55); align-items: center; justify-content: center; padding: 24px;
-  }
-  body.kc-guest-login .wh-full.flex.items-center > .n-card { box-shadow: 0 20px 60px rgba(0, 0, 0, .35); border-radius: 16px; }
+  /* 登录页改版（v1.36.0）：原生 Naive UI 登录卡不再作为弹层展示，
+     改为自建登录/注册表单挂到 #kc-gl-modal（默认 display:none，body.kc-guest-login 时弹出） */
+  #kc-gl-modal { display: none; }
   /* 刷新闪现压制（R2）：门户挂载前原生 dashboard 内容不可见；用 visibility 保持布局让图表等正常初始化 */
   html.kc-pre-dash .n-layout-scroll-container > article > header,
   html.kc-pre-app .n-layout-scroll-container > article > header,
@@ -473,6 +474,105 @@
   .kc-path-btn:hover { opacity: .92; }
   .kc-path-btn.kc-sec { background: transparent; color: var(--kc-brand); border: 1px solid var(--kc-brand); }
   .kc-path-note { font-size: 11.5px; color: var(--kc-t3); text-align: center; margin-top: 8px; }
+  /* --- R6 游客决策引导式落地页（参考 sukai.ai）：决策区 · 按需选服务 · 权益包推介 · 自建登录层 --- */
+  .kc-gd-sec { margin-top: 30px; }
+  .kc-gd-head { text-align: center; margin-bottom: 14px; }
+  .kc-gd-kicker {
+    font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--kc-brand); margin-bottom: 6px;
+  }
+  .kc-gd-title { font-size: 20px; font-weight: 700; color: var(--kc-t1); }
+  .kc-gd-sub { font-size: 13px; color: var(--kc-t3); margin-top: 5px; }
+  .kc-gd-decide-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .kc-gd-decide-card {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 7px;
+    background: var(--kc-card-bg); border: 1px solid var(--kc-card-border);
+    border-radius: 16px; padding: 20px; text-align: left; font-family: inherit; cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .15s;
+  }
+  .kc-gd-decide-card:hover { border-color: var(--kc-brand); box-shadow: 0 6px 20px rgba(0, 168, 98, .10); transform: translateY(-2px); }
+  .kc-gd-no {
+    font-size: 11.5px; font-weight: 700; color: var(--kc-brand);
+    background: var(--kc-brand-soft); border-radius: 999px; padding: 3px 10px;
+  }
+  .kc-gd-dt { font-size: 15px; font-weight: 700; color: var(--kc-t1); }
+  .kc-gd-dd { font-size: 12.5px; color: var(--kc-t3); line-height: 1.8; }
+  .kc-gd-cta { margin-top: 4px; font-size: 13px; font-weight: 700; color: var(--kc-brand); }
+  .kc-gd-need-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .kc-gd-need-card {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    background: var(--kc-card-bg); border: 1px solid var(--kc-card-border);
+    border-radius: 16px; padding: 18px;
+  }
+  .kc-gd-nt { font-size: 15px; font-weight: 700; color: var(--kc-t1); }
+  .kc-gd-nd { font-size: 12.5px; color: var(--kc-t3); line-height: 1.8; flex: 1; min-height: 34px; }
+  .kc-gd-nbtn {
+    width: 100%; text-align: center; border-radius: 10px; padding: 9px 0; font-size: 13px;
+    font-weight: 700; background: var(--kc-brand); color: #fff; border: 0; cursor: pointer; font-family: inherit;
+  }
+  .kc-gd-nbtn:hover { opacity: .92; }
+  .kc-gd-packs-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .kc-gd-pk-times { font-size: 12.5px; font-weight: 600; color: var(--kc-t2); margin-top: 4px; }
+  .kc-gd-empty {
+    grid-column: 1 / -1; text-align: center; padding: 24px 16px; border-radius: 14px;
+    background: var(--kc-card-bg); border: 1px dashed var(--kc-card-border);
+    font-size: 12.5px; color: var(--kc-t3); line-height: 1.9;
+  }
+  /* 自建登录层：遮罩 + 卡片 */
+  body.kc-guest-login #kc-gl-modal {
+    display: flex; position: fixed; inset: 0; z-index: 9990; background: rgba(4, 52, 44, .55);
+    align-items: center; justify-content: center; padding: 24px; overflow-y: auto;
+  }
+  .kc-gl-card {
+    position: relative; width: 100%; max-width: 400px; box-sizing: border-box;
+    background: var(--kc-card-bg); border: 1px solid var(--kc-card-border);
+    border-radius: 16px; padding: 26px 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); text-align: left;
+  }
+  .kc-gl-close {
+    position: absolute; top: 12px; right: 14px; background: transparent; border: 0;
+    color: var(--kc-t3); font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit;
+  }
+  .kc-gl-close:hover { color: var(--kc-t1); }
+  .kc-gl-brand { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .kc-gl-logo { background: var(--kc-brand); color: #fff; border-radius: 6px; padding: 2px 7px; font-size: 12px; font-weight: 700; }
+  .kc-gl-mark { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; color: var(--kc-t3); text-transform: uppercase; }
+  .kc-gl-h1 { font-size: 20px; font-weight: 800; color: var(--kc-t1); margin: 0 0 6px; }
+  .kc-gl-sub { font-size: 12.5px; color: var(--kc-t3); margin: 0 0 16px; }
+  .kc-gl-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .kc-gl-tab {
+    flex: 1; text-align: center; padding: 8px 0; border-radius: 10px; font-size: 13px; font-weight: 600;
+    background: transparent; border: 1px solid var(--kc-card-border); color: var(--kc-t2);
+    cursor: pointer; font-family: inherit; transition: background .15s, border-color .15s, color .15s;
+  }
+  .kc-gl-tab:hover { border-color: var(--kc-brand); color: var(--kc-brand); }
+  .kc-gl-tab.kc-on { background: var(--kc-brand); border-color: var(--kc-brand); color: #fff; }
+  .kc-gl-field { margin-bottom: 12px; }
+  .kc-gl-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--kc-t2); margin-bottom: 5px; }
+  .kc-gl-input {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--kc-card-border); border-radius: 10px;
+    padding: 10px 12px; font-size: 13.5px; color: var(--kc-t1); background: var(--kc-card-bg); font-family: inherit;
+  }
+  .kc-gl-input:focus { outline: none; border-color: var(--kc-brand); }
+  .kc-gl-reg { display: none; }
+  body.kc-gl-mode-register .kc-gl-reg { display: block; }
+  .kc-gl-invite { display: none; }
+  .kc-gl-invite.kc-on { display: block; }
+  .kc-gl-err {
+    display: none; margin-bottom: 12px; padding: 9px 12px; border-radius: 10px;
+    background: #FCEBEB; border: 1px solid #F7C1C1; color: #A32D2D; font-size: 12.5px; line-height: 1.7;
+  }
+  .kc-gl-err.kc-on { display: block; }
+  .kc-gl-btn {
+    width: 100%; border: 0; border-radius: 10px; padding: 11px 0; font-size: 14px; font-weight: 700;
+    background: var(--kc-brand); color: #fff; cursor: pointer; font-family: inherit;
+  }
+  .kc-gl-btn:hover { opacity: .92; }
+  .kc-gl-btn:disabled { opacity: .6; cursor: default; }
+  .kc-gl-foot { font-size: 12px; color: var(--kc-t3); text-align: center; margin-top: 14px; line-height: 1.8; }
+  .kc-gl-link {
+    background: transparent; border: 0; padding: 0; font-family: inherit;
+    font-size: 12px; color: var(--kc-brand); font-weight: 600; text-decoration: none; cursor: pointer;
+  }
   /* --- R5：下单确认页支付提示（余额优先）+ 独立充值页 --- */
   #kc-pay-tip {
     margin: 0 0 14px; padding: 14px 16px; border-radius: 12px;
@@ -851,6 +951,8 @@
     .kc-hot-cards { grid-template-columns: 1fr; }
     .kc-price-cards { grid-template-columns: 1fr; }
     .kc-portal-why { grid-template-columns: repeat(2, 1fr); }
+    .kc-gd-decide-cards, .kc-gd-need-cards, .kc-gd-packs-cards { grid-template-columns: 1fr; }
+    .kc-gl-card { padding: 22px 18px; }
     .kc-paths-cards { grid-template-columns: 1fr; }
     .kc-portal-notice { font-size: 12px; padding-right: 36px; }
     .kc-hero-center .kc-ph-trust { gap: 10px; }
@@ -1161,37 +1263,44 @@
             '<a class="kc-pc-btn kc-ghost" href="#/ticket">咨询客服</a>' +
             '</div>';
     }
-    // R4：两条路径对照（第一次买 → 立即代充；已有卡密 → 兑换卡密）
+    // R6：两类服务，两条清晰路径（没有账号 → 买成品号；已有账号 → 办代充）
     function pathSection(isGuest) {
-        var buyBtn = isGuest
-            ? '<button class="kc-path-btn" type="button" data-action="guest-login">立即代充</button>'
-            : '<a class="kc-path-btn" href="#/plan">立即代充</a>';
-        return '<div class="kc-portal-paths">' +
-            '<div class="kc-paths-head"><div class="kc-price-title">两条路径，按你的情况选</div>' +
-              '<div class="kc-price-sub">第一次买走左边，已有卡密走右边，最后都是粘贴 Session 自动开通</div></div>' +
+        function btn(cat, label, sec) {
+            // 客人态：点后弹登录，登录成功再由 ensureIntentResume 落到 #/plan 并筛到该分类
+            // 登录态：写期望分类后正常跳商品页（document 级委托会即时应用筛选）
+            return isGuest
+                ? '<button class="kc-path-btn' + (sec ? ' kc-sec' : '') + '" type="button" data-action="guest-cat" data-cat="' + esc(cat) + '">' + esc(label) + '</button>'
+                : '<a class="kc-path-btn' + (sec ? ' kc-sec' : '') + '" href="#/plan" data-cat="' + esc(cat) + '">' + esc(label) + '</a>';
+        }
+        return '<div class="kc-portal-paths kc-gd-paths">' +
+            '<div class="kc-paths-head"><div class="kc-gd-kicker">How it works</div>' +
+              '<div class="kc-gd-title">两类服务，两条清晰路径</div>' +
+              '<div class="kc-gd-sub">还没有账号走左边，已经有账号走右边，最后都是自动交付</div></div>' +
             '<div class="kc-paths-cards">' +
               '<div class="kc-path-card">' +
-                '<span class="kc-path-tag kc-buy">我要买 Plus / Pro</span>' +
-                '<div class="kc-path-title">立即代充</div>' +
-                '<div class="kc-path-sub">从选套餐到开通，全程自助</div>' +
+                '<span class="kc-path-tag kc-buy">没有账号</span>' +
+                '<div class="kc-path-title">买成品号</div>' +
+                '<div class="kc-path-sub">直接买一个可以登录的 ChatGPT 账号</div>' +
                 '<ul class="kc-path-steps">' +
-                  '<li><span class="kc-n">1</span>选套餐，登录后下单</li>' +
-                  '<li><span class="kc-n">2</span>USDT 收银台结账</li>' +
-                  '<li><span class="kc-n">3</span>订单页自动收卡密</li>' +
-                  '<li><span class="kc-n">4</span>粘贴 Session，自动开通</li>' +
-                '</ul>' + buyBtn +
+                  '<li><span class="kc-n">1</span>选成品号下单</li>' +
+                  '<li><span class="kc-n">2</span>USDT 或余额结账</li>' +
+                  '<li><span class="kc-n">3</span>订单页领取账号信息</li>' +
+                  '<li><span class="kc-n">4</span>首次登录后按教程改密</li>' +
+                '</ul>' + btn('account', '看成品号') +
+                '<div class="kc-path-note">账号信息在订单详情页自动发放</div>' +
               '</div>' +
               '<div class="kc-path-card">' +
-                '<span class="kc-path-tag kc-have">我已有卡密</span>' +
-                '<div class="kc-path-title">兑换卡密</div>' +
-                '<div class="kc-path-sub">免登录，点开就能用</div>' +
+                '<span class="kc-path-tag kc-have">已有账号</span>' +
+                '<div class="kc-path-title">办代充</div>' +
+                '<div class="kc-path-sub">给自己的账号开通 Plus / Pro 套餐</div>' +
                 '<ul class="kc-path-steps">' +
-                  '<li><span class="kc-n">1</span>打开兑换卡密面板</li>' +
-                  '<li><span class="kc-n">2</span>输入卡密（自动预填）</li>' +
-                  '<li><span class="kc-n">3</span>粘贴 Session，自动开通</li>' +
-                '</ul>' +
-                '<button class="kc-path-btn kc-sec" type="button" data-action="redeem">兑换卡密</button>' +
-                '<div class="kc-path-note">客服补发、他人赠送的卡密也在这里用</div>' +
+                  '<li><span class="kc-n">1</span>选套餐下单</li>' +
+                  '<li><span class="kc-n">2</span>USDT 或余额结账</li>' +
+                  '<li><span class="kc-n">3</span>订单页收卡密</li>' +
+                  '<li><span class="kc-n">4</span>兑换面板粘贴 Session</li>' +
+                  '<li><span class="kc-n">5</span>自动开通到账</li>' +
+                '</ul>' + btn('recharge', '去代充', true) +
+                '<div class="kc-path-note">全程走官方 Checkout，不需要账号密码</div>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -1368,6 +1477,52 @@
             box.outerHTML = html;
         }).catch(function () { });
     }
+    // R6：按需选服务 —— 分类卡文案（分类名来自后台配置，这里只映射一句人话说明）
+    function guestNeedDesc(key) {
+        var map = {
+            recharge: '给已有的 ChatGPT 账号办 Plus / Pro',
+            account: '直接买一个可登录的 ChatGPT 账号',
+            website: '建站与配套服务'
+        };
+        return map[key] || '查看该分类商品';
+    }
+    function renderGuestNeedCategories() {
+        var box = document.getElementById('kc-gd-need-cards');
+        var sec = document.getElementById('kc-gd-need');
+        if (!box) { return; }
+        fetchPlanConfig().then(function (cfg) {
+            var cats = (cfg.categories || []).filter(function (c) { return c && c.key && c.nav !== false; });
+            if (!cats.length) { if (sec) { sec.style.display = 'none'; } return; }
+            box.innerHTML = cats.map(function (c) {
+                return '<div class="kc-gd-need-card">' +
+                    '<div class="kc-gd-nt">' + esc(c.name || c.key) + '</div>' +
+                    '<div class="kc-gd-nd">' + esc(guestNeedDesc(c.key)) + '</div>' +
+                    '<button class="kc-gd-nbtn" type="button" data-action="guest-cat" data-cat="' + esc(c.key) + '">查看</button>' +
+                    '</div>';
+            }).join('');
+        }).catch(function () { });
+    }
+    // R6：权益包推介（数据来自 /plan/kc-cards 的 packs，后台配置，前台零硬编码）
+    function renderGuestPacks() {
+        var box = document.getElementById('kc-gd-packs-cards');
+        var sec = document.getElementById('kc-gd-packs');
+        if (!box) { return; }
+        fetchPlanConfig().then(function (cfg) {
+            var packs = (cfg.packs || []).filter(function (p) { return p && p.name; });
+            if (!packs.length) { if (sec) { sec.style.display = 'none'; } return; }
+            box.innerHTML = packs.map(function (p) {
+                var times = Math.max(1, parseInt(p.times, 10) || 1);
+                return '<div class="kc-price-card' + (p.highlight ? ' kc-pc-main' : '') + '">' +
+                    (p.highlight ? '<span class="kc-pc-badge">推荐</span>' : '') +
+                    '<div class="kc-pc-name">' + esc(p.name) + '</div>' +
+                    '<div class="kc-pc-sub">' + esc(p.tagline || '') + '</div>' +
+                    '<div class="kc-pc-price">$' + (Math.max(0, parseInt(p.fee_cents, 10) || 0) / 100).toFixed(2) + '</div>' +
+                    '<div class="kc-gd-pk-times">用 ' + times + ' 次权益</div>' +
+                    '<button class="kc-pc-btn" type="button" data-action="guest-goto" data-goto="#/pack" style="margin-top: 12px;">登录后查看权益包</button>' +
+                    '</div>';
+            }).join('');
+        }).catch(function () { });
+    }
     // ===== R3 · 游客落地页（未登录首页：展示核心卖点，CTA 弹登录） =====
     // 主推卡价格为静态兜底（未登录拿不到 plan/fetch），与商品库同步改这一处
     var KC_GUEST_MAIN_PRICE = '$15<span class="kc-pc-unit"> /月起</span>';
@@ -1376,24 +1531,75 @@
         '<div class="kc-gt-brand"><span class="kc-gt-logo">KC</span>KC 直供</div>' +
         '<div class="kc-gt-nav">' +
           '<a data-scroll="kc-guest">首页</a>' +
-          '<a data-scroll="kc-guest-price">套餐</a>' +
+          '<a data-scroll="kc-gd-need">服务</a>' +
+          '<a data-scroll="kc-gd-packs">权益包</a>' +
           '<a data-scroll="kc-guest-faq">常见问题</a>' +
         '</div>' +
         '<button class="kc-gt-login" type="button" data-action="guest-login">登录 / 注册</button>';
+    // R6 登录页：自建登录/注册表单（取代原生 Naive UI 登录卡），直调 passport 接口 + 自写 token
+    var HTML_GUEST_LOGIN =
+        '<div class="kc-gl-card">' +
+          '<button class="kc-gl-close" type="button" data-action="guest-login-close" aria-label="关闭">✕</button>' +
+          '<div class="kc-gl-brand"><span class="kc-gl-logo">KC</span><span class="kc-gl-mark">Account Access</span></div>' +
+          '<h3 class="kc-gl-h1">登录账户</h3>' +
+          '<p class="kc-gl-sub">登录后可下单、查看订单与余额。</p>' +
+          '<div class="kc-gl-tabs">' +
+            '<button class="kc-gl-tab kc-on" type="button" data-gl-tab="login">登录</button>' +
+            '<button class="kc-gl-tab" type="button" data-gl-tab="register">注册</button>' +
+          '</div>' +
+          '<div class="kc-gl-err" id="kc-gl-err"></div>' +
+          '<form id="kc-gl-form" novalidate>' +
+            '<div class="kc-gl-field"><label for="kc-gl-email">邮箱</label>' +
+              '<input class="kc-gl-input" id="kc-gl-email" type="email" placeholder="name@example.com" autocomplete="email" required></div>' +
+            '<div class="kc-gl-field"><label for="kc-gl-pwd">密码</label>' +
+              '<input class="kc-gl-input" id="kc-gl-pwd" type="password" placeholder="至少 8 位" autocomplete="current-password" required></div>' +
+            '<div class="kc-gl-reg">' +
+              '<div class="kc-gl-field"><label for="kc-gl-pwd2">确认密码</label>' +
+                '<input class="kc-gl-input" id="kc-gl-pwd2" type="password" placeholder="再输入一次密码" autocomplete="new-password"></div>' +
+              '<div class="kc-gl-field"><button class="kc-gl-link" type="button" data-gl-invite>我有邀请码</button></div>' +
+              '<div class="kc-gl-field kc-gl-invite"><label for="kc-gl-invite">邀请码（选填）</label>' +
+                '<input class="kc-gl-input" id="kc-gl-invite" type="text" placeholder="没有可留空"></div>' +
+            '</div>' +
+            '<button class="kc-gl-btn" id="kc-gl-submit" type="submit">登录</button>' +
+          '</form>' +
+          '<div class="kc-gl-foot">忘记密码？请联系在线客服处理</div>' +
+        '</div>';
     var HTML_GUEST =
         (KC_NOTICE
             ? '<div class="kc-portal-notice" id="kc-notice"><span>📢 ' + esc(KC_NOTICE) + '</span><button class="kc-notice-close" type="button" data-action="notice-close" aria-label="关闭公告">✕</button></div>'
             : '') +
         '<div class="kc-portal-hero kc-hero-center">' +
-          '<h2>ChatGPT Plus / Pro 官方代充</h2>' +
-          '<p>3 分钟自动到账 · 官网直充 · 无需外网环境</p>' +
+          '<h2>ChatGPT 账号与套餐服务</h2>' +
+          '<p>买成品号，或给自己的账号办代充，两条路都能自动交付</p>' +
           '<div class="kc-ph-btns">' +
-            '<button class="kc-ph-main" type="button" data-action="guest-login">立即代充</button>' +
-            '<button class="kc-ph-ghost" type="button" data-action="redeem">兑换卡密</button>' +
+            '<button class="kc-ph-main" type="button" data-action="guest-cat" data-cat="account">我没有账号，买成品号</button>' +
+            '<button class="kc-ph-ghost" type="button" data-action="guest-cat" data-cat="recharge">我已有账号，办代充</button>' +
           '</div>' +
-          '<div class="kc-ph-trust"><span>✓ 自动发货</span><span>✓ 官方渠道</span><span>✓ 失败可退</span><span>✓ 售后保障</span></div>' +
+          '<div class="kc-ph-trust"><span>✓ ChatGPT Plus / Pro 可选</span><span>✓ 卡密自动发放</span><span>✓ 订单进度可查</span></div>' +
         '</div>' +
-        pathSection(true) +
+        '<div class="kc-gd-sec kc-gd-decide">' +
+          '<div class="kc-gd-head"><div class="kc-gd-kicker">Quick Decision</div>' +
+            '<div class="kc-gd-title">先告诉我们：你有账号吗？</div></div>' +
+          '<div class="kc-gd-decide-cards">' +
+            '<button class="kc-gd-decide-card" type="button" data-action="guest-cat" data-cat="account">' +
+              '<span class="kc-gd-no">01</span>' +
+              '<span class="kc-gd-dt">还没有账号</span>' +
+              '<span class="kc-gd-dd">买一个现成可用的 ChatGPT 账号，拿到就能登录。</span>' +
+              '<span class="kc-gd-cta">看成品号 →</span>' +
+            '</button>' +
+            '<button class="kc-gd-decide-card" type="button" data-action="guest-cat" data-cat="recharge">' +
+              '<span class="kc-gd-no">02</span>' +
+              '<span class="kc-gd-dt">已经有账号</span>' +
+              '<span class="kc-gd-dd">给自己的账号办代充，开通 Plus / Pro 套餐。</span>' +
+              '<span class="kc-gd-cta">去代充 →</span>' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="kc-gd-sec kc-gd-need" id="kc-gd-need">' +
+          '<div class="kc-gd-head"><div class="kc-gd-kicker">Choose by Need</div>' +
+            '<div class="kc-gd-title">根据你的情况选择服务</div></div>' +
+          '<div class="kc-gd-need-cards" id="kc-gd-need-cards"></div>' +
+        '</div>' +
         '<div class="kc-portal-pricing" id="kc-guest-price">' +
           '<div class="kc-price-head"><div class="kc-price-title">选择适合你的套餐</div><div class="kc-price-sub">付款后自动发卡密，兑卡开通全程自助 · 登录后即可下单</div></div>' +
           '<div class="kc-price-cards">' +
@@ -1408,23 +1614,28 @@
             priceSoonCard('ChatGPT Pro 20x', ['最高约 20 倍 Pro 用量上限', '适合团队主力与高并发场景', '上架后本页第一时间可见']) +
           '</div>' +
         '</div>' +
+        pathSection(true) +
+        '<div class="kc-gd-sec kc-gd-packs" id="kc-gd-packs">' +
+          '<div class="kc-gd-head"><div class="kc-gd-kicker">Bundle</div>' +
+            '<div class="kc-gd-title">权益包：一次买，长期更省</div>' +
+            '<div class="kc-gd-sub">同一件商品用权益包下单更省，用多少买多少</div></div>' +
+          '<div class="kc-gd-packs-cards" id="kc-gd-packs-cards">' +
+            '<div class="kc-gd-empty">权益包按批次上架，登录后可在「权益包」页查看当前可购批次。</div>' +
+          '</div>' +
+        '</div>' +
         '<div class="kc-portal-why">' +
           '<div class="kc-why-card"><div class="kc-why-icon">⚡</div><div class="kc-why-t">自动发货</div><div class="kc-why-d">付款后卡密秒级发放，全程无需等待人工</div></div>' +
           '<div class="kc-why-card"><div class="kc-why-icon">✓</div><div class="kc-why-t">官方渠道直充</div><div class="kc-why-d">正规官方 Checkout 流程，不碰你的账号密码</div></div>' +
           '<div class="kc-why-card"><div class="kc-why-icon">↺</div><div class="kc-why-t">失败可退</div><div class="kc-why-d">开通失败自动回滚，可按原路退款</div></div>' +
           '<div class="kc-why-card"><div class="kc-why-icon">$</div><div class="kc-why-t">多种支付</div><div class="kc-why-d">支持 USDT（TRC20）与站内余额支付</div></div>' +
         '</div>' +
-        '<div class="kc-portal-steps">' +
-          '<div class="kc-step"><span class="kc-step-no">1</span><div><div class="kc-step-t">选套餐付款</div><div class="kc-step-d">USDT 或余额支付</div></div></div>' +
-          '<div class="kc-step"><span class="kc-step-no">2</span><div><div class="kc-step-t">自动发卡密</div><div class="kc-step-d">订单详情页直接可见</div></div></div>' +
-          '<div class="kc-step"><span class="kc-step-no">3</span><div><div class="kc-step-t">一键去开通</div><div class="kc-step-d">卡密自动预填，无需复制</div></div></div>' +
-          '<div class="kc-step"><span class="kc-step-no">4</span><div><div class="kc-step-t">粘贴 Session</div><div class="kc-step-d">图文教程带你拿到</div></div></div>' +
-        '</div>' +
         '<div class="kc-portal-faq" id="kc-guest-faq">' +
           faqItem('卡密是什么？在哪里看？', '付款完成后系统自动发放，在「我的订单」详情页可以直接查看和复制，无需联系客服。') +
           faqItem('Session 怎么获取？安全吗？', '兑卡页提供图文教程，跟着三步即可拿到；开通全程走 ChatGPT 官方 Checkout，我们不需要你的账号密码。') +
           faqItem('兑卡页显示「账单地区为低价区」正常吗？', '正常。我们通过官方低价区通道直充，页面显示的账单地区与你的账号归属和使用完全无关。') +
           faqItem('付款后多久到账？失败了怎么办？', '一般 3-5 分钟内自动开通；若开通失败系统会自动回滚，可联系客服按原路退款。') +
+          faqItem('成品号和代充有什么区别？', '成品号是直接购买一个可登录的 ChatGPT 账号；代充是给你已有的账号开通 Plus / Pro 套餐。两种都在下单后自动交付，进度都能在「我的订单」里查到。') +
+          faqItem('同一个账号可以反复代充吗？', '可以。当前套餐到期后重新下单即可，历史订单都会保留在「我的订单」里，随时可查。') +
         '</div>' +
         '<div class="kc-portal-help">' +
           '<span class="kc-help-t">还没账号？注册后即可下单，30 秒完成。</span>' +
@@ -1442,12 +1653,17 @@
         if (!tb) { tb = document.createElement('div'); tb.id = 'kc-guest-topbar'; tb.innerHTML = HTML_GUEST_TOPBAR; }
         var g = document.getElementById('kc-guest');
         if (!g) { g = document.createElement('div'); g.id = 'kc-guest'; g.innerHTML = HTML_GUEST; }
+        var gl = document.getElementById('kc-gl-modal');
+        if (!gl) { gl = document.createElement('div'); gl.id = 'kc-gl-modal'; gl.innerHTML = HTML_GUEST_LOGIN; }
         if (tb.parentElement !== root) { root.insertBefore(tb, root.firstChild); }
         if (g.parentElement !== root) { root.insertBefore(g, tb.nextSibling); }
+        if (gl.parentElement !== root) { root.insertBefore(gl, g.nextSibling); }
         document.body.classList.add('kc-guest-on');
         document.documentElement.classList.add('kc-guest-scroll');
         document.documentElement.classList.remove('kc-pre-guest');
         renderGuestPlans();
+        renderGuestNeedCategories();
+        renderGuestPacks();
         // R6：游客从 #/plan 被守卫弹回时，自动滚到「套餐」区（意图留存 15s 内有效）
         var lp = 0;
         try { lp = Number(sessionStorage.getItem('kc_land_price') || 0); } catch (eLp) { }
@@ -1462,56 +1678,159 @@
     }
     var guestTimer = null;
     function ensureGuestLoop() {
-        if (guestTimer) { clearInterval(guestTimer); guestTimer = null; }
+        // 幂等：tryBoot 对游客态每 300ms 会调用本函数，若每次都 clear+重建 600ms 定时器，
+        // 定时器将被无限推迟、永不触发（实测心跳恒为 0）→ 已在跑就直接返回
+        if (guestTimer) { return; }
         var tries = 0;
-        brandLoginCard();
         guestTimer = setInterval(function () {
             if (!isLoginPage() || readToken()) { clearInterval(guestTimer); guestTimer = null; teardownGuest(); return; }
-            if (!document.getElementById('kc-guest')) { mountGuest(); }
-            brandLoginCard();
-            if (++tries > 40) { clearInterval(guestTimer); guestTimer = null; document.documentElement.classList.remove('kc-pre-guest'); }
+            if (!document.getElementById('kc-guest') || !document.getElementById('kc-gl-modal')) { mountGuest(); }
+            // 游客态跟随站点深色（无顶栏时 boot 不会调 detectDark）：持续重估，登录页停留期间保持同步
+            try { detectDark(); document.body.classList.toggle('kc-dark', IS_DARK); } catch (eD) { }
+            if (++tries === 40) { document.documentElement.classList.remove('kc-pre-guest'); }
         }, 600);
-    }
-    // 登录卡白标：把 Xboard 默认文案替换为 KC 品牌（Vue 重渲染会还原，随轮询幂等重放）
-    function brandLoginCard() {
-        var card = document.querySelector('.wh-full.flex.items-center .n-card__content');
-        if (!card) { return; }
-        var walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
-        var n;
-        while ((n = walker.nextNode())) {
-            var v = n.nodeValue;
-            if (!v) { continue; }
-            if (/Xboard is best/i.test(v)) { n.nodeValue = v.replace(/Xboard is best/i, 'ChatGPT 官方渠道代充，3 分钟自动到账'); }
-            else if (/Xboard/.test(v)) { n.nodeValue = v.replace(/Xboard/g, 'KC 直供'); }
-        }
     }
     function openLoginModal() {
         document.documentElement.classList.remove('kc-pre-guest');
         document.body.classList.add('kc-guest-login');
-        brandLoginCard();
+        setTimeout(function () {
+            var el = document.getElementById('kc-gl-email');
+            if (el) { try { el.focus(); } catch (e) { } }
+        }, 60);
     }
-    function closeLoginModal() { document.body.classList.remove('kc-guest-login'); }
+    function closeLoginModal() {
+        document.body.classList.remove('kc-guest-login');
+        setLoginTab('login');
+    }
+    // 登录 / 注册 Tab 切换：注册态在 body 上加 kc-gl-mode-register，多出的字段由 CSS 显示
+    function setLoginTab(tab) {
+        var t = (tab === 'register') ? 'register' : 'login';
+        document.body.classList.toggle('kc-gl-mode-register', t === 'register');
+        var tabs = document.querySelectorAll('#kc-gl-modal [data-gl-tab]');
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].classList.toggle('kc-on', tabs[i].getAttribute('data-gl-tab') === t);
+        }
+        var btn = document.getElementById('kc-gl-submit');
+        if (btn) { btn.textContent = t === 'register' ? '注册并登录' : '登录'; }
+        var pwd = document.getElementById('kc-gl-pwd');
+        if (pwd) { pwd.setAttribute('autocomplete', t === 'register' ? 'new-password' : 'current-password'); }
+        var pwd2 = document.getElementById('kc-gl-pwd2');
+        if (pwd2) { pwd2.value = ''; }
+        var err = document.getElementById('kc-gl-err');
+        if (err) { err.classList.remove('kc-on'); err.textContent = ''; }
+    }
+    function glShowErr(msg) {
+        var err = document.getElementById('kc-gl-err');
+        if (!err) { return; }
+        err.textContent = msg || '操作失败，请稍后重试';
+        err.classList.add('kc-on');
+    }
+    var GL_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    // 自建登录/注册：直调 Xboard passport 接口，成功后自写 token 并重载（SPA 以已登录态重启）
+    function guestLoginSubmit() {
+        var isReg = document.body.classList.contains('kc-gl-mode-register');
+        var emailEl = document.getElementById('kc-gl-email');
+        var pwdEl = document.getElementById('kc-gl-pwd');
+        var pwd2El = document.getElementById('kc-gl-pwd2');
+        var invEl = document.getElementById('kc-gl-invite');
+        var btn = document.getElementById('kc-gl-submit');
+        var email = emailEl ? String(emailEl.value || '').trim() : '';
+        var pwd = pwdEl ? String(pwdEl.value || '') : '';
+        var pwd2 = pwd2El ? String(pwd2El.value || '') : '';
+        var inv = (invEl && invEl.closest('.kc-gl-invite') && invEl.closest('.kc-gl-invite').classList.contains('kc-on')) ? String(invEl.value || '').trim() : '';
+        if (!GL_EMAIL_RE.test(email)) { glShowErr('请输入有效的邮箱地址'); return; }
+        if (pwd.length < 8) { glShowErr('密码至少 8 位'); return; }
+        if (isReg && pwd2 !== pwd) { glShowErr('两次输入的密码不一致'); return; }
+        var payload = { email: email, password: pwd };
+        if (isReg && inv) { payload.invite_code = inv; }
+        if (btn) { btn.disabled = true; btn.textContent = '处理中…'; }
+        fetch('/api/v1/passport/auth/' + (isReg ? 'register' : 'login'), {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(payload)
+        }).then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (j) {
+                return { ok: r.ok && j && j.status === 'success', status: r.status, j: j || {} };
+            });
+        }).then(function (res) {
+            if (!res.ok) {
+                var msg = res.j.message || '';
+                if (!msg && res.j.errors) {
+                    for (var k in res.j.errors) { if (res.j.errors[k]) { msg = String(res.j.errors[k]); break; } }
+                }
+                if (btn) { btn.disabled = false; btn.textContent = isReg ? '注册并登录' : '登录'; }
+                glShowErr(msg || ('HTTP ' + res.status));
+                return;
+            }
+            var d = res.j.data || {};
+            var auth = d.auth_data || d.token || '';
+            if (auth && auth.indexOf('Bearer ') !== 0) { auth = 'Bearer ' + auth; }
+            if (!auth) {
+                if (btn) { btn.disabled = false; btn.textContent = isReg ? '注册并登录' : '登录'; }
+                glShowErr('登录成功但未拿到凭证，请联系客服');
+                return;
+            }
+            try { localStorage.setItem('VUE_NAIVE_ACCESS_TOKEN', JSON.stringify({ value: auth })); } catch (e1) { }
+            // 重载：SPA 以已登录态重启；kc_gate / kc_plan_cat 留在 sessionStorage 供 ensureIntentResume 续接
+            window.location.reload();
+        }).catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = isReg ? '注册并登录' : '登录'; }
+            glShowErr('网络错误，请稍后重试');
+        });
+    }
     // ===== R6 · 登录门控续接：游客点「登录后购买」→ 登录成功 → 自动回商品页并继续 =====
     var kcGateTimer = null;
     function kcGateRead() {
         try { return JSON.parse(sessionStorage.getItem('kc_gate') || 'null'); } catch (e) { return null; }
     }
     function kcGateClear() { try { sessionStorage.removeItem('kc_gate'); } catch (e) { } }
+    // 三种游客意图（互斥，优先级 goto > cat > planId）：
+    //   {planId} 指定商品 → 跳 #/plan 并点该卡购买按钮（原逻辑）
+    //   {cat}    指定分类 → 写 kc_plan_cat 后跳 #/plan，商品页 init 的 applyExpectedCategory 会落到该分类
+    //   {goto}   指定页 → 直达该 hash（如 #/pack 权益包）
     function ensureIntentResume() {
         if (kcGateTimer) { return; }
         var g = kcGateRead();
-        if (!g || !g.planId) { return; }
+        if (!g || (!g.planId && !g.cat && !g.goto)) { return; }
         if (Date.now() - (g.ts || 0) > 30 * 60 * 1000) { kcGateClear(); return; }
         var tries = 0;
         kcGateTimer = setInterval(function () {
             tries++;
             var g2 = kcGateRead();
-            if (!g2 || !g2.planId) { clearInterval(kcGateTimer); kcGateTimer = null; return; }
+            if (!g2 || (!g2.planId && !g2.cat && !g2.goto)) { clearInterval(kcGateTimer); kcGateTimer = null; return; }
             if (!readToken()) {
                 if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; }
                 return;
             }
             var hNow = window.location.hash || '';
+            // 意图 goto：直达指定页
+            if (g2.goto) {
+                kcGateClear();
+                clearInterval(kcGateTimer); kcGateTimer = null;
+                try { if (hNow !== g2.goto) { window.location.hash = g2.goto; } } catch (e5) { }
+                return;
+            }
+            // 意图 cat：按分类落商品页
+            if (!g2.planId && g2.cat) {
+                if (hNow.indexOf('#/plan') !== 0 || /^#\/plan\/\d+/.test(hNow)) {
+                    if (!g2.jumped) {
+                        g2.jumped = true;
+                        try { sessionStorage.setItem('kc_plan_cat', g2.cat); } catch (e6) { }
+                        try { sessionStorage.setItem('kc_gate', JSON.stringify(g2)); } catch (e7) { }
+                        try { window.location.hash = '#/plan'; } catch (e8) { }
+                    }
+                    if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; }
+                    return;
+                }
+                if (!document.querySelector('.card-container .card-item')) { if (tries > 300) { clearInterval(kcGateTimer); kcGateTimer = null; } return; }
+                try { sessionStorage.setItem('kc_plan_cat', g2.cat); } catch (e9) { }
+                applyCategoryFilter(g2.cat);
+                kcGateClear();
+                clearInterval(kcGateTimer); kcGateTimer = null;
+                return;
+            }
+            // 意图 planId：跳商品页并点卡购买
             if (hNow.indexOf('#/plan') !== 0 || /^#\/plan\/\d+/.test(hNow)) {
                 if (!g2.jumped) {
                     g2.jumped = true;
@@ -1531,7 +1850,7 @@
         }, 500);
     }
     function teardownGuest() {
-        ['kc-guest', 'kc-guest-topbar'].forEach(function (id) {
+        ['kc-guest', 'kc-guest-topbar', 'kc-gl-modal'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) { el.remove(); }
         });
@@ -2917,11 +3236,11 @@ function closeRechargePage() {
             .then(function (j) {
                 var d = (j && j.data) || {};
                 PROMO_ROW_ENABLED = !(d.promo_row && d.promo_row.enabled === false);
-                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [], card_buy: d.card_buy || null, promo_row: d.promo_row || null };
+                var cfg = { cards: d.cards || {}, categories: d.categories || [], faq: d.faq || [], card_buy: d.card_buy || null, promo_row: d.promo_row || null, packs: d.packs || [] };
                 cardCfgCache = { at: Date.now(), data: cfg };
                 return cfg;
             })
-            .catch(function () { return { cards: {}, categories: [], faq: [], card_buy: null }; });
+            .catch(function () { return { cards: {}, categories: [], faq: [], card_buy: null, packs: [] }; });
     }
     function cardPriceOf(plan, cfg) {
         var unit = (cfg && cfg.price && cfg.price.unit) || '';
@@ -3284,7 +3603,32 @@ function closeRechargePage() {
             if (act === 'topup') { closeDrawer(); openTopupPanel(); }
             else if (act === 'redeem') { closeDrawer(); openRedeemPanel(); }
             else if (act === 'logout') { closeDrawer(); doLogout(); }
-            else if (act === 'guest-login') { openLoginModal(); }
+            else if (act === 'guest-login') { openLoginModal(); ensureIntentResume(); }
+            else if (act === 'guest-login-close') { closeLoginModal(); }
+            // 游客点「按需选服务 / 两条路径 / 决定卡」的分类入口：
+            //   未登录 → 记期望分类 + 门控 → 弹自建登录；已登录（理论上不出现）→ 直接落商品页
+            else if (act === 'guest-cat') {
+                var gcat = el.getAttribute('data-cat') || 'recharge';
+                try { sessionStorage.setItem('kc_plan_cat', gcat); } catch (errGC) { }
+                if (readToken()) {
+                    try { window.location.hash = '#/plan'; } catch (errGN) { }
+                } else {
+                    try { sessionStorage.setItem('kc_gate', JSON.stringify({ cat: gcat, ts: Date.now() })); } catch (errGK) { }
+                    openLoginModal();
+                    ensureIntentResume();
+                }
+            }
+            // 游客点「登录后查看权益包」→ 登录成功后直达 #/pack
+            else if (act === 'guest-goto') {
+                var ggoto = el.getAttribute('data-goto') || '';
+                if (readToken()) {
+                    try { window.location.hash = ggoto; } catch (errG1) { }
+                } else {
+                    try { sessionStorage.setItem('kc_gate', JSON.stringify({ goto: ggoto, ts: Date.now() })); } catch (errG2) { }
+                    openLoginModal();
+                    ensureIntentResume();
+                }
+            }
             else if (act === 'guest-buy') {
                 var gpid = el.getAttribute('data-plan') || '';
                 try { sessionStorage.setItem('kc_gate', JSON.stringify({ planId: gpid, ts: Date.now() })); } catch (errG) { }
@@ -3345,12 +3689,17 @@ function closeRechargePage() {
             var t = document.getElementById(sc.getAttribute('data-scroll'));
             if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
         }
-        // R3：点登录弹层遮罩关闭
-        if (document.body.classList.contains('kc-guest-login') &&
-            e.target.classList && e.target.classList.contains('wh-full') &&
-            e.target.classList.contains('items-center')) {
-            closeLoginModal();
+        // 自建登录层：Tab 切换 / 邀请码字段展开
+        var glTab = e.target.closest('#kc-gl-modal [data-gl-tab]');
+        if (glTab) { setLoginTab(glTab.getAttribute('data-gl-tab')); }
+        var glInv = e.target.closest('#kc-gl-modal [data-gl-invite]');
+        if (glInv) {
+            var invReg = glInv.closest('.kc-gl-reg');
+            var invBox = invReg && invReg.querySelector('.kc-gl-invite');
+            if (invBox) { invBox.classList.toggle('kc-on'); }
         }
+        // 自建登录层：点遮罩空白处（#kc-gl-modal 自身，非卡内）关闭
+        if (e.target.id === 'kc-gl-modal') { closeLoginModal(); }
         // 抽屉内路由链接点击后收起抽屉
         var drawerLink = e.target.closest('#kc-drawer a[data-route]');
         if (drawerLink) { closeDrawer(); }
@@ -3360,6 +3709,14 @@ function closeRechargePage() {
             if (user.contains(e.target)) { user.classList.toggle('kc-open'); }
             else { user.classList.remove('kc-open'); }
         }
+    });
+    // 自建登录层：表单提交（登录 / 注册）
+    document.addEventListener('submit', function (e) {
+        if (e.target && e.target.id === 'kc-gl-form') { e.preventDefault(); guestLoginSubmit(); }
+    });
+    // 自建登录层：Esc 关闭
+    document.addEventListener('keydown', function (e) {
+        if ((e.key === 'Escape' || e.keyCode === 27) && document.body.classList.contains('kc-guest-login')) { closeLoginModal(); }
     });
     // ===== S2 · order 页着色轮询（数据异步加载 + 订单状态轮询刷新）=====
     var orderTimer = null;

@@ -9,6 +9,98 @@
 
 ---
 
+## v1.36.0 · 2026-10-15 · 登录前首页（游客落地页）与登录页改版：sukai 风格 IA + 自建登录/注册表单
+
+**一句话概括**：按用户指令把**登录前首页**与**登录页**按 sukai.ai 的信息架构重写 —— 游客落地页由「Hero + 套餐卡 + 4 步流程 + FAQ」改为**「决策区 → 按需选服务 → 价格 → 两条路径 → 权益包推介 → 为什么选我们 → FAQ → 底部 CTA」**；登录页**弃用原生 Naive UI 登录卡弹层**，改为**完全自建的「登录 / 注册」双 Tab 表单**（`#kc-gl-modal`），直调 `/api/v1/passport/auth/{login,register}` 并自行写入令牌。**接口与注入机制不变**（仍是同一份 `custom_html`）。
+
+### 新增
+
+- **游客落地页新 IA（`tools/kc_theme_inject.html` · `HTML_GUEST` 重写）**：公告条 → Hero（主标题「ChatGPT 账号与套餐服务」+ 双 CTA「我没有账号，买成品号 / 我已有账号，办代充」+ 3 条信任标签）→ **决定区**（`kc-gd-decide`：01 没有账号 / 02 已有账号，两张卡各列 4~5 步）→ **按需选服务**（`kc-gd-need`，分类卡按 `GET /plan/kc-cards` 的 `categories` **数据驱动**渲染，空分类自动隐藏）→ **价格区**（保留原动态套餐卡）→ **两条路径**（`pathSection` 重写）→ **权益包推介**（`kc-gd-packs`，按 `packs` **数据驱动**，显示 `$xx.xx` 与「用 N 次权益」，空则隐藏）→ **为什么选我们** → **FAQ（4 → 6 条）** → 帮助条 → 页脚。**删除**旧 `.kc-portal-steps` 4 步区块。
+- **游客顶栏锚点 4 项**：`首页(#kc-guest) / 服务(#kc-gd-need) / 权益包(#kc-gd-packs) / 常见问题(#kc-guest-faq)`。
+- **自建登录层 `#kc-gl-modal`（`HTML_GUEST_LOGIN`）**：品牌头 + 「登录 / 注册」**双 Tab**（`data-gl-tab`）+ 邮箱/密码（注册加确认密码）+ 「我有邀请码」可展开邀请码（`data-gl-invite`）+ 错误行 `#kc-gl-err` + 原生 `<form id="kc-gl-form">`；**无忘记密码**（站点未配置发信，改为「请联系在线客服处理」）。
+- **`fetchPlanConfig()` 补 `packs`**：`cfg.packs = d.packs || []`（原代码只取 `cards`，丢弃 `packs`）。
+- **新增渲染函数**：`guestNeedDesc(key)` / `renderGuestNeedCategories()` / `renderGuestPacks()`。
+
+### 变更
+
+- **登录页弃用原生登录卡弹层**：删除 `brandLoginCard()`；CSS 遮罩规则替换为 `#kc-gl-modal { display: none }`；`body.kc-guest-on .wh-full.flex.items-center:not(#kc-gl-modal)` 显式排除自建层（继续用**类选择器**而非新 id，以抗 Vue 重渲染换掉原生元素）。
+- **登录态写入与续接**：`guestLoginSubmit()` 校验后 `POST /api/v1/passport/auth/{login,register}`（注册态走 register），取 `data.auth_data || data.token` 并补 `Bearer ` 前缀，`localStorage.setItem('VUE_NAIVE_ACCESS_TOKEN', JSON.stringify({value: auth}))` → `location.reload()`。
+- **意图续接扩展为三种（`ensureIntentResume()`）**：`{planId}`（原逻辑）/ `{cat}`（写 `sessionStorage.kc_plan_cat` 后落 `#/plan`，由商品页 `applyExpectedCategory()` 落到该分类）/ `{goto}`（直达该 hash，如 `#/pack`）；入口守卫放宽为 `planId || cat || goto`。新增事件分支 `guest-cat` / `guest-goto` / `guest-login-close`，`guest-login` 改为 `openLoginModal() + ensureIntentResume()`。
+- **弹层交互接线**：点 `#kc-gl-modal` **自身空白**关闭；`Escape` 关闭；`[data-gl-tab]` 切 Tab；`[data-gl-invite]` 展开邀请码；`document` 级 `submit` → `guestLoginSubmit()`。`teardownGuest()` 一并移除 `kc-gl-modal`。
+- **深色 token 选择器放宽为 `body.kc-dark`**（原 `body.kc-has-topbar.kc-dark`）：游客态无顶栏，改后**游客落地页也能跟随站点深色**；`ensureGuestLoop` 每轮 `detectDark()` 同步。
+- **修缺陷：`ensureGuestLoop()` 改为幂等**。`tryBoot()` 对游客态**每 300ms** 调用一次 `ensureGuestLoop()`，而原实现每次都 `clearInterval` + 重建 600ms 定时器 → 定时器被无限推迟、**永不触发**（实测心跳恒为 0）。改为「已在跑就直接返回」，定时器方可正常心跳。
+- **`tools/check-airport-lexicon.js` 同步**：登录输入框选择器 `.wh-full.flex.items-center input` → `#kc-gl-modal input`；Enter 改为带 `text:'\r'`（原生 `<form>` 隐式提交需 keypress）并加「点 `#kc-gl-submit`」兜底；「服务周期」断言由硬编码 `30 天` 改为**合法值域匹配**（单次/30/90/180/365/730/1095 天），以适配「最近订单」period 变化。
+
+### 验证
+
+- 新增 `tools/_v136_guest_verify.js`（验收脚本，**不入库**）**33/33 全绿**（截图 `logs/v136-guest/`）：
+  - **F1 结构**：八区块齐备且自上而下有序；FAQ = 6；顶栏锚点 = 4。
+  - **F2 自建表单登录**：弹层可见 → 填测试账号 → **Enter 提交**（非兜底点击）→ 令牌写入 → reload 后 `#kc-guest` 消失、`#kc-topbar` 出现。
+  - **F3 注册**：切「注册」Tab → 邮箱/密码/确认密码/邀请码字段齐备 → 「我有邀请码」可展开 → 一次性邮箱注册即登录 → **测试用户已清理（残留 0）**。
+  - **F4 分类意图续接**：点「我没有账号 · 买成品号」→ 写 `kc_gate={cat:'account'}` → 登录 → 落 `#/plan`、`kc_plan_cat=account`、**可见卡片无非 account 泄漏**（现场库内无 account 商品，故 hidden=1）。
+  - **F5 文案**：无「会员/等级/升级/VIP」；权益包区含「用 N 次权益」；全页金额一律 `$`，无 `¥`/元/人民币。
+  - **U1 响应式**：1440 与 480 均无横向溢出；need 区 **3 列 → 1 列**。**U2 弹层**：空白点击关闭 / Esc 关闭 / Tab 邮箱→密码。**U3 深色**：`body.kc-dark` 生效、Hero 文字浅色、卡片深色底、品牌色恒 `rgb(0,168,98)`；运行期 JS 错误 `[]`。
+- 回归：`node tools/check-airport-lexicon.js` **17/19**（2 项 FAIL 均为**订单详情页**、**非本版本引入**，见下「已知问题」）。
+
+### 已知问题（登记，非本版本引入）
+
+- **订单详情页「旧订阅折抵金额」未被隐藏规则覆盖**：`KC_FF_RULES.rows` 已有 `{label:'旧订阅折抵金额', hide:true}`，但行隐藏的前置条件是「容器 `childElementCount === 2` 且标签以『：』结尾、长度 ≤16」，该行在当前渲染结构下**不满足前置条件**而漏网。**触发条件**：订单带 `surplus_amount`（旧订单剩余价值折抵），即**权益包兑换类订单**（Step 7 起产生）。故 `check-airport-lexicon.js` 的「详情·词典断言」命中「旧订阅折抵金额」（`订阅`/`折抵` 均为词典词）。**待用户决策是否本轮修复**。
+
+### 下一步
+
+- **待用户决策 · 订单详情页「旧订阅折抵金额」漏隐藏是否本轮修复**（修法二选一：放宽 `KC_FF_RULES` 行隐藏前置条件，或在 `kcFFRunRows()` 增加按 label 白名单隐藏分支）。
+- **待用户决策（v1.35.0 遗留）**：首页门户与 `#/plan` 的权益报价基准口径是否需统一；v1.35.0 已把首页改为与商品页同源（同调 `POST /user/kc/quotes`），此项可能已随之消解，需复核确认。
+- **整体验收（可选）**：请用户对前台改版 Step 0-9 全链路做整体走查（游客落地页 / 首页门户 / `#/plan` / `#/pack` / 我的订单 / 后台「权益报价」页）。
+- **运营侧动作**：在后台「权益报价」页为各权益包录入逐商品一口价（单位：分；未配置 = 按原价）。
+
+---
+
+## v1.35.0 · 2026-10-15 · 权益报价：每商品单独报价 + 后台维护页 + 首页门户口径统一
+
+**一句话概括**：按用户指令**废弃「统一折扣」**（规则级 `percent 40` 全程 6 折）—— 改为**每个商品单独报价**：「某权益包对某商品的一口价」由运营在后台新页「**权益报价**」逐包逐商品维护，**不同权益包对同一商品可报不同价**，**未配置的商品一律按原价**。同时把**首页门户与商品页的口径统一**到完全同源（同一个 `POST /user/kc/quotes`）。新增 1 张表 + 1 个后台页 + 2 个后台接口，插件与 Xboard 内核**零改动**（报价出参契约不变）。
+
+### 新增
+
+- **新表 `kc_entitlement_prices`（`mysql-store.js`，定价唯一事实源）**：`(rule_code, plan_code)` 唯一键 + `price_cents`（该权益包下该商品的一口价，**分**）+ `status` + `note`；建表常量 `ENTITLEMENT_PRICES_TABLE_SQL` + `ensureEntitlementPricesTable()` 接入 `ensureReady()`。**无种子数据**（初始留空，运营手填）。
+- **后台接口（`server.js`，`requireSecondaryAuth`）**：
+  - `GET /api/admin/entitlements/prices?rule_code=` → `{rule_code, packs[], products[{plan_code,name,list_price_cents,price_cents|null}]}`；
+  - `POST /api/admin/entitlements/prices` → `{rule_code, items:[{plan_code, price_cents|null}]}`（`null`/空 → **删除该行** = 未配置 = 原价；有值 → `ON DUPLICATE KEY UPDATE`）；
+  - 新 helper `entitlementListPriceCents()`：`v2_plan.prices` 存**主单位/美元**，按周期取首个 > 0 价 **×100** 得分（与前台 `planPriceCents()` 同口径）。
+- **后台「权益报价」独立页（`public/admin.html`）**：导航新增入口（在「权益」之后）；选权益包下拉 → 列表逐商品填价（商品名 + **原价只读** + 报价输入 `step .01` + 清除按钮）+ 加载/保存；说明文案「未填写的商品 = 该权益包对它不优惠（按原价）」；保存仅提交变动项。
+
+### 变更
+
+- **KC 定价引擎改为「逐商品查表」**（`server.js`）：新增 `loadEntitlementPrices(ruleCodes)`（一次查询建索引）与 `pickBestEntitlementPrice(grants, priceIndex, baseCents, planCode, now)` —— 保留过期/次数用尽校验，**删除** `min_order_cents`/`plan_scope`/`discount_type` 分支；命中且 `< baseCents` 才为候选、多权益取**最低价**、**未命中即不优惠**。`bestGrantFor()` 被其取代（旧函数名不再存在）；`POST /api/integration/entitlement/quote` 与 `priceQuote()` 的权益分支**共用同一 helper**（消除两套引擎的口径漂移）。`entitlementActiveGrants()` 精简为只取 `g.id/g.rule_code/g.remaining_uses/g.expires_at` + `r.status` JOIN 过滤。
+- **首页门户改为与商品页完全同源**（`tools/kc_home_portal.html`）：新增 `QUOTES`/`LAST_FETCH` + `buildItems()` + `fetchQuotes()`（POST `/user/kc/quotes`，4s 节流）；`buildModel()` 重写为「仅当 `applied_source==='entitlement' && final>0 && final<base` 才显示权益价」，**删除 `market` 字段、不再读 `cfg.plans` 的 `quotaPrice/marketPrice`**；`heroHtml` 删 `marketLine`；无权益卡片文案改为「开通权益包，解锁权益价」。
+- **规则表降级为元数据**：`kc_entitlement_rules` 的折扣字段（`discount_type`/`discount_value`/`plan_scope`/`min_order_cents`）**保留不动，但不再参与定价**（后台「权益」页规则表单不改）；后台「站点与定价」的商品权益价面板保留不删，加提示「该面板已不再影响前台展示」。
+
+### 验证
+
+- `node tools/_v135_pricing_verify.js` **24/24 全绿**（截图 `logs/v135-pricing/2026-10-15T03-49-15-871Z/`）：
+  - **F1 后台可维护**：GET 返回启用权益包 + 商品列表（`xplan_1` 原价 **1500 分 = $15.00**）；写 `$9.00` → 回读 900 分；置空 → `cleared=1` 且 DB `COUNT=0`。
+  - **F2 不同权益包不同报价**：同一商品 `xplan_1`，持 `pack_light_off40` → **900 分**、持 `pack_pro_off40` → **750 分**（互不相同）。
+  - **F3 未配置 = 原价**：未配 `xplan_2` → `applied_source='none'`、`final_cents=1500`（不优惠）。
+  - **F4 端到端结算**：有权益下单 → `v2_order` 应付合计（`total_amount+balance_amount+surplus_amount`）= **900 分**（非 1500）；取消后余额恢复 `20000`；KC `quote→consume→refund` 使 grant `5 → 4 → 5`。
+  - **U1 口径同源**：首页 `.hp-good` 与 `#/plan` `.kcdp-has` 的「权益价|句式」集合**完全一致**（均为 `$9.00 | 用 1 次权益 · 省 $6.00`）。
+  - **U2** 深色下 `.kcdp-num` 恒 `rgb(0,168,98)`；窄屏 480px 无横向溢出（delta=0）。**U3** 句式统一 + 零禁词（会员/等级/升级/VIP）。运行期 JS 错误 `[]`。
+- 测试后状态已复原（`balance=20000`、`grant remaining=5`、`kc_entitlement_prices` 行数 = 0、测试订单已取消、测试快照/流水已删）。
+- `node tools/check-docs-sync.js` 与 `node tools/check-currency.js` 通过。
+
+### 影响与风险
+
+- **旧断言已过期（有意为之）**：Step 7 的 `tools/_v134_settle_verify.js` 中「6 折 `$9.00`」类期望值随「统一折扣」一起作废 —— 现口径下**未配置即原价**，Step 8 起验证以 `tools/_v135_pricing_verify.js` 为准；首页「`$12.00`/省 `$8.00`」旧断言同步作废。
+- **运营动作项**：`kc_entitlement_prices` 初始为空，**上线后所有人只看到原价**（属正常，不是"没生效"）；需运营在后台「权益报价」页逐包逐商品录入一口价。报价单位是**分**（`$9.00` 填 `900`）。
+- **部署与回滚**：KC 改动 `docker restart kc-gpt-pay2-app`；`admin.html` 随容器 bind-mount 生效；前台 `node tools/xboard-apply-custom-html.js`（custom_html 380131 → 382232 字符）。回滚见 `docs/改版进度.md`「四 / Step 8 / 如何回滚」。
+
+### 下一步
+
+- **整体验收（可选）**：请用户对 Step 0-8 全链路做整体走查（首页门户 / `#/plan` / `#/pack` / 我的订单 / 后台「权益报价」页）。
+- 运营侧：按需录入各权益包的逐商品一口价（空表 = 全按原价）。
+- 其余（非本版本范围）：移动端 ≤480px 首屏排布打磨、深色模式手动开关。
+- 明细见 `docs/改版进度.md`「二、下一步 / Step 9」与「四 / Step 8」。
+
+---
+
 ## v1.34.0 · 2026-10-15 · 代充按「用户权益价」结算（接线：展示层 + 结算层 + 扣次）
 
 **一句话概括**：把「买权益包 → 之后的代充更便宜」从**只有展示层**接成**端到端真结算** —— 前台 `#/plan` 商品卡改为展示**当前登录用户真实的权益价**（有权益 6 折 `$9.00`，无权益只显原价 `$15.00`）、Xboard 下单前按用户报价**改写订单金额**、履约成功**扣次**、失败/退款**退次**。全程**无新表、无新体系**（KC 新增 2 个集成端点 + 插件 1 个报价代理 + 内核 1 处价格改写锚点）。
