@@ -97,6 +97,11 @@ if (false && $userService->isNotCompleteOrderByUserId($user->id)) {
 
             $orderService = new self($order);
 
+            // KC-PATCH:ENTITLEMENT-PRICE —— 代充按「用户权益价」结算（Step 7 接线）
+            // 在套用优惠券 / 会员折扣 / 余额抵扣之前改写本单金额，使其仍走原生余额结算链路。
+            // 任何异常 / 超时 / KC 不可达一律保持原价，绝不阻断下单。
+            $orderService->kcApplyEntitlementPrice($plan);
+
             if ($couponCode) {
                 $orderService->applyCoupon($couponCode);
             }
@@ -370,6 +375,100 @@ if (false && $userService->isNotCompleteOrderByUserId($user->id)) {
                 ->value('kc_is_topup') === 1;
         } catch (\Throwable $e) {
             return false;
+        }
+    }
+
+    /**
+     * KC-PATCH:ENTITLEMENT-PRICE —— 代充按「用户权益价」结算（Step 7 接线）。
+     *
+     * 只在**代充类**商品上生效（kc_card.category 为 recharge 或未配置）：
+     *   · 权益包商品（category=entitlement）—— 买权益包本身不打折；
+     *   · 充值套餐（kc_is_topup=1）         —— 余额充值不打折。
+     * 折扣来自 KC 侧用户 grant（kc_entitlement_grants），由 KC 集成报价端点
+     * /api/integration/entitlement/quote 按 base_cents 折算；仅当结果低于原价时改写
+     * 本单 total_amount。KC 端同时把所用 grant 落进 kc_order_pricing_snapshot，
+     * 供发货成功后按 trade_no 幂等扣次。
+     *
+     * 任何异常 / 超时 / KC 不可达一律保持原价，绝不阻断下单。
+     */
+    private function kcApplyEntitlementPrice(Plan $plan): void
+    {
+        try {
+            $baseCents = (int) $this->order->total_amount;
+            if ($baseCents <= 0) {
+                return;
+            }
+
+            $planId = (int) $plan->id;
+            if ($planId <= 0 || $this->kcIsTopupPlan($planId)) {
+                return;
+            }
+            // 仅代充类商品：判定分类为 recharge / 未配置，其余（权益包、人工交付）不接线
+            try {
+                $raw = \Illuminate\Support\Facades\DB::table('v2_plan')->where('id', $planId)->value('kc_card');
+                if (!empty($raw)) {
+                    $card = is_string($raw) ? json_decode($raw, true) : (is_array($raw) ? $raw : null);
+                    $cat = is_array($card) ? (string) ($card['category'] ?? 'recharge') : 'recharge';
+                    if ($cat !== '' && $cat !== 'recharge') {
+                        return;
+                    }
+                }
+            } catch (\Throwable $e) {
+                return; // 分类读不到 → 不接线（保守）
+            }
+
+            // 从插件配置读 KC 地址与集成密钥（与插件侧同源，避免内核写死）
+            $baseUrl = '';
+            $apiKey = '';
+            try {
+                $rawCfg = \Illuminate\Support\Facades\DB::table('v2_plugins')->where('code', 'kc_integration')->value('config');
+                $cfg = is_string($rawCfg) ? json_decode($rawCfg, true) : (is_array($rawCfg) ? $rawCfg : []);
+                if (is_array($cfg)) {
+                    $baseUrl = rtrim((string) ($cfg['kc_base_url'] ?? ''), '/');
+                    $apiKey = (string) ($cfg['integration_key'] ?? '');
+                }
+            } catch (\Throwable $e) {
+                return;
+            }
+            if ($baseUrl === '' || $apiKey === '') {
+                return;
+            }
+
+            $resp = \Illuminate\Support\Facades\Http::withHeaders([
+                'X-Integration-Key' => $apiKey,
+                'Accept'            => 'application/json',
+            ])->timeout(3)->connectTimeout(2)->asJson()->post(
+                $baseUrl . '/api/integration/entitlement/quote',
+                [
+                    'user_id' => (int) $this->order->user_id,
+                    'items'   => [[
+                        'plan_code' => 'xplan_' . $planId,
+                        'base_cents' => $baseCents,
+                        'qty'       => 1,
+                        'trade_no'  => (string) $this->order->trade_no,
+                    ]],
+                ]
+            );
+            if ($resp->failed()) {
+                return;
+            }
+            $json = $resp->json();
+            $q = is_array($json) ? ($json['data']['quotes'][0] ?? null) : null;
+            if (!is_array($q) || (string) ($q['applied_source'] ?? '') !== 'entitlement') {
+                return;
+            }
+            $final = (int) ($q['final_cents'] ?? $baseCents);
+            if ($final > 0 && $final < $baseCents) {
+                $this->order->total_amount = $final;
+                \Illuminate\Support\Facades\Log::channel('daily')->info('[KC-PATCH] 权益价改写订单金额', [
+                    'trade_no'    => (string) $this->order->trade_no,
+                    'plan_id'     => $planId,
+                    'base_cents'  => $baseCents,
+                    'final_cents' => $final,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // 权益价接线失败 → 原价，绝不阻断下单
         }
     }
 

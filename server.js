@@ -4426,27 +4426,185 @@ app.get('/api/integration/entitlement/grants', requireIntegrationAuth, async (re
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 退款/失败回补：按 grant_id 与 order_trade_no 回滚一次扣次
-// Body: { user_id, grant_id, order_trade_no }
+// 退款/失败回补：按 order_trade_no 回滚一次扣次（grant_id 可选）
+// Body: { user_id?, grant_id?, order_trade_no }
+//   —— 只传 order_trade_no 时，自动按该单的扣次流水找到 grant（Step 7：插件端无需知道 grant_id）
 // 幂等：uk_grant_order 重复调用不重复回补；如 grant 已 revoked/expired 也不再回补
 app.post('/api/integration/entitlement/refund', requireIntegrationAuth, async (req, res) => {
     try {
         await ensureStoreReady();
-        const grant_id = parseInt(req.body && req.body.grant_id, 10);
+        const grant_id = parseInt(req.body && req.body.grant_id, 10) || 0;
         const order_trade_no = String((req.body && req.body.order_trade_no) || '').trim().slice(0, 64);
-        if (!grant_id || !order_trade_no) return res.status(400).json({ success: false, message: 'grant_id 与 order_trade_no 必填' });
-        // 查 use 记录是否存在（用于幂等回滚）
-        const uses = await store.runQuery('SELECT id, grant_id, rule_code FROM kc_entitlement_uses WHERE grant_id=? AND order_trade_no=? LIMIT 1', [grant_id, order_trade_no]);
+        if (!order_trade_no) return res.status(400).json({ success: false, message: 'order_trade_no 必填' });
+        // 查 use 记录是否存在（用于幂等回滚）；
+        // 只给 trade_no 时按单反查 grant（同单多次扣次取最新一条未回补的）
+        const uses = grant_id
+            ? await store.runQuery('SELECT id, grant_id, rule_code FROM kc_entitlement_uses WHERE grant_id=? AND order_trade_no=? LIMIT 1', [grant_id, order_trade_no])
+            : await store.runQuery("SELECT id, grant_id, rule_code FROM kc_entitlement_uses WHERE order_trade_no=? AND note NOT LIKE '%REFUNDED%' ORDER BY id DESC LIMIT 1", [order_trade_no]);
         if (!uses.length) return res.json({ success: true, data: { refunded: false, note: '无对应扣次流水，无需回补' } });
         const use = uses[0];
+        const useGrantId = Number(use.grant_id);
         // 标记 use 行为 refunded（在原行 note 加后缀；不删除流水以保留审计）
         await store.runExecute("UPDATE kc_entitlement_uses SET note=CONCAT(note, ' | REFUNDED') WHERE id=?", [use.id]);
         // 回补 grant.remaining_uses + 1，把已 exhausted 的改回 active
         await store.runExecute(
             "UPDATE kc_entitlement_grants SET remaining_uses = remaining_uses + 1, status = CASE WHEN status='exhausted' THEN 'active' ELSE status END WHERE id=? AND status IN ('active','exhausted')",
-            [grant_id]
+            [useGrantId]
         );
-        res.json({ success: true, data: { refunded: true, grant_id, rule_code: use.rule_code, order_trade_no } });
+        res.json({ success: true, data: { refunded: true, grant_id: useGrantId, rule_code: use.rule_code, order_trade_no } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// ============================================================
+// v1.34.0 · Step 7：代充按「用户权益价」结算（结算层接线）
+// ============================================================
+// 缺口：代充商品价格以 Xboard v2_plan.prices 为准（kc_pricing_rules 不参与），
+//       因此「买权益包 → 代充更便宜」原先只停留在展示层。这里补两个集成端点把
+//       「用户手里的 grant」折算进 Xboard 的订单金额：
+//         quote   —— 下单前按 base_cents 折算权益价（并落盘 snapshot 记住用了哪个 grant）
+//         consume —— 交付成功后按 trade_no 幂等扣次（失败/退款走已有的 /refund）
+// 折扣算法与 /api/pricing/quote 的权益分支**完全一致**（percent / fixed_cents / fixed_price_cents）。
+
+// 取某用户当前「生效中」的权益 grant（含规则折扣字段）。查询失败返回空数组，不阻塞报价。
+async function entitlementActiveGrants(user_id) {
+    try {
+        return await store.runQuery(
+            'SELECT g.id, g.rule_code, g.remaining_uses, g.expires_at, r.discount_type, r.discount_value, r.min_order_cents, r.plan_scope, r.priority ' +
+            'FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code=g.rule_code ' +
+            'WHERE g.user_id=? AND g.status=? AND r.status=?',
+            [user_id, 'active', 'active']
+        );
+    } catch (e) {
+        return [];
+    }
+}
+
+// 从 grants 中挑出对 (baseCents, planCode) 最优（折扣后价最低）的一条。
+// 过期 / 次数用尽 / 未达门槛 / 不在 plan_scope 的 grant 一律跳过。
+function bestGrantFor(grants, baseCents, planCode, now) {
+    let best = null;
+    for (const g of grants) {
+        if (g.expires_at && new Date(g.expires_at) < now) continue;
+        if (Number(g.remaining_uses) <= 0) continue;
+        if (baseCents < Number(g.min_order_cents || 0)) continue;
+        let scope = [];
+        try { scope = typeof g.plan_scope === 'string' ? JSON.parse(g.plan_scope) : (g.plan_scope || []); } catch (e) { scope = []; }
+        if (Array.isArray(scope) && scope.length && planCode && !scope.includes(planCode)) continue;
+        let discounted = baseCents;
+        if (g.discount_type === 'percent') {
+            discounted = Math.max(0, Math.round(baseCents * (1 - Number(g.discount_value) / 100)));
+        } else if (g.discount_type === 'fixed_cents') {
+            discounted = Math.max(0, baseCents - Number(g.discount_value));
+        } else if (g.discount_type === 'fixed_price_cents') {
+            discounted = Math.max(0, Number(g.discount_value));
+        }
+        if (best == null || discounted < best.cents) {
+            best = { cents: discounted, rule_code: g.rule_code, grant_id: Number(g.id) };
+        }
+    }
+    return best;
+}
+
+// 集成端点：按用户权益折算金额。
+// 入参：{ user_id, items:[{ plan_code, base_cents, qty?, trade_no? }] }
+//      或单条简写 { user_id, plan_code, base_cents, qty?, trade_no? }
+// 出参：{ success:true, data:{ quotes:[{ plan_code, base_cents, final_cents, applied_source,
+//         applied_grant_id, applied_rule_code, discount_cents }] } }
+// 当 trade_no 存在且真的用上了权益价时，落一条 kc_order_pricing_snapshot 记住 grant，
+// 供后续 consume 按 trade_no 反查（无需 Xboard 侧新增任何列）。
+app.post('/api/integration/entitlement/quote', requireIntegrationAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const body = req.body || {};
+        const user_id = parseInt(body.user_id, 10);
+        if (!user_id) return res.status(400).json({ success: false, message: 'user_id 必填' });
+        let items = Array.isArray(body.items) ? body.items : null;
+        if (!items) {
+            if (!body.plan_code) return res.status(400).json({ success: false, message: 'items 或 plan_code 必填' });
+            items = [{ plan_code: body.plan_code, base_cents: body.base_cents, qty: body.qty, trade_no: body.trade_no }];
+        }
+        if (!items.length) return res.status(400).json({ success: false, message: 'items 不能为空' });
+        if (items.length > 50) return res.status(400).json({ success: false, message: 'items 最多 50 条' });
+
+        const now = new Date();
+        const grants = await entitlementActiveGrants(user_id);
+        const quotes = [];
+        for (const it of items) {
+            const planCode = String(it.plan_code || '').trim().slice(0, 64);
+            const baseCents = Math.max(0, Math.floor(Number(it.base_cents) || 0));
+            const qtyN = Math.max(1, Math.floor(Number(it.qty) || 1));
+            const tradeNo = String(it.trade_no || '').trim().slice(0, 64);
+            if (!planCode || baseCents <= 0) {
+                quotes.push({ plan_code: planCode, base_cents: baseCents, final_cents: baseCents, applied_source: 'none', applied_grant_id: null, applied_rule_code: null, discount_cents: 0 });
+                continue;
+            }
+            const best = bestGrantFor(grants, baseCents, planCode, now);
+            const useEnt = best != null && best.cents < baseCents;
+            const finalCents = useEnt ? (best.cents * qtyN) : (baseCents * qtyN);
+            if (useEnt && tradeNo) {
+                // plan_id：从 xplan_<id> 反解 Xboard 套餐 id（解析不到记 0；该列 NOT NULL 无默认）
+                const pid = Number(String(planCode).replace(/^xplan_/, '')) || 0;
+                try {
+                    await store.runExecute(
+                        'INSERT INTO kc_order_pricing_snapshot (trade_no, plan_id, base_price_cents, final_price_cents, applied_source, applied_rule_id, snapshot_json) VALUES (?, ?, ?, ?, ?, ?, ?) ' +
+                        'ON DUPLICATE KEY UPDATE plan_id=VALUES(plan_id), base_price_cents=VALUES(base_price_cents), final_price_cents=VALUES(final_price_cents), applied_source=VALUES(applied_source), applied_rule_id=VALUES(applied_rule_id), snapshot_json=VALUES(snapshot_json)',
+                        // applied_rule_id 列为 bigint：规则以 code（字符串）标识，故此处存 NULL，
+                        // 规则 code 完整保存在 snapshot_json.entitlement 中（避免字符串写入整型列报错）
+                        [tradeNo, pid, baseCents, finalCents, 'entitlement', null, JSON.stringify({
+                            plan_code: planCode,
+                            qty: qtyN,
+                            entitlement: { grant_id: best.grant_id, rule_code: best.rule_code, base_cents: baseCents, final_cents: best.cents }
+                        })]
+                    );
+                } catch (e) { /* snapshot 失败不阻塞报价 */ }
+            }
+            quotes.push({
+                plan_code: planCode,
+                base_cents: baseCents,
+                final_cents: finalCents,
+                applied_source: useEnt ? 'entitlement' : 'none',
+                applied_grant_id: useEnt ? best.grant_id : null,
+                applied_rule_code: useEnt ? best.rule_code : null,
+                discount_cents: Math.max(0, baseCents * qtyN - finalCents)
+            });
+        }
+        return res.json({ success: true, data: { quotes } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 集成端点：交付成功后按 trade_no 幂等扣次。
+// 入参：{ order_trade_no, grant_id?, plan_code?, original_cents?, final_cents? }
+//   —— 未传 grant_id 时回读 kc_order_pricing_snapshot（即 quote 阶段落盘的 grant）；
+//      查不到权益快照即视为「本单未使用权益价」→ consumed:false，不报错。
+// 幂等：entitlementConsume 以 (grant_id, order_trade_no) 唯一键 + INSERT IGNORE 保证不重复扣。
+app.post('/api/integration/entitlement/consume', requireIntegrationAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const body = req.body || {};
+        const order_trade_no = String(body.order_trade_no || '').trim().slice(0, 64);
+        if (!order_trade_no) return res.status(400).json({ success: false, message: 'order_trade_no 必填' });
+        let grant_id = parseInt(body.grant_id, 10) || 0;
+        let planCode = String(body.plan_code || '').trim().slice(0, 64);
+        let originalCents = Math.max(0, Math.floor(Number(body.original_cents) || 0));
+        let finalCents = Math.max(0, Math.floor(Number(body.final_cents) || 0));
+        if (!grant_id) {
+            const rows = await store.runQuery(
+                'SELECT plan_id, base_price_cents, final_price_cents, snapshot_json FROM kc_order_pricing_snapshot WHERE trade_no=? LIMIT 1',
+                [order_trade_no]
+            );
+            if (!rows.length) return res.json({ success: true, data: { consumed: false, note: '无报价记录' } });
+            const row = rows[0];
+            let snap = {};
+            try { snap = typeof row.snapshot_json === 'string' ? JSON.parse(row.snapshot_json) : (row.snapshot_json || {}); } catch (e) { snap = {}; }
+            const ent = snap && snap.entitlement ? snap.entitlement : null;
+            if (!ent || !ent.grant_id) return res.json({ success: true, data: { consumed: false, note: '本单未使用权益价' } });
+            grant_id = Number(ent.grant_id);
+            planCode = planCode || String(snap.plan_code || '');
+            originalCents = originalCents || Number(ent.base_cents || row.base_price_cents || 0);
+            finalCents = finalCents || Number(ent.final_cents || row.final_price_cents || 0);
+        }
+        const out = await entitlementConsume({ grant_id, user_id: 0, order_trade_no, plan_code: planCode, original_cents: originalCents, final_cents: finalCents });
+        return res.json({ success: true, data: { consumed: true, reused: !!out.reused, grant_id, plan_code: planCode, original_cents: originalCents, final_cents: finalCents } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 

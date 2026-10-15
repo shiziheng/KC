@@ -34,6 +34,7 @@ const CHECKS = [
   { name: 'P1b PlanService（权益包豁免）', file: '/www/app/Services/PlanService.php', pattern: 'kc_entitlement_pack', min: 1 },
   { name: 'P3 OrderService（充值不返佣）', file: '/www/app/Services/OrderService.php', pattern: 'kc_is_topup', min: 2 },
   { name: 'P7 OrderService（权益包短路开通）', file: '/www/app/Services/OrderService.php', pattern: 'ENTITLEMENT-PACK', min: 1 },
+  { name: 'P8 OrderService（代充按用户权益价结算）', file: '/www/app/Services/OrderService.php', pattern: 'ENTITLEMENT-PRICE', min: 2 },
   { name: 'P4 CheckCommission（交付才结算）', file: '/www/app/Console/Commands/CheckCommission.php', pattern: 'kcHasCardTable', min: 2 },
   { name: 'P2 TopupController（show=0 复用）', file: '/www/plugins/KcIntegration/Controllers/TopupController.php', pattern: 'KC-PATCH2', min: 2 },
   { name: 'P5 OrderService（允许多笔未支付单）', file: '/www/app/Services/OrderService.php', pattern: 'ALLOW-CONCURRENT-ORDERS', min: 1 },

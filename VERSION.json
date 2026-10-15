@@ -1,8 +1,8 @@
 {
-  "version": "1.33.0",
-  "version_tag": "v1.33.0",
-  "date": "2026-10-14",
-  "title": "权益包独立页 #/pack（≠ 代充 · 不进代充流程 · 买后不覆写订阅；作废 v1.32.0 的「原代充改名权益包」口径）",
+  "version": "1.34.0",
+  "version_tag": "v1.34.0",
+  "date": "2026-10-15",
+  "title": "代充按「用户权益价」结算（接线：展示层 + 结算层 + 扣次）",
   "product_panorama": "docs/产品全景.md",
   "changelog": "CHANGELOG.md",
   "conventions": "docs/开发规范.md",
@@ -63,6 +63,10 @@
   },
   "latest": {
     "added": [
+      "v1.34.0 · KC 集成端点 POST /api/integration/entitlement/quote（按 user_id+items 返回权益报价，带 trade_no 时落 kc_order_pricing_snapshot 供扣次反查）、POST /api/integration/entitlement/consume（order_trade_no 幂等扣次，未传 grant_id 回读快照反查）；helper entitlementActiveGrants()/bestGrantFor()（percent/fixed_cents/fixed_price_cents 取最低价）",
+      "v1.34.0 · 插件用户态报价代理 POST /user/kc/quotes（KcIntegration/Controllers/QuoteController.php，user 中间件 + throttle:60,1；user_id 取自登录态、不接受前端传入；KC 不可达降级为原价 {quotes:[],stale:true}）",
+      "v1.34.0 · 履约扣次/退次：Plugin::onOrderOpened() 交付成功分支调 callKcEntitlementConsume($tradeNo)，cdk_issue_failed / plugin_internal_failed 分支调 callKcEntitlementRefund($tradeNo)（只传 order_trade_no、超时 3s、不抛异常）",
+      "v1.34.0 · 验收脚本 tools/_v134_settle_verify.js（20 项断言：F1 展示层 / F2 结算层 / F3 扣次幂等+退次 / F4 无权益=原价 / U1-U3 UX）",
       "v1.33.0 · 权益包独立页 #/pack（tools/kc_theme_inject.html 新增「A2. 权益包独立页」段）：Hero（方案说明 + 与代充的关系）+ 配置驱动的商品卡 + 「我的权益」（余额 + 剩余次数/有效期）+ FAQ + 「用余额开通」；pushState + sessionStorage.kc_pack_intent 意图记忆接管（即使 Vue 把 hash 重写成 #/404 仍展示本页）",
       "v1.33.0 · 导航新增独立「权益包」入口：HTML_TOPBAR 与 HTML_DRAWER 两处同步 <a href=\"#/pack\" data-route=\"#/pack\" data-pack=\"1\">权益包</a>；syncActive() 新增 data-pack 分支（读 sessionStorage 意图，遵守跨块铁律）；导航定型 5 项：代充 / 成品号 / 建站服务 / 权益包 / 我的订单",
       "v1.33.0 · 后台可录的权益包商品：v2_plan id=21 轻享权益包 $60.00/5 次、id=22 尊享权益包 $600.00/50 次（show=0、sell=1、kc_card.category='entitlement'）；插件 PlanCardController::index() 新增 packs 字段，前台零硬编码（种子 tools/xboard-pack-seed.php）",
@@ -76,6 +80,9 @@
       "v1.28.0 · 订单详情四节点时间线「订单进度」+「申请售后」弹窗（POST /user/kc/after-sales）与「联系客服」入口"
     ],
     "changed": [
+      "v1.34.0 · Xboard 内核补丁 +1（P8，tools/xboard-patch-check.js 核查项 8 → 9）：OrderService::kcApplyEntitlementPrice()（锚点 ENTITLEMENT-PRICE）—— createFromRequest() 内 applyCoupon 之前，对代充类商品带 trade_no 调 KC 报价，final<base 时改写 $this->order->total_amount，任何异常静默保原价",
+      "v1.34.0 · KC POST /api/integration/entitlement/refund 改造：现支持仅传 order_trade_no（自动按 kc_entitlement_uses 反查 grant 退次），grant_id 变可选",
+      "v1.34.0 · 前台 tools/kc_plan_double_price.html 数据源改造：不再读全局 site-config.plans[].quotaPrice，改为 POST /user/kc/quotes；仅当 applied_source==='entitlement' 且 final_cents<base_cents 才显示双价（无权益/未登录/KC 不可达 → 保留主题原价）",
       "v1.33.0 · 导航口径回正（tools/kc_theme_inject.html）：保留「代充」→ #/plan（代充流程照旧），新增独立「权益包」→ #/pack（data-pack=1）；作废 v1.32.0 的「原代充改名权益包→#/plan」口径（违反「权益包 ≠ 代充」产品铁律）",
       "v1.33.0 · Xboard 内核补丁 6→8（tools/xboard-patch-check.js 核查项 + --fix 重打链）：P1b PlanService 权益包豁免 show 校验（锚点 kc_entitlement_pack）、P7 OrderService::open() 权益包短路开通（锚点 ENTITLEMENT-PACK，直接置 STATUS_COMPLETED，不写用户订阅、不覆写 plan_id/expired_at）",
       "v1.33.0 · 插件 Plugin::onOrderOpened() 新增 category='entitlement' 分支（调 KC 发权益；失败走 CompensationService），不进人工交付/不发卡；callKcEntitlementIssueAfterCdk() 由 void 改为返回 array{ok,error}",
@@ -92,6 +99,9 @@
       "v1.28.0 · tools/_v128_ux_batch1b.js 加防御性去重（kcTopupSubHint 无条件清理），修复替换结果自身为历史形态前缀导致的重复累积"
     ],
     "verified": [
+      "v1.34.0 · 权益价结算验收 node tools/_v134_settle_verify.js 20/20 全绿（截图 logs/v134-settle/2026-10-15T01-29-31-090Z）：F1 有权益 #/plan 显示权益价 $9.00/原价 $15.00/省 $6.00；F2 有权益下单 v2_order 应付合计 total_amount+balance_amount+surplus_amount = 900 分 = $9.00（非原价 1500）、取消后余额恢复；F3 KC quote→consume→consume→refund 使 grant 5→4→4→5；F4 无权益页面双价标注 0、应付 = 1500 分；U1 深色主色恒 rgb(0,168,98)、原价划线可辨；U2 窄屏 480px 零横向溢出；U3 句式统一+零禁词；运行期 JS 错误 []；测试后状态已复原（balance=20000、grant=5、测试订单已取消、快照/流水已删）",
+      "v1.34.0 · 首轮 F2/F4 因断言口径误判（Xboard 余额足额抵扣时 total_amount=0，抵扣额记入 balance_amount）一度 17/20，改为断言「三项之和」后复跑 20/20",
+      "v1.34.0 · node tools/xboard-patch-check.js 全部 9/9 补丁在位",
       "v1.33.0 · 权益包独立页验收 node tools/_v133_pack_verify.js 27/27 全绿（截图 logs/v133-pack/2026-10-14T16-31-25-872Z）：导航 5 项与三页一致、#/pack 接管与直访意图识别、商品两档价格/次数、我的权益空态与余额行、「权益包≠代充」机检（页内零「Session / 卡密」）、余额开通端到端（下单→余额抵扣→履约发权益→「剩余 5 次」）、深色可读（亮度 187.7）、主色恒 rgb(0,168,98)、窄屏零横向溢出、运行期 JS 错误 []",
       "v1.33.0 · 买权益包不覆写订阅（实测铁证）：购买轻享权益包（订单 plan_id=21）后，v2_user 的 plan_id=1、expired_at=1804213647 未变",
       "v1.33.0 · 结算口径实测：v2_order 订单 balance_amount=468 + surplus_amount=5532 = 6000 分 = $60.00（价格正确；Xboard 采用「旧订单剩余价值折抵优先、余额补差」，故「用余额开通」按钮下余额扣减额可小于包价）；首轮 21/27 → 修复 3 类问题后复跑全绿；tools/xboard-patch-check.js 8/8 补丁在位",
@@ -109,7 +119,10 @@
       "tools/check-docs-sync.js 与 tools/check-currency.js 均通过"
     ],
     "risks": [
-      "⭐v1.33.0 未接线项（已登记 Step 7）：#/plan 双价卡的 quotaPrice 是 site-config 全局配置，与「当前用户有没有权益」无关；Xboard 下单金额仍取自 v2_plan.prices，结算层尚未按用户 grant 折算 ⇒ 当前「买权益包 → 代充更便宜」只有展示层。代价最小接线方案见 docs/改版进度.md「二 / Step 7」（插件用户态报价路由 + 下单前改写 total_amount + 交付后扣次/失败退款退次）",
+      "⭐v1.34.0 未改项（既有设计差异，非缺陷）：首页门户 #kc-home-portal 仍按 site-config 的 marketPrice 口径显示 quotaPrice=$12.00（省 $8.00），而 #/plan 现按「我方原价」口径显示 $9.00（省 $6.00）；两者基准不同，若要求统一需明确以哪边为基准（见 docs/改版进度.md「二 / Step 8」）",
+      "⭐v1.34.0 kc_order_pricing_snapshot.applied_rule_id 是 bigint unsigned（存规则自增 id，非 code 字符串）：写快照时该列传 null，规则 code 存 snapshot_json.entitlement.rule_code，否则报错被 try/catch 吞掉（表现为 consume「无报价记录」）",
+      "⭐v1.34.0 Xboard 余额足额抵扣时 total_amount 归零是正常的（抵扣额记入 balance_amount）：验收断言应付金额必须用 total_amount+balance_amount+surplus_amount 之和，不可只看 total_amount",
+      "⭐v1.33.0 未接线项（已由 v1.34.0 接线）：#/plan 双价卡 quotaPrice 曾为 site-config 全局配置，与「当前用户有没有权益」无关；Xboard 下单金额取自 v2_plan.prices，结算层原未按用户 grant 折算",
       "⭐产品铁律「权益包 ≠ 代充」（用户 2026-10-14 拍板）：代充照旧存在；买权益包只是让之后的代充更便宜；买权益包绝不进入代充流程（不进开通向导、不粘贴 Session、不发卡）。导航必须同时保留「代充」与独立「权益包」两项",
       "⭐v1.32.0 导航口径已作废：原「代充改名权益包→#/plan」与铁律冲突；tools/_v132_nav_verify.js 的期望值（4 项 + 首项「权益包」→#/plan）不再适用，导航正确性以 tools/_v133_pack_verify.js 为准",
       "⭐Xboard 结算 = 「旧订单剩余价值折抵优先、余额补差」（v2_order.balance_amount + surplus_amount = 应付总额）：「用余额开通」按钮下余额扣减额可能远小于包价；验收断言只能判「余额已减少」，不可硬编码差额",
@@ -119,7 +132,7 @@
       "⭐注入式改版回滚约定：Step 2/3 注入块回滚＝从 tools/xboard-set-custom-html.php 的 $srcs 移除对应文件后重新部署（约 2 分钟即恢复主题原貌）；Step 1/4 为 theme 块内改动，按 docs/改版进度.md 各 Step「如何回滚」段复原",
       "导航主入口「权益包」为静态文案，依赖 setupNavCategories() 不再回写 textContent；后续若改分类配置渲染逻辑，须保留该约束（否则首项会被后台分类名「代充」覆盖）",
       "深色模式由 detectDark() 按 body 背景亮度自动判定，无手动开关；注入块（门户/双价）的深色 token 全量派生自主题 token，故与主题深色同步（Step 5 已实测可读、主色不漂移）",
-      "⭐内核补丁顺序陷阱：P3 重打是整文件覆盖 tools/xboard-patches/OrderService.php，会冲掉 P5 —— P5/P6 必须排在 P3 之后；改过容器内 OrderService.php 后必须回拷更新该成品文件",
+      "⭐内核补丁顺序陷阱：P3 重打是整文件覆盖 tools/xboard-patches/OrderService.php，会冲掉 P5 与 P8 —— P5/P6 必须排在 P3 之后；改过容器内 OrderService.php 后必须回拷更新该成品文件",
       "⭐运维红线：任何直接改 DB custom_html 的注入改动，收尾必须跑 tools/_v129_sync_sources_from_db.js --write 回灌本地源，否则下次全量部署会静默回滚",
       "v1.28.2 用户决策：续费管理页保持现状不改（危险操作无确认/无生效列表）；自动化任务 SUCCESS 与 Checkout 未打开的口径对齐属数据层语义，待产品确认",
       "管理员后台「替用户分配订阅」的同款限制（V2/Admin/OrderController）有意保留，属运营风控、口径不同；如需放开需另行指示",
@@ -130,7 +143,7 @@
     ]
   },
   "next": [
-    "Step 7 · 接线「代充按用户权益价结算」（本版本已登记的关键缺口）：插件新增用户态报价路由 POST /kc/order/quote（服务端代理 KC 权益折扣引擎）→ Xboard 下单前按报价改写 total_amount → 交付成功后调 KC 扣次（order_trade_no 幂等；失败/退款走 POST /api/integration/entitlement/refund 退次）；验收：有权益用户=权益价 / 无权益用户=原价 / 失败退款退次",
+    "整体验收 + 首页门户口径确认（前台改版 Step 8，可选）：请用户对前台改版 Step 0-7 全链路做整体走查；并确认首页门户 #kc-home-portal 是否要与 #/plan 的权益价口径统一（首页现按 site-config 的 marketPrice 显示 quotaPrice=$12.00/省 $8.00，商品页按「我方原价」显示 $9.00/省 $6.00；若统一，首页块需改为读用户真实报价）",
     "前台改版（KC 直供）客侧可选增强（非本版本范围，需另立需求）：移动端 ≤480px 首屏排布打磨、深色模式手动开关（现为自动判定）、真实下单/支付全链路走查",
     "第三批（走查方案剩余项）：收银台 CNY 基准币文案（定价层决策，需先确认）、订单列表分页/加载更多、钱包页导出明细、售后与工单联动",
     "用户执行：$1 真实充值测试与小额真实首单（收款链路最终验收；用户已确认暂缓，等其安排）",

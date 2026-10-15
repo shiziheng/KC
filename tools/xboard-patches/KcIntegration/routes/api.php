@@ -10,6 +10,7 @@ use Plugin\KcIntegration\Controllers\AfterSalesController;
 use Plugin\KcIntegration\Controllers\OrderPayController;
 use Plugin\KcIntegration\Controllers\CompensationController;
 use Plugin\KcIntegration\Controllers\EntitlementController;
+use Plugin\KcIntegration\Controllers\QuoteController;
 use Plugin\KcIntegration\Controllers\LedgerController;
 use Plugin\KcIntegration\Controllers\RiskController;
 use Plugin\KcIntegration\Controllers\AdminMenuController;
@@ -50,6 +51,8 @@ Route::prefix('user/kc')->middleware('user')->group(function () {
     Route::get('/status', [StatusController::class, 'status']);
     // 权益包：查询当前登录用户的生效权益（服务端代理 KC 集成接口）
     Route::get('/entitlements', [EntitlementController::class, 'mine']);
+    // Step 7：按当前登录用户的权益报「代充实付价」（服务端代理 KC，前台卡片显示真实价格）
+    Route::post('/quotes', [QuoteController::class, 'index'])->middleware('throttle:60,1');
     // ── FEAT-004 · D3：充值 ──
     // 把金额落成一次性充值套餐，返回 plan_id（前台随后走原生 save→checkout）
     Route::post('/topup/prepare', [TopupController::class, 'prepare'])->middleware('throttle:10,1');

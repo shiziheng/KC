@@ -1,16 +1,20 @@
-<!-- KC-PLAN-DP-BEGIN · v1.32 Step 3 商品页 #/plan 双价承接
-     目标：让 #/plan 商品页的商品卡套用与首页同款的「双价」口径 ——
+<!-- KC-PLAN-DP-BEGIN · v1.34 Step 7 商品页 #/plan 双价承接（按当前用户实际权益价）
+     目标：让 #/plan 商品页的商品卡展示「当前登录用户」真实的代充实付价 ——
            权益价（绿，大字）+ 原价（划线）+ 「省 $X」（前端按数字实时算）。
+     关键变更（Step 7）：权益价不再读后台全局配置 site-config.plans[].quotaPrice，
+           改为调自家后端 POST /user/kc/quotes（服务端代理 KC 的权益报价引擎），
+           只对**确实持有可用权益**的用户显示权益价；无权益用户不显示双价，
+           避免「人人看到 $12 却按 $15 付」的展示层失真。
      做法：不改主题块（主题块负责渲卡片本体与 .kc-cb-* 结构），本块在卡片就绪后
-           ① 压制主题块的单价格行 `.kc-cb-price`（加 .kcdp-has 类，只对被改造卡生效）
+           ① 压制主题块的单价格行 `.kc-cb-price`（加 .kcdp-has 类，只对已改造卡生效）
            ② 在价格行原位置插入独立标注层 `.kcdp-box`
            ③ 600ms 守护 + hashchange，抵住 Vue 重建 / 路由切换（沿用首页块保活模式）
-     数据源：GET {KC_BASE}/api/public/site-config（权益价，缓存键 kc_site_config 与主题块/首页块共用）
+     数据源：POST /user/kc/quotes（登录态；服务端代理 KC，密钥不下发浏览器）
              GET /api/v1/user/plan/fetch（登录态，取商品原价；失败则退化用卡上 data-kc-price-fen）
      视觉标准：design/前台改版demo-v2.1.0.html 的 .good 双价卡 / 首页块 .hp-good
      ⚠️ 跨块铁律：本块自带全部工具函数，绝不调用其它 script 块的函数。
      ⚠️ 作用域：仅 #/plan 列表页生效（#/plan/<id> 详情页与其它页自动清除，无残留）。
-     ⚠️ 退化：site-config.plans 未配置该商品权益价时 → 不改造，主题原价保持原样。
+     ⚠️ 退化：KC 不可达 / 未登录 / 无权益 → 报价为空，不改造，主题原价保持原样。
 -->
 <style>
   /* 压制主题块单价格行：只对被本块改造过的卡生效（.kcdp-has） */
@@ -39,11 +43,10 @@
   if (window.__kcPlanDpLoaded) { return; }
   window.__kcPlanDpLoaded = true;
 
-  var KC_BASE = 'http://localhost:3100';
-  var CACHE_KEY = 'kc_site_config';           // 与主题块 / 首页块共用（存 raw config 对象）
   var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
-  var CFG = null;      // site-config
-  var GOODS = null;    // /api/v1/user/plan/fetch 的 data 数组（用于「与首页同源」的原价口径）
+  var GOODS = null;     // /api/v1/user/plan/fetch 的 data 数组（用于「与首页同源」的原价口径）
+  var QUOTES = null;    // /user/kc/quotes 返回的 quotes 数组 → 以 plan_id 索引（Step 7 真实权益价）
+  var LAST_FETCH = 0;   // 报价节流时间戳（防守护定时器高频打接口）
   var TIMER = null;
 
   // ---------- 自带工具（不跨块调用）----------
@@ -54,7 +57,6 @@
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
     });
   }
-  function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
   function readToken() {
     try {
       var raw = localStorage.getItem(TOKEN_KEY);
@@ -75,19 +77,19 @@
     for (var i = 0; i < keys.length; i++) { if (typeof p[keys[i]] === 'number' && p[keys[i]] > 0) { return p[keys[i]]; } }
     return 0;
   }
+  function goodsPriceMap(plans) {
+    var m = {};
+    (plans || []).forEach(function (p) {
+      var c = planPriceCents(p);
+      if (c > 0) { m[String(p.id)] = c / 100; }
+    });
+    return m;
+  }
+  function cards() {
+    return document.querySelectorAll('.card-container .n-card[data-kc-card="1"][data-kc-plan-id]');
+  }
 
   // ---------- 数据 ----------
-  function fetchConfig() {
-    return fetch(KC_BASE + '/api/public/site-config', { credentials: 'omit' })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j && j.success && j.config) {
-          try { localStorage.setItem(CACHE_KEY, JSON.stringify(j.config)); } catch (e) { }
-          return j.config;
-        }
-        return null;
-      }).catch(function () { return null; });
-  }
   function fetchGoods() {
     var token = readToken();
     if (!token) { return Promise.resolve(null); }
@@ -97,21 +99,37 @@
       return (j && j.data) ? j.data : null;
     }).catch(function () { return null; });
   }
-  function savedMap(cfg) {
-    var m = {};
-    ((cfg && cfg.plans) || []).forEach(function (p) {
-      var id = p.planId != null ? p.planId : p.id;
-      if (id != null) { m[String(id)] = p; }
-    });
-    return m;
+
+  // 报价：按卡上已知的原价（分）向自家后端要「当前用户实付价」
+  function buildItems() {
+    var arr = cards(), items = [], seen = {};
+    for (var i = 0; i < arr.length; i++) {
+      var id = arr[i].getAttribute('data-kc-plan-id');
+      var base = Number(arr[i].getAttribute('data-kc-price-fen') || 0);
+      if (id && base > 0 && !seen[id]) { seen[id] = 1; items.push({ plan_id: Number(id), base_cents: base }); }
+    }
+    return items;
   }
-  function goodsPriceMap(plans) {
-    var m = {};
-    (plans || []).forEach(function (p) {
-      var c = planPriceCents(p);
-      if (c > 0) { m[String(p.id)] = c / 100; }
-    });
-    return m;
+  function fetchQuotes() {
+    var token = readToken();
+    if (!token) { QUOTES = {}; return Promise.resolve(); }
+    var now = Date.now();
+    if (QUOTES && (now - LAST_FETCH) < 4000) { return Promise.resolve(); }  // 4s 内不重复拉
+    var items = buildItems();
+    if (!items.length) { return Promise.resolve(); }                       // 卡片未就绪，等下一 tick
+    LAST_FETCH = now;
+    return fetch('/user/kc/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': 'Bearer ' + token },
+      credentials: 'same-origin',
+      body: JSON.stringify({ items: items })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var map = {};
+      var list = (j && j.data && j.data.quotes) || [];
+      for (var k = 0; k < list.length; k++) { map[String(list[k].plan_id)] = list[k]; }
+      QUOTES = map;
+      annotate();
+    }).catch(function () { QUOTES = {}; });
   }
 
   // ---------- 渲染 ----------
@@ -123,36 +141,40 @@
   }
 
   function annotate() {
-    var cards = document.querySelectorAll('.card-container .n-card[data-kc-card="1"][data-kc-plan-id]');
-    if (!cards.length) { return; }
-    var saved = savedMap(CFG);
+    var arr = cards();
+    if (!arr.length) { return; }
     var gmap = goodsPriceMap(GOODS);
 
-    for (var i = 0; i < cards.length; i++) {
-      var card = cards[i];
+    for (var i = 0; i < arr.length; i++) {
+      var card = arr[i];
       var id = card.getAttribute('data-kc-plan-id');
-      var cfgPlan = saved[String(id)] || {};
-      var quota = (cfgPlan.quotaPrice != null) ? num(cfgPlan.quotaPrice) : null;
       var priceEl = card.querySelector('.kc-cb-price');
       var exist = card.querySelector('.kcdp-box');
 
-      // 未配置权益价 / 卡片未就绪 → 不改造，保持主题原价（并清理历史标注）
-      if (quota == null || !priceEl) {
+      // 原价（分）：优先商品接口（与首页同源同算法），退化用卡上 data-kc-price-fen
+      var baseCents = (gmap[String(id)] != null) ? Math.round(gmap[String(id)] * 100)
+        : Number(card.getAttribute('data-kc-price-fen') || 0);
+
+      // 权益价：仅当后端报价确认「确实用了权益」且低于原价时才显示
+      var q = QUOTES ? QUOTES[String(id)] : null;
+      var useEnt = (q && q.applied_source === 'entitlement' && num(q.final_cents) > 0 && num(q.final_cents) < baseCents);
+      var quota = useEnt ? (num(q.final_cents) / 100) : null;
+
+      // 无权益 / 卡片未就绪 / 后端不可达 → 不改造，保持主题原价（并清理历史标注）
+      if (quota == null || !priceEl || baseCents <= 0) {
         if (exist && exist.parentNode) { exist.parentNode.removeChild(exist); }
         card.classList.remove('kcdp-has');
         continue;
       }
 
-      // 原价：优先用商品接口（与首页同源同算法），退化用卡上 data-kc-price-fen
-      var list = (gmap[String(id)] != null) ? gmap[String(id)]
-        : (Number(card.getAttribute('data-kc-price-fen') || 0) / 100);
+      var list = baseCents / 100;
       var tagEl = card.querySelector('.kc-cb-tag');
       var m = {
         quota: quota, list: list,
         save: Math.max(0, +(list - quota).toFixed(2)),
         tag: tagEl ? (tagEl.textContent || '').trim() : ''
       };
-      var sig = m.quota + '|' + m.list.toFixed(2) + '|' + m.save.toFixed(2) + '|' + m.tag;
+      var sig = m.quota.toFixed(2) + '|' + m.list.toFixed(2) + '|' + m.save.toFixed(2) + '|' + m.tag;
 
       card.classList.add('kcdp-has');   // 压制主题单价格行
 
@@ -170,29 +192,28 @@
 
   // 离开商品页：清干净（去掉压制类 + 标注层），确保其它页无残留
   function clear() {
-    var cards = document.querySelectorAll('.card-container .kc-card.kcdp-has');
-    for (var i = 0; i < cards.length; i++) {
-      cards[i].classList.remove('kcdp-has');
-      var b = cards[i].querySelector('.kcdp-box');
+    var arr = document.querySelectorAll('.card-container .kc-card.kcdp-has');
+    for (var i = 0; i < arr.length; i++) {
+      arr[i].classList.remove('kcdp-has');
+      var b = arr[i].querySelector('.kcdp-box');
       if (b && b.parentNode) { b.parentNode.removeChild(b); }
     }
+    QUOTES = null; LAST_FETCH = 0;
   }
 
   function tick() {
     if (!isPlanList()) { clear(); return; }
+    fetchQuotes();     // 卡片就绪且报价过期时才真正打接口（内部节流）
     annotate();
   }
 
   function start() {
     if (!isPlanList()) { clear(); return; }
-    CFG = readCache();                     // ① 缓存先上，首帧即双价，不闪原价
-    annotate();
-    fetchConfig().then(function (c) {      // ② 拉最新配置（改后台权益价 → 刷新/进页即变）
-      if (c) { CFG = c; annotate(); }
-    });
-    fetchGoods().then(function (p) {       // ③ 拉商品（原价，与首页同源）
+    annotate();                             // ① 先按已有 QUOTES 上屏（进页瞬间可能有旧值）
+    fetchGoods().then(function (p) {        // ② 拉商品（原价，与首页同源）
       if (p) { GOODS = p; annotate(); }
     });
+    fetchQuotes();                          // ③ 拉真实权益价（Step 7）
   }
 
   window.addEventListener('hashchange', function () {

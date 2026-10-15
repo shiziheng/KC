@@ -9,6 +9,51 @@
 
 ---
 
+## v1.34.0 · 2026-10-15 · 代充按「用户权益价」结算（接线：展示层 + 结算层 + 扣次）
+
+**一句话概括**：把「买权益包 → 之后的代充更便宜」从**只有展示层**接成**端到端真结算** —— 前台 `#/plan` 商品卡改为展示**当前登录用户真实的权益价**（有权益 6 折 `$9.00`，无权益只显原价 `$15.00`）、Xboard 下单前按用户报价**改写订单金额**、履约成功**扣次**、失败/退款**退次**。全程**无新表、无新体系**（KC 新增 2 个集成端点 + 插件 1 个报价代理 + 内核 1 处价格改写锚点）。
+
+### 新增
+
+- **KC 集成端点（`server.js`，`X-Integration-Key` 鉴权）**：
+  - `POST /api/integration/entitlement/quote`：按 `user_id + items[{plan_code,base_cents}]` 返回权益报价；当带 `trade_no` 且确有权益时落报价快照 `kc_order_pricing_snapshot`（供后续扣次反查）。
+  - `POST /api/integration/entitlement/consume`：按 `order_trade_no` 幂等扣次；未传 `grant_id` 时回读快照反查。
+  - 新增 helper `entitlementActiveGrants(user_id)` / `bestGrantFor(grants, baseCents, planCode, now)`（跳过过期/次数用尽/未达门槛/不在 `plan_scope`；按 `percent`/`fixed_cents`/`fixed_price_cents` 取最低价）。
+- **插件用户态报价代理**：`KcIntegration/Controllers/QuoteController.php` + 路由 `POST /user/kc/quotes`（`user` 中间件 + `throttle:60,1`）。`user_id` **一律取自登录态**（不接受前端传入，杜绝越权）；只回报价数值，KC 不可达时降级为「原价」（`{quotes:[],stale:true}`）。
+- **履约扣次/退次**：`Plugin::onOrderOpened()` 交付成功分支调 `callKcEntitlementConsume($tradeNo)`，`cdk_issue_failed` / `plugin_internal_failed` 分支调 `callKcEntitlementRefund($tradeNo)`（均只传 `order_trade_no`、超时 3s、不抛异常）。
+- 验收脚本 `tools/_v134_settle_verify.js`（**20 项断言**）。
+
+### 变更
+
+- **Xboard 内核补丁 +1（P8，`tools/xboard-patch-check.js` 核查项 8 → 9）**：`OrderService::kcApplyEntitlementPrice()`（锚点 `ENTITLEMENT-PRICE`）—— 在 `createFromRequest()` 内 `applyCoupon` 之前，对**代充类**商品（`kc_card.category=recharge`/未配置 且非充值套餐）带 `trade_no` 调 KC 报价；报价 `final < base` 时改写 `$this->order->total_amount`；**任何异常静默保持原价**。
+- **KC `POST /api/integration/entitlement/refund` 改造**：现支持**仅传 `order_trade_no`**（自动按 `kc_entitlement_uses` 反查 grant 退次），`grant_id` 变可选。
+- **前台 `tools/kc_plan_double_price.html` 数据源改造**：不再读全局 `site-config.plans[].quotaPrice`，改为 `POST /user/kc/quotes`；**仅当** `applied_source==='entitlement'` 且 `final_cents < base_cents` 才显示双价（无权益/未登录/KC 不可达 → 保留主题原价，不改造），避免「人人看到 $12 却按 $15 付」的展示层失真。
+
+### 验证
+
+- `node tools/_v134_settle_verify.js` **20/20 全绿**（截图 `logs/v134-settle/2026-10-15T01-29-31-090Z/`）：
+  - **F1 展示层**：有权益用户 `#/plan` 展示真实权益价 `$9.00` / 原价划线 `$15.00` / 「用 1 次权益 · 省 $6.00」。
+  - **F2 结算层（铁证）**：有权益下单 → `v2_order` 应付合计 `total_amount+balance_amount+surplus_amount` = **900 分 = $9.00**（非原价 1500）；取消后余额恢复。
+  - **F3 扣次幂等**：KC `quote→consume→consume→refund` 使 grant `5 → 4 → 4 → 5`。
+  - **F4 无权益**：耗尽 grant → 页面双价标注 `0` 个 → 应付 = 1500 分（原价）→ 恢复。
+  - **U1** 深色下 `.kcdp-num` 恒 `rgb(0,168,98)`、原价划线可辨；**U2** 窄屏 480px 零横向溢出；**U3** 句式统一 + 零禁词。运行期 JS 错误 `[]`。
+- 首轮 F2/F4 因断言口径误判（Xboard 余额足额抵扣时 `total_amount=0`，抵扣额记入 `balance_amount`）一度 17/20，改为断言「三项之和」后复跑 **20/20**。
+- 测试后状态已复原（`balance=20000`、`grant=5`、测试订单已取消、测试快照/流水已删）。
+- `node tools/xboard-patch-check.js` 全部 **9/9** 补丁在位。
+
+### 影响与风险
+
+- **未改项（既有设计差异，非本步缺陷）**：首页门户 `#kc-home-portal` 仍按 `marketPrice` 口径显示 `quotaPrice=$12.00`（省 $8.00），而 `#/plan` 现按**我方原价**口径显示 `$9.00`（省 $6.00）—— 两者基准不同，已登记为「整体验收 + 首页门户口径确认」待办（`docs/改版进度.md`「二 / Step 8」）。
+- **部署与回滚**：KC 改动 `docker restart kc-gpt-pay2-app`；插件/内核 `docker cp` + `octane:reload`（内核重建会丢，用 `tools/xboard-patch-check.js --fix` 重打）；前台 `node tools/xboard-apply-custom-html.js`（custom_html 378657 → 380131 字符）。回滚见 `docs/改版进度.md`「四 / Step 7 / 如何回滚」。
+
+### 下一步
+
+- **整体验收 + 首页门户口径确认（可选）**：请用户对 Step 0-7 全链路做整体走查，并确认首页门户是否要与 `#/plan` 的权益价口径统一（若统一，首页块需改为读用户真实报价）。
+- 其余（非本版本范围）：移动端 ≤480px 首屏排布打磨、深色模式手动开关。
+- 明细见 `docs/改版进度.md`「二、下一步 / Step 8」与「四 / Step 7」。
+
+---
+
 ## v1.33.0 · 2026-10-14 · 权益包独立页 `#/pack`（≠ 代充 · 不进代充流程 · 买后不覆写订阅）
 
 **一句话概括**：把「权益包」从代充商品页里**彻底拆出来**、做成**独立页 `#/pack`** —— 导航定型为 **代充 / 成品号 / 建站服务 / 权益包 / 我的订单**（5 项）；买权益包只走「余额扣减 → KC 发权益（N 次按权益价下单的机会）」这一条链，**不进入代充开通向导、不粘贴 Session、不发卡密**，也**不覆写用户已有订阅**。同时**作废 v1.32.0 里「原代充改名权益包→`#/plan`」的口径**（该口径违反「权益包 ≠ 代充」产品铁律）。

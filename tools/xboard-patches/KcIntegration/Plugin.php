@@ -307,11 +307,15 @@ class Plugin extends AbstractPlugin
                 // v1.19.0 · R5 自动发权益：调 KC 集成端点按 plan_code 触发 grant
                 // 失败仅日志，不阻塞主路径（订单已成功）
                 $this->callKcEntitlementIssueAfterCdk($tradeNo, (int) $order->user_id, (int) $order->plan_id, $result['cdk']);
+                // Step 7：交付成功 → 幂等扣减本单所用权益（未用权益的订单自动 no-op）
+                $this->callKcEntitlementConsume($tradeNo);
                 return;
             }
 
             $this->record($tradeNo, $order, $planType, KcCard::STATUS_FAILED, $result['error'], $userRef);
             (new CompensationService())->handleTerminalFailure($order, 'cdk_issue_failed', '代充卡密发放失败');
+            // Step 7：交付失败 → 回补本单所用权益（无扣次流水的订单自动 no-op，幂等）
+            $this->callKcEntitlementRefund($tradeNo);
             Log::channel('daily')->warning('[KcIntegration] 卡密发放失败', [
                 'trade_no'  => $tradeNo,
                 'plan_type' => $planType,
@@ -329,6 +333,8 @@ class Plugin extends AbstractPlugin
                 if ($order instanceof Order) {
                     (new CompensationService())->handleTerminalFailure($order, 'plugin_internal_failed', '代充履约插件异常');
                 }
+                // Step 7：内部异常亦回补权益（幂等，无扣次流水时 no-op）
+                $this->callKcEntitlementRefund($tradeNo);
             } catch (\Throwable $ignored) {
                 // 连记录都失败时静默 —— 已经无路可退，不能影响履约
             }
@@ -591,6 +597,87 @@ class Plugin extends AbstractPlugin
                 'trade_no' => $tradeNo,
             ]);
             return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Step 7：代充交付成功后，按订单号幂等扣减一次权益（grant）。
+     *
+     * 只对**真正使用了权益价**的订单生效：KC 侧在 /entitlement/quote 阶段已把
+     * grant 落进 kc_order_pricing_snapshot（键=trade_no），本方法只传 trade_no；
+     * KC 查不到该订单的权益快照即视为「未用权益」→ consumed:false，不报错。
+     * 幂等由 KC 的 (grant_id, order_trade_no) 唯一键保证，重复调用不会多扣。
+     *
+     * 本方法**不抛异常**（订单已成功，扣次失败仅记录，绝不回滚履约）。
+     */
+    protected function callKcEntitlementConsume(string $tradeNo): void
+    {
+        if ($tradeNo === '' || $tradeNo === 'unknown') {
+            return;
+        }
+        try {
+            $baseUrl = rtrim((string) $this->getConfig('kc_base_url', ''), '/');
+            $apiKey  = (string) $this->getConfig('integration_key', '');
+            if ($baseUrl === '' || $apiKey === '') {
+                return;
+            }
+            $response = Http::timeout(self::DEFAULT_TIMEOUT)
+                ->connectTimeout(self::CONNECT_TIMEOUT)
+                ->withHeaders([
+                    'X-Integration-Key' => $apiKey,
+                    'Accept'            => 'application/json',
+                ])
+                ->post($baseUrl . '/api/integration/entitlement/consume', [
+                    'order_trade_no' => $tradeNo,
+                ]);
+            Log::channel('daily')->info('[KcIntegration] 权益扣次回调', [
+                'trade_no' => $tradeNo,
+                'status'   => $response->status(),
+                'body'     => mb_substr((string) $response->body(), 0, 300),
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('daily')->warning('[KcIntegration] 权益扣次回调异常: ' . $e->getMessage(), [
+                'trade_no' => $tradeNo,
+            ]);
+        }
+    }
+
+    /**
+     * Step 7：代充交付失败时按订单号回补一次权益（退次）。
+     *
+     * 与 callKcEntitlementConsume 对称：KC 端 /entitlement/refund 支持只传
+     * order_trade_no（自动按扣次流水反查 grant），无扣次流水时返回 refunded:false。
+     * 本方法**不抛异常**（失败分支已很脆弱，退次失败最多多扣一次，不阻断补偿流程）。
+     */
+    protected function callKcEntitlementRefund(string $tradeNo): void
+    {
+        if ($tradeNo === '' || $tradeNo === 'unknown') {
+            return;
+        }
+        try {
+            $baseUrl = rtrim((string) $this->getConfig('kc_base_url', ''), '/');
+            $apiKey  = (string) $this->getConfig('integration_key', '');
+            if ($baseUrl === '' || $apiKey === '') {
+                return;
+            }
+            $response = Http::timeout(self::DEFAULT_TIMEOUT)
+                ->connectTimeout(self::CONNECT_TIMEOUT)
+                ->withHeaders([
+                    'X-Integration-Key' => $apiKey,
+                    'Accept'            => 'application/json',
+                ])
+                ->post($baseUrl . '/api/integration/entitlement/refund', [
+                    'order_trade_no' => $tradeNo,
+                ]);
+            Log::channel('daily')->info('[KcIntegration] 权益退次回调', [
+                'trade_no' => $tradeNo,
+                'status'   => $response->status(),
+                'body'     => mb_substr((string) $response->body(), 0, 300),
+            ]);
+        } catch (\Throwable $e) {
+            Log::channel('daily')->warning('[KcIntegration] 权益退次回调异常: ' . $e->getMessage(), [
+                'trade_no' => $tradeNo,
+            ]);
         }
     }
 
