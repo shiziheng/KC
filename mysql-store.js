@@ -317,7 +317,7 @@ async function saveGptApiConfig(config = {}) {
     );
 }
 
-// ─── 对外集成（Xboard 等）────────────────────────────────────────────────────
+// ─── 对外集成（外部系统）────────────────────────────────────────────────────
 
 const INTEGRATION_CONFIG_KEYS = [
     'integration_enabled',
@@ -326,8 +326,8 @@ const INTEGRATION_CONFIG_KEYS = [
 
 const INTEGRATION_TABLE_SQL = `CREATE TABLE IF NOT EXISTS integration_cdk_issue (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    ref VARCHAR(64) NOT NULL COMMENT '对接方幂等键，如 Xboard trade_no',
-    source VARCHAR(32) NOT NULL DEFAULT 'xboard' COMMENT '来源系统',
+    ref VARCHAR(64) NOT NULL COMMENT '对接方幂等键，如商城订单号',
+    source VARCHAR(32) NOT NULL DEFAULT 'storefront' COMMENT '来源系统',
     cdk_code VARCHAR(32) NOT NULL COMMENT '已发放的 CDK',
     plan_type VARCHAR(16) NOT NULL DEFAULT 'plus' COMMENT 'plus/pro_5x/pro_20x',
     order_id BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '对接方订单号（可选）',
@@ -344,7 +344,7 @@ async function ensureIntegrationTable() {
 }
 
 // ============================================================
-// v1.15.0 · 上游接入层（独立于 v2_plan；与 plugins.config.packages 并行作为权威源）
+// v1.15.0 · 上游接入层（独立于旧系统的套餐目录；与 plugins.config.packages 并行作为权威源）
 // 设计：SP-2026-10-11-v1.0.1 §3.1；本版本仅 KC 侧管理；插件读法切换留待 R3 展示层
 // ============================================================
 const UPSTREAMS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_upstreams (
@@ -407,7 +407,7 @@ async function ensureUpstreamHealthTable() {
 }
 
 // ============================================================
-// v1.16.0 · 资费层（独立于 v2_plan.prices 与 plugins.config.packages）
+// v1.16.0 · 资费层（独立于旧系统原价与 plugins.config.packages）
 // 设计：SP-2026-10-11-v1.0.1 §3.2；售价统一「美分数」（amount_cents，与 v1.13.0 美元守护兼容）
 // ============================================================
 const PLANS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_plans (
@@ -445,7 +445,7 @@ const PRICING_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_pricing_rules (
 
 const PRICING_SNAPSHOT_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_order_pricing_snapshot (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    trade_no VARCHAR(64) NOT NULL COMMENT 'Xboard 订单号（外部幂等键）',
+    trade_no VARCHAR(64) NOT NULL COMMENT '商城订单号（外部幂等键）',
     plan_id BIGINT UNSIGNED NOT NULL,
     base_price_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '标价（manual 价）',
     final_price_cents INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '实际收',
@@ -462,7 +462,24 @@ async function ensurePlansTable() {
     // v1.24.0 商品管理 MVP：API 分销配置占位列（仅存配置，对外接口 v2 启用）
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status'); } catch (e) { /* 已存在 */ }
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_enabled'); } catch (e) { /* 已存在 */ }
+    // v2.1.0 · 旧系统退场：商品主数据迁入 KC 原生（原外库的 name/prices/show/sell/sort/content/kc_is_topup/kc_topup_amount）
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN prices_json JSON NULL COMMENT '商品原价（主单位/美元），如 {\"monthly\":15}；NULL=非在售商品'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN content TEXT NULL COMMENT '商品详情说明'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN is_topup TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否代充商品'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN topup_amount INT NOT NULL DEFAULT 0 COMMENT '充值面额（分）'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN show_flag TINYINT(1) NOT NULL DEFAULT 1 COMMENT '前台展示开关'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN sell_flag TINYINT(1) NOT NULL DEFAULT 1 COMMENT '前台售卖开关'"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_plans ADD COLUMN sort_order INT NOT NULL DEFAULT 999 COMMENT '排序权重（小者靠前）'"); } catch (e) { /* 已存在 */ }
 }
+
+// v2.1.0 · 旧系统退场：站点级键值配置（原外库的 kc_* 键迁入 KC 原生）
+const KC_SETTINGS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_settings (
+    name VARCHAR(64) NOT NULL PRIMARY KEY COMMENT '配置键',
+    value LONGTEXT NULL COMMENT '配置值（JSON 字符串）',
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
+
+async function ensureKcSettingsTable() { await ensureTable('kc_settings', KC_SETTINGS_TABLE_SQL); }
 // v1.25.0 · 对外分销 API（SP-2026-10-13-API-v1.0.0 精简执行）
 // v1.26.0 · API 客户余额流水（自助门户对账）
 const API_BALANCE_LEDGER_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_balance_ledger (
@@ -533,11 +550,188 @@ const API_QUOTE_LOGS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_quote_logs (
     KEY idx_client (client_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对外报价流水'`;
 
-async function ensureApiClientsTable() { await ensureTable('kc_api_clients', API_CLIENTS_TABLE_SQL); }
-async function ensureApiOrdersTable() { await ensureTable('kc_api_orders', API_ORDERS_TABLE_SQL); }
+async function ensureApiClientsTable() {
+    await ensureTable('kc_api_clients', API_CLIENTS_TABLE_SQL);
+    // v1.38.0 · Stage 1 多租户地基：kc_api_clients 即租户主档，扩 6 列
+    try { await runExecute("ALTER TABLE kc_api_clients ADD COLUMN tenant_kind ENUM('platform','agent') NOT NULL DEFAULT 'agent' AFTER status"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_api_clients ADD COLUMN settlement_mode ENUM('prepaid','postpaid') NOT NULL DEFAULT 'prepaid' AFTER tenant_kind"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_api_clients ADD COLUMN settle_period ENUM('weekly','biweekly','monthly') NOT NULL DEFAULT 'monthly' AFTER settlement_mode"); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_api_clients ADD COLUMN credit_limit_cents INT NOT NULL DEFAULT 0 AFTER settle_period'); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_api_clients ADD COLUMN max_concurrent INT NOT NULL DEFAULT 3 AFTER credit_limit_cents'); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_api_clients ADD COLUMN upstream_channel VARCHAR(32) NOT NULL DEFAULT '' AFTER max_concurrent"); } catch (e) { /* 已存在 */ }
+}
+async function ensureApiOrdersTable() {
+    await ensureTable('kc_api_orders', API_ORDERS_TABLE_SQL);
+    // v1.39.0 · Stage 2.2：租户站顾客维度（open API 订单该列为 NULL；不改变既有幂等键）
+    try { await runExecute('ALTER TABLE kc_api_orders ADD COLUMN customer_id BIGINT UNSIGNED NULL AFTER client_id'); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_api_orders ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'open_api' AFTER quote_id"); } catch (e) { /* 已存在 */ }
+}
 async function ensureApiQuoteLogsTable() { await ensureTable('kc_api_quote_logs', API_QUOTE_LOGS_TABLE_SQL); }
 async function ensurePricingRulesTable() { await ensureTable('kc_pricing_rules', PRICING_RULES_TABLE_SQL); }
 async function ensurePricingSnapshotTable() { await ensureTable('kc_order_pricing_snapshot', PRICING_SNAPSHOT_TABLE_SQL); }
+
+// ---- v1.38.0 · Stage 1 多租户地基：4 张租户表 ----
+const TENANT_DOMAINS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_tenant_domains (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    host VARCHAR(191) NOT NULL COMMENT '不含协议的域名，如 agent-a.com',
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    status ENUM('pending','active','disabled') NOT NULL DEFAULT 'active',
+    ssl_status ENUM('none','issued','failed') NOT NULL DEFAULT 'none',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_host (host),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户域名绑定'`;
+
+const TENANT_BRAND_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_tenant_brand (
+    client_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    brand_name VARCHAR(128) NOT NULL DEFAULT '',
+    logo_url VARCHAR(512) NOT NULL DEFAULT '',
+    primary_color VARCHAR(16) NOT NULL DEFAULT '',
+    accent_color VARCHAR(16) NOT NULL DEFAULT '',
+    support_contact VARCHAR(191) NOT NULL DEFAULT '',
+    support_url VARCHAR(512) NOT NULL DEFAULT '',
+    hero_title VARCHAR(255) NOT NULL DEFAULT '',
+    hero_subtitle VARCHAR(255) NOT NULL DEFAULT '',
+    footer_text VARCHAR(512) NOT NULL DEFAULT '',
+    extra_json JSON NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户品牌配置'`;
+
+const TENANT_CATALOG_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_tenant_catalog (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    plan_code VARCHAR(64) NOT NULL,
+    visible TINYINT(1) NOT NULL DEFAULT 1,
+    retail_price_cents INT NOT NULL DEFAULT 0 COMMENT '租户零售价（分）；0=用平台价+加价率',
+    sort INT NOT NULL DEFAULT 0,
+    card_json JSON NULL,
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_plan (client_id, plan_code),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户可售目录与零售价'`;
+
+const TENANT_STAFF_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_tenant_staff (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    email VARCHAR(191) NOT NULL,
+    password_hash VARCHAR(191) NOT NULL DEFAULT '',
+    role ENUM('owner','staff') NOT NULL DEFAULT 'staff',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    last_login_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_email (email),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户后台员工账号'`;
+
+async function ensureTenantTables() {
+    await ensureTable('kc_tenant_domains', TENANT_DOMAINS_TABLE_SQL);
+    await ensureTable('kc_tenant_brand', TENANT_BRAND_TABLE_SQL);
+    await ensureTable('kc_tenant_catalog', TENANT_CATALOG_TABLE_SQL);
+    await ensureTable('kc_tenant_staff', TENANT_STAFF_TABLE_SQL);
+}
+
+// ---- v1.39.0 · Stage 2 分步接手：KC 自有顾客账号（替代旧会员簿）----
+// 红线：这里只存账号主档（邮箱 + 口令哈希）。会话 / access_token / Cookie 一律不落库，
+// 由服务端签发无状态签名令牌（adminAuth.issueSignedToken, sub='customer'）。
+const CUSTOMERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customers (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL COMMENT '所属租户 kc_api_clients.id',
+    email VARCHAR(191) NOT NULL,
+    password_hash VARCHAR(191) NOT NULL DEFAULT '',
+    display_name VARCHAR(128) NOT NULL DEFAULT '',
+    balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包余额（分，v1.42.0 Stage 3.3）',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    last_login_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_tenant_email (client_id, email),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户站顾客账号（KC 自有，替代旧会员簿）'`;
+
+async function ensureCustomersTable() {
+    await ensureTable('kc_customers', CUSTOMERS_TABLE_SQL);
+    // v1.42.0 · Stage 3.3（G2）：顾客钱包余额列（存量库补列）
+    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包余额（分，v1.42.0 Stage 3.3）' AFTER display_name"); } catch (e) { /* 已存在 */ }
+}
+
+// ---- v1.42.0 · Stage 3.3 顾客钱包（G2 钱包/充值前台）----
+// 红线（R2「用户资金与对接方资金分开记账」）：顾客钱包独立成账，与租户余额 kc_api_clients.balance_cents 严格分离。
+// 顾客站内下单（tenant_web）从顾客钱包扣；open API 仍从租户余额扣。两条账本互不串账。
+const CUSTOMER_WALLET_LEDGER_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer_wallet_ledger (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL COMMENT '所属租户 kc_api_clients.id',
+    customer_id BIGINT UNSIGNED NOT NULL COMMENT '顾客 kc_customers.id',
+    change_cents INT NOT NULL COMMENT '变动（分，负=扣减）',
+    balance_after_cents INT NOT NULL COMMENT '变动后余额（分）',
+    type ENUM('recharge','consume','refund') NOT NULL,
+    ref VARCHAR(64) NOT NULL DEFAULT '' COMMENT '关联单号 / 充值单号',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_customer (customer_id),
+    KEY idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='顾客钱包流水（v1.42.0）'`;
+
+// 充值单：渠道 bepusdt（USDT 收款，模拟）；status pending→paid/expired
+const CUSTOMER_RECHARGES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer_recharges (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL,
+    customer_id BIGINT UNSIGNED NOT NULL,
+    recharge_no VARCHAR(64) NOT NULL COMMENT '充值单号 rc_xxx',
+    amount_cents INT NOT NULL COMMENT '充值金额（分）',
+    currency VARCHAR(8) NOT NULL DEFAULT 'USD',
+    channel VARCHAR(24) NOT NULL DEFAULT 'bepusdt',
+    pay_address VARCHAR(128) NOT NULL DEFAULT '' COMMENT '收款地址（模拟）',
+    status ENUM('pending','paid','expired','canceled') NOT NULL DEFAULT 'pending',
+    paid_at DATETIME NULL,
+    expires_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_recharge_no (recharge_no),
+    KEY idx_customer (customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='顾客充值单（v1.42.0）'`;
+
+async function ensureCustomerWalletLedgerTable() { await ensureTable('kc_customer_wallet_ledger', CUSTOMER_WALLET_LEDGER_TABLE_SQL); }
+async function ensureCustomerRechargesTable() { await ensureTable('kc_customer_recharges', CUSTOMER_RECHARGES_TABLE_SQL); }
+
+// 播种：平台自身写成 tenant_kind='platform' 的一行（主站 = 默认 platform 租户）
+async function seedPlatformTenant() {
+    try {
+        let tenantId = null;
+        const rows = await runQuery("SELECT id FROM kc_api_clients WHERE tenant_kind='platform' ORDER BY id LIMIT 1");
+        if (rows && rows.length) {
+            tenantId = Number(rows[0].id);
+        } else {
+            const exist = await runQuery("SELECT id FROM kc_api_clients WHERE code='cli_platform' LIMIT 1");
+            if (exist && exist.length) {
+                await runExecute("UPDATE kc_api_clients SET tenant_kind='platform', name=IF(name='', '平台主站', name) WHERE id=?", [exist[0].id]);
+                tenantId = Number(exist[0].id);
+            } else {
+                const r = await runExecute(
+                    "INSERT INTO kc_api_clients (code, name, api_key, api_secret, balance_cents, status, rate_limit, tenant_kind, note) VALUES ('cli_platform', '平台主站', ?, ?, 0, 'active', 600, 'platform', 'v1.38.0 多租户地基：平台自身即默认租户')",
+                    ['ak_platform_internal', 'sk_platform_internal']
+                );
+                tenantId = r && r.insertId ? Number(r.insertId) : null;
+            }
+        }
+        // v2.0.0 · Stage 3.1：主站（platform 租户）品牌播种，前台显示对外品牌名而非内部主档名
+        if (tenantId) {
+            const brand = await runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [tenantId]);
+            if (!brand.length) {
+                await runExecute(
+                    "INSERT INTO kc_tenant_brand (client_id, brand_name, primary_color, accent_color) VALUES (?, ?, ?, ?)",
+                    [tenantId, 'KC 直供', '#0F6E56', '#0B5341']
+                );
+            }
+        }
+        return tenantId;
+    } catch (e) {
+        console.error('[tenant] seedPlatformTenant failed:', e && e.message);
+        return null;
+    }
+}
 
 // v1.18.0 · 权益 MVP（SP-2026-10-11-v1.0.1 §R4）
 const ENTITLEMENT_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_rules (
@@ -550,6 +744,7 @@ const ENTITLEMENT_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_r
     min_order_cents INT NOT NULL DEFAULT 0,
     grant_uses INT NOT NULL DEFAULT 1,
     grant_period_days INT NOT NULL DEFAULT 30,
+    sale_price_cents INT NOT NULL DEFAULT 0 COMMENT '权益包售价（分，0=前台不可售）— v1.43.0 Stage 3.4',
     priority INT NOT NULL DEFAULT 100,
     status ENUM('draft','active','paused','expired') NOT NULL DEFAULT 'draft',
     source ENUM('manual','purchase','event') NOT NULL DEFAULT 'manual',
@@ -565,6 +760,7 @@ const ENTITLEMENT_RULES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_r
 const ENTITLEMENT_GRANTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_grants (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
+    customer_id BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'KC 顾客维度（0=历史（迁移前）用户维度）— v1.43.0 Stage 3.4',
     rule_code VARCHAR(64) NOT NULL,
     source ENUM('manual','purchase','event') NOT NULL DEFAULT 'manual',
     source_ref VARCHAR(128) NOT NULL DEFAULT '',
@@ -575,8 +771,9 @@ const ENTITLEMENT_GRANTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_
     note VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_user_rule_active (user_id, rule_code, status) COMMENT '并发防同 user 同规则同 status 多发',
+    UNIQUE KEY uk_owner_rule_active (user_id, customer_id, rule_code, status) COMMENT '并发防同 owner 同规则同 status 多发',
     KEY idx_user_status (user_id, status),
+    KEY idx_customer_status (customer_id, status),
     KEY idx_rule (rule_code),
     KEY idx_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户持有权益'`;
@@ -598,12 +795,74 @@ const ENTITLEMENT_USES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement_us
     KEY idx_user_created (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='权益使用流水'`;
 
-async function ensureEntitlementRulesTable() { await ensureTable('kc_entitlement_rules', ENTITLEMENT_RULES_TABLE_SQL); }
-async function ensureEntitlementGrantsTable() { await ensureTable('kc_entitlement_grants', ENTITLEMENT_GRANTS_TABLE_SQL); }
+async function ensureEntitlementRulesTable() {
+    await ensureTable('kc_entitlement_rules', ENTITLEMENT_RULES_TABLE_SQL);
+    // v1.43.0 · Stage 3.4：权益包售价列（存量库补列）
+    try { await runExecute("ALTER TABLE kc_entitlement_rules ADD COLUMN sale_price_cents INT NOT NULL DEFAULT 0 COMMENT '权益包售价（分，0=前台不可售）— v1.43.0 Stage 3.4' AFTER grant_period_days"); } catch (e) { /* 已存在 */ }
+}
+async function ensureEntitlementGrantsTable() {
+    await ensureTable('kc_entitlement_grants', ENTITLEMENT_GRANTS_TABLE_SQL);
+    // v1.43.0 · Stage 3.4：加入 KC 顾客维度（customer_id，0=历史（迁移前）用户维度），并把唯一键改为 (user_id, customer_id, rule_code, status)
+    try { await runExecute("ALTER TABLE kc_entitlement_grants ADD COLUMN customer_id BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'KC 顾客维度（0=历史（迁移前）用户维度）— v1.43.0 Stage 3.4' AFTER user_id"); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_entitlement_grants DROP INDEX uk_user_rule_active'); } catch (e) { /* 可能已是新键 */ }
+    try { await runExecute('ALTER TABLE kc_entitlement_grants ADD UNIQUE KEY uk_owner_rule_active (user_id, customer_id, rule_code, status)'); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_entitlement_grants ADD KEY idx_customer_status (customer_id, status)'); } catch (e) { /* 已存在 */ }
+}
 async function ensureEntitlementUsesTable() {
     await ensureTable('kc_entitlement_uses', ENTITLEMENT_USES_TABLE_SQL);
     // 兼容 v1.19.0 之前已部署但缺 note 列的实例
     try { await runExecute('ALTER TABLE kc_entitlement_uses ADD COLUMN note VARCHAR(255) NOT NULL DEFAULT "" AFTER discount_cents'); } catch (e) { /* 已存在则忽略 */ }
+}
+
+// v1.43.0 · Stage 3.4（G4）：KC 顾客购买权益包记录（幂等 client_ref；与租户余额/顾客钱包分离）
+const CUSTOMER_PACK_PURCHASES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer_pack_purchases (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL COMMENT '所属租户 kc_api_clients.id',
+    customer_id BIGINT UNSIGNED NOT NULL,
+    purchase_no VARCHAR(64) NOT NULL COMMENT '内部单号 pp_xxx',
+    client_ref VARCHAR(64) NOT NULL DEFAULT '' COMMENT '幂等键（同客户同 ref 复用同单）',
+    pack_code VARCHAR(64) NOT NULL COMMENT '→ kc_entitlement_rules.code',
+    price_cents INT NOT NULL COMMENT '成交价（分）',
+    grant_id BIGINT UNSIGNED NULL COMMENT '→ kc_entitlement_grants.id',
+    status ENUM('paid','canceled') NOT NULL DEFAULT 'paid',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_purchase_no (purchase_no),
+    UNIQUE KEY uk_client_ref (customer_id, client_ref),
+    KEY idx_customer (customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='KC 顾客权益包购买记录（v1.43.0）'`;
+
+async function ensureCustomerPackPurchasesTable() { await ensureTable('kc_customer_pack_purchases', CUSTOMER_PACK_PURCHASES_TABLE_SQL); }
+
+// v1.45.0 · Stage 3.6（G6）：顾客订单售后申请（前台「申请售后」提交，后台可处理）。
+const AFTER_SALES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_after_sales (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    client_id BIGINT UNSIGNED NOT NULL COMMENT '所属租户 kc_api_clients.id',
+    customer_id BIGINT UNSIGNED NOT NULL,
+    order_no VARCHAR(64) NOT NULL COMMENT '关联 kc_api_orders.our_order_no',
+    request_type ENUM('failed','timeout','refund','other') NOT NULL DEFAULT 'other',
+    message TEXT NOT NULL,
+    status ENUM('open','processing','closed') NOT NULL DEFAULT 'open',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_customer (customer_id),
+    KEY idx_order (order_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='顾客订单售后申请（v1.45.0）'`;
+
+async function ensureAfterSalesTable() { await ensureTable('kc_after_sales', AFTER_SALES_TABLE_SQL); }
+
+// v1.43.0 · Stage 3.4（G4）：回填历史权益包售价（分）。
+// 旧系统时代两档权益包的线上售价：轻享 $60（pack_light_off40，5 次）、尊享 $600（pack_pro_off40，50 次）。
+// 仅回填 sale_price_cents=0 的存量包，避免覆盖运营经 POST /api/admin/entitlements/packs/:code/price 设置的现价。
+async function backfillPackSalePrices() {
+    const backfill = [
+        ['pack_light_off40', 6000],
+        ['pack_pro_off40', 60000]
+    ];
+    for (const [code, cents] of backfill) {
+        try {
+            await runExecute('UPDATE kc_entitlement_rules SET sale_price_cents = ? WHERE code = ? AND sale_price_cents = 0', [cents, code]);
+        } catch (e) { /* 表缺失/异常忽略，不阻塞启动 */ }
+    }
 }
 
 // v1.35.0 · 权益报价（权益包 × 商品 一口价）—— Step 8 起权益定价的唯一事实源
@@ -644,7 +903,7 @@ const ENTITLEMENT_ACTIONS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_entitlement
 async function ensureEntitlementActionsTable() { await ensureTable('kc_entitlement_actions', ENTITLEMENT_ACTIONS_TABLE_SQL); }
 
 // ============================================================
-// v1.17.0 · 商品展示层（独立于 v2_plan.kc_card；卡片配置落 KC 侧新表）
+// v1.17.0 · 商品展示层（独立于旧系统卡片；卡片配置落 KC 侧新表）
 // 设计：SP-2026-10-11-v1.0.1 §3.3；R3 阶段：新建表 + 后台编辑 + 回填 + 准备双轨
 // ============================================================
 const LISTING_CARDS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_listing_cards (
@@ -906,10 +1165,15 @@ async function ensureReady() {
     await ensureUpstreamPlansTable();
     await ensureUpstreamHealthTable();
     await ensurePlansTable();
+    await ensureKcSettingsTable();
     await ensureApiClientsTable();
     await ensureApiOrdersTable();
     await ensureApiQuoteLogsTable();
     await ensureApiBalanceLedgerTable();
+    await ensureTenantTables();
+    await ensureCustomersTable();
+    await ensureCustomerWalletLedgerTable();
+    await ensureCustomerRechargesTable();
     await ensurePricingRulesTable();
     await ensurePricingSnapshotTable();
     await ensureListingCardsTable();
@@ -918,6 +1182,9 @@ async function ensureReady() {
     await ensureEntitlementUsesTable();
     await ensureEntitlementPricesTable();
     await ensureEntitlementActionsTable();
+    await ensureCustomerPackPurchasesTable();
+    await ensureAfterSalesTable();
+    await backfillPackSalePrices();
     await initializeBaseData();
     await ensureAdminSecurityDefaults();
     await ensureHcaptchaConfigDefaults();
@@ -927,6 +1194,7 @@ async function ensureReady() {
     await migrateLegacyProxyConfig();
     await seedTaxFreeAddresses();
     await cleanupStaleLegacyTasks();
+    await seedPlatformTenant();
 }
 
 function parseAdminProductGenerationTask(row) {
@@ -1677,9 +1945,9 @@ async function insertCdks(cdks, options = {}) {
 
 /**
  * 按对接方幂等键发放 CDK。
- * 同一 ref（如 Xboard trade_no）重复调用返回同一张 CDK，绝不重复发放。
+ * 同一 ref（如商城订单号）重复调用返回同一张 CDK，绝不重复发放。
  *
- * @param {string} ref        对接方幂等键，建议传 Xboard 的 trade_no
+ * @param {string} ref        对接方幂等键，建议传商城订单号 trade_no
  * @param {object} options    { planType, source, orderId, userRef, createCdks }
  * @returns {Promise<object>} { cdk, planType, reused, ref }
  */
@@ -1692,7 +1960,7 @@ async function issueCdkByRef(ref, options = {}) {
         throw new Error('ref 长度不能超过 64');
     }
 
-    const source = String(options.source || 'xboard').trim() || 'xboard';
+    const source = String(options.source || 'storefront').trim() || 'storefront';
     const planType = VALID_PLAN_TYPES.has(options.planType) ? options.planType : 'plus';
     const orderId = Number.isFinite(Number(options.orderId)) && Number(options.orderId) > 0
         ? Number(options.orderId)

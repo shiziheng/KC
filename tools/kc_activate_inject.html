@@ -1,3 +1,4 @@
+<!-- ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。 -->
 <!-- ===================================================================
      KC 代充集成 · 订单页「去开通」卡片（段C3）
      -------------------------------------------------------------------
@@ -5,16 +6,16 @@
                的 {!! $theme_config['custom_html'] !!}，位于 #app 之外）
      触发路由：#/order/{trade_no}（前台为 hash 模式）
      数据来源：段C2 插件接口 GET /user/kc/card?trade_no=
-     跳转目标：{KC_BASE}/?cdk={cdk}（KC 自助兑卡页，卡密自动预填）
+     跳转目标：GET /kc-proxy/redeem?cdk={cdk}（同源代理 302 → KC 自助兑卡页，卡密自动预填）
      -------------------------------------------------------------------
-     ⚠️ 上线前必须把下方 KC_BASE 改成 KC 的真实对外域名
+     KC 真实地址仅在插件服务端（kc_base_url 配置），前端不出现
      =================================================================== -->
 <script>
 (function () {
     'use strict';
 
     // ===== 配置 =====
-    var KC_BASE = 'http://localhost:3100';   // ⚠️ 上线前改为 KC 真实域名
+    var KC_BASE = '/kc-proxy';   // v1.39.0 Stage 2.4 收口：同源代理，前端不再直连 KC
     var CARD_ID = 'kc-activate-card';
     var ROUTE_RE = /^#\/order\/([A-Za-z0-9_-]+)$/;
     var MOUNT_SEL = 'section.flex-1 > section > div.flex.flex-wrap';
@@ -100,7 +101,7 @@
         var t = theme();
         var cdk = String(data.cdk || '');
         var planCn = ({ plus: 'ChatGPT Plus', pro_5x: 'ChatGPT Pro 5x', pro_20x: 'ChatGPT Pro 20x' })[data.plan_type] || 'ChatGPT Plus';
-        var jumpUrl = KC_BASE + '/?cdk=' + encodeURIComponent(cdk);
+        var jumpUrl = KC_BASE + '/redeem?cdk=' + encodeURIComponent(cdk);
         // FEAT-010：已开通的订单不再展示卡密与兑卡入口（CDK 兑换彻底独立）；
         // 未开通（pending / running / failed）仍保留卡密作为兜底（向导中断、人工发货等场景）
         var kcStatus = String(data.kc_status || '').toLowerCase();

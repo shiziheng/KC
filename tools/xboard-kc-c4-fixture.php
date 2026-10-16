@@ -1,4 +1,5 @@
 <?php
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // 段C4：准备验收场景 —— 可重置插件表的 kc_status
 // 用法：php xboard-kc-c4-fixture.php <action> [value]
 require __DIR__ . '/vendor/autoload.php';

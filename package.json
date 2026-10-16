@@ -12,7 +12,8 @@
     "pretest": "node tools/check-docs-sync.js",
     "docs:check": "node tools/check-docs-sync.js",
     "currency:check": "node tools/check-currency.js",
-    "patch:check": "node tools/xboard-patch-check.js"
+    "patch:check": "node tools/xboard-patch-check.js",
+    "hygiene:check": "node tools/check-root-hygiene.js"
   },
   "engines": {
     "node": ">=20"

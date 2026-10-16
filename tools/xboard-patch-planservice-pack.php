@@ -1,4 +1,5 @@
 <?php
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // KC 补丁 P1b：权益包商品（v2_plan.kc_card.category='entitlement'）同样以 show=0 隐藏自商品页，
 // 但前台「权益包」独立页（#/pack）按 plan_id 建单需要放行 —— 与 P1（kc_is_topup 豁免）同因不同物。
 // 位置：PlanService::validatePlanAvailability。必须在 P1 之后执行（P1 命中即退出）。

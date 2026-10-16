@@ -1,5 +1,8 @@
 // FEAT-005 一键回滚：把 custom_html 恢复到写入前备份（S1 前，56133 字符版本）
 //
+// ⚠️ 已退役（v2.0.0 · Stage 3.9）：Xboard 已退场、注入已清除（custom_html=空）。本脚本不再日常使用。
+//    注意：Stage 3 的回滚方向与本文相反（要「恢复注入」用 tools/xboard-apply-custom-html.js）。
+//
 // 用法：node tools/xboard-restore-custom-html.js [_backup_custom_html_20260924.txt]
 //   缺省用 S1 写入前的备份。恢复后自动 optimize:clear + octane:reload。
 // 原理：备份文件内容整体作为 custom_html 写回主题配置（与 apply 同一条龙）。

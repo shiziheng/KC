@@ -1,3 +1,4 @@
+<!-- ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。 -->
 <!-- ===================================================================
      FEAT-005 S1+S2 · KC 主题注入：顶部导航框架 + 四页样式重排
      -------------------------------------------------------------------
@@ -4861,7 +4862,7 @@ function closeRechargePage() {
 <!-- KC-BATCH2-END -->
 
 <!-- KC-SITECFG-BEGIN · v1.31 站点配置应用（品牌名；价格文案由改版页面读同一份配置）
-     数据源：GET {KC_BASE}/api/public/site-config（KC 公开接口，免鉴权，已开 CORS）
+     数据源：GET /kc-proxy/site-config（同源代理，KC 公开接口，免鉴权）
      策略：localStorage 缓存 → 首帧不闪；拉最新 → 覆盖；定时守护 → 抵住 Vue 重建
      ⚠️ 跨块铁律：本块不得调用其它 script 块的函数（会 ReferenceError），全部自带
 -->
@@ -4871,7 +4872,7 @@ function closeRechargePage() {
     if (window.__kcSiteCfgLoaded) { return; }
     window.__kcSiteCfgLoaded = true;
 
-    var KC_BASE = 'http://localhost:3100';
+    var KC_BASE = '/kc-proxy';   // v1.39.0 Stage 2.4 收口：同源代理，前端不再直连 KC
     var CACHE_KEY = 'kc_site_config';
     var APPLIED = null;      // 已应用到的品牌名
 
@@ -4917,7 +4918,7 @@ function closeRechargePage() {
     function pull() {
         tries++;
         try {
-            fetch(KC_BASE + '/api/public/site-config', { credentials: 'omit' })
+            fetch(KC_BASE + '/site-config', { credentials: 'omit' })
                 .then(function (r) { return r.json(); })
                 .then(function (j) {
                     if (j && j.success && j.config) {

@@ -51,3 +51,22 @@ if (curCode !== 0) {
   console.error('如属「货币兜底替换实现」白名单，请更新 tools/check-currency.js 的 ALLOW_LINE。');
   process.exit(curCode);
 }
+
+// ── 2026-10-15（v1.37.0 · Stage 0）：根目录整洁守护 ──
+// 防止历史产物（一次性脚本 / 大件 / 备份 / 遗留目录）重新堆回根目录。
+const hygScript = path.resolve(__dirname, '..', 'tools', 'check-root-hygiene.js');
+let hygOut = '';
+let hygCode = 0;
+try {
+  hygOut = execFileSync(process.execPath, [hygScript], { encoding: 'utf8' });
+} catch (e) {
+  hygOut = (e.stdout || '') + (e.stderr || '');
+  hygCode = e.status === undefined ? 1 : e.status;
+}
+process.stdout.write(hygOut);
+if (hygCode !== 0) {
+  console.error('\n提交被拦截：根目录不整洁。');
+  console.error('历史产物请移入 archive/ 并在 archive/_MOVE_LOG.md 登记；归档规则见 archive/README.md。');
+  console.error('紧急情况可临时跳过：git commit --no-verify（请勿常态化使用）');
+  process.exit(hygCode);
+}

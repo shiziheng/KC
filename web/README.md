@@ -1,5 +1,10 @@
 # KC 前台（Next.js）
 
+> ⚠️ **已退役（v2.1.0 · Xboard 代码摘除）**：本目录是 Xboard 时代独立 Mock 前台，自 v1.37.0（Stage 0）起
+> 已从部署清单摘除并冻结（`docker-compose.yml` 的 `legacy-web` profile，默认不启动）；主站现由 KC 原生前台
+> （`public/site/index.html`，`GET /`）承载。**本目录仅作历史/回滚参考，日常开发与部署不再使用**，下文描述
+> 均指已退场架构。
+
 用户可见的商城前台。**替代 Xboard 的原生前台**，后端（用户/订单/支付/余额）继续由 Xboard 提供。
 
 ## 与后端的关系

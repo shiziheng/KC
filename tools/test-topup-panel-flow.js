@@ -1,3 +1,4 @@
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // tools/test-topup-panel-flow.js — 充值面板全链路体检（复刻面板调用，不付款）
 //   注册 → prepare($1) → 原生 order/save → getPaymentMethod → checkout → 探收银台
 //

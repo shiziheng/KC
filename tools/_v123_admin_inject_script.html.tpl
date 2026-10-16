@@ -1,3 +1,4 @@
+<!-- ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。 -->
   <script>
     // ============================================================
     // KC 代充运营 · Xboard 管理端代充化过滤器 v2（KC-ADMIN-V2）
@@ -6,7 +7,7 @@
     //   ① i18n 覆盖：主模块执行前改写 window.XBOARD_TRANSLATIONS
     //   ② 菜单收敛：路径黑/白名单 + 空组整组隐藏
     //   ③ 字段过滤：表格列 / 表单行 / 仪表盘卡片 / 弹窗区块 / 行操作菜单
-    //   ④ 文案兜底：品牌（Xboard → KC 加速）、货币（¥ → $）
+    //   ④ 文案兜底：品牌（Xboard → KC 直供）、货币（¥ → $）
     // 工程约束：只隐藏（display:none）不删除节点；幂等 + 心跳自愈。
     // 底层路由与数据保留，技术管理员仍可直接访问原地址。
     // ============================================================
@@ -83,7 +84,7 @@
       var HIDE_GROUPS = ['节点管理'];
       var HIDE_COLUMNS = ['权限组', '在线设备', '已用流量', '总流量', '下次重置时间', '到期时间'];
       var HIDE_LABELS = ['流量', '速度限制', '设备限制', '容量限制', '流量重置方式', '重置包', '服务器分组',
-        '订阅设置', '节点配置', '订阅模板', '订阅URL', '订阅链接', '折抵金额', '注册试用', '两年付', '三年付'];
+        '订阅设置', '节点配置', '订阅模板', '订阅URL', '订阅链接', '折抵金额', '注册试用', '两年付', '三年付', '提现单申请门槛($)'];
       var HIDE_CARDS = ['月上传', '月下载', '节点流量排行', '用户流量排行'];
       var HIDE_SECTIONS = ['订阅信息', '流量信息'];
       var HIDE_MENU_ITEMS = ['复制订阅URL', '重置UUID及订阅URL', '重置流量', 'TA的流量记录'];
@@ -159,14 +160,14 @@
           if (!v) { continue; }
           var changed = v;
           if (/Xboard is best/i.test(changed)) { changed = changed.replace(/Xboard is best!?/gi, 'ChatGPT 官方渠道代充，3 分钟自动到账'); }
-          if (changed.indexOf('Xboard') >= 0) { changed = changed.replace(/Xboard/g, 'KC 加速'); }
+          if (changed.indexOf('Xboard') >= 0) { changed = changed.replace(/Xboard/g, 'KC 直供'); }
           if (changed.indexOf('\u00a5') >= 0) { changed = changed.split('\u00a5').join('$'); }
           if (changed.indexOf('\uffe5') >= 0) { changed = changed.split('\uffe5').join('$'); }
           if (/\d\s*元/.test(changed)) { changed = changed.replace(/(\d)\s*元/g, '$1'); }
           if (changed !== v) { n.nodeValue = changed; }
         }
         if (document.title && document.title.indexOf('Xboard') >= 0) {
-          document.title = document.title.replace(/Xboard/g, 'KC 加速');
+          document.title = document.title.replace(/Xboard/g, 'KC 直供');
         }
       }
 

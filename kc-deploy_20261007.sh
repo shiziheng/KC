@@ -80,6 +80,22 @@ mj_version() {
   esac
 }
 
+# v2.0.0 Stage 3.9：manifest 中 retired=true 的服务（如已退场的 xboard）不参与 start/deploy/verify/status/open-urls。
+# 容器保留（只停不删），随时可回滚：置回 inject=true 并手动 start 该服务。
+mj_retired_ids() {
+  case "$JSON_ENGINE" in
+    jq) jq -r '.services[] | select(.retired==true) | .id' "$MANIFEST" ;;
+    python3) python3 -c "import json,sys;[print(s.get('id','')) for s in json.load(open(sys.argv[1])).get('services',[]) if s.get('retired')]" "$MANIFEST" ;;
+    node) node -e 'const fs=require("fs");for(const s of (JSON.parse(fs.readFileSync(process.argv[1],"utf8")).services||[])){if(s.retired)console.log(s.id||"")}' "$MANIFEST" ;;
+  esac
+}
+RETIRED_IDS=()
+is_retired() {
+  local n="$1"
+  if [ ${#RETIRED_IDS[@]} -eq 0 ]; then return 1; fi
+  contains "$n" "${RETIRED_IDS[@]}"
+}
+
 contains() {
   local n="$1"; shift
   local e
@@ -166,6 +182,8 @@ wait_http() {
 }
 
 # ---------- Xboard container patches: check + auto-repair (2026-10-11) ----------
+# ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：回滚资产。xboard 服务为 retired=true/inject=false，
+#    正常 deploy/start/verify 不会触达本函数；仅在需要恢复「Xboard 承载主站」的回滚路径时使用。
 # 容器重建会冲掉内核补丁（曾静默丢失 1/3/4）。委托给 node 工具统一实现（自动重打）。
 check_xboard_patches() {
   step "Checking Xboard container patches (auto-repair when missing)"
@@ -185,6 +203,7 @@ check_xboard_patches() {
 }
 
 # ---------- Xboard frontend injection (only for services with inject=true) ----------
+# ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：回滚资产。仅当 manifest 中某服务 inject=true 时执行（当前无）；
 apply_injection() {
   step "Applying Xboard frontend injection (custom_html + cache clear + octane reload)"
   local running
@@ -283,6 +302,7 @@ open_urls() {
   elif command -v open >/dev/null 2>&1; then opener="open"; fi
   local id name type compose_path project containers ports health access inject image volume build u
   while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
+    is_retired "$id" && continue
     IFS=',' read -ra us <<< "$access"
     for u in "${us[@]}"; do
       if [ -n "$opener" ]; then
@@ -300,6 +320,7 @@ show_status() {
   local filters=()
   local id name type compose_path project containers ports health access inject image volume build c u
   while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
+    is_retired "$id" && continue
     IFS=',' read -ra cs <<< "$containers"
     for c in "${cs[@]}"; do filters+=(--filter "name=$c"); done
   done < <(mj_tsv)
@@ -307,6 +328,7 @@ show_status() {
   echo
   echo "Access URLs:"
   while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
+    is_retired "$id" && continue
     IFS=',' read -ra us <<< "$access"
     for u in "${us[@]}"; do echo "  $name: $u"; done
   done < <(mj_tsv)
@@ -316,24 +338,38 @@ show_status() {
 verify_deploy() {
   step "Verifying running containers against deploy-manifest.json"
   local expected=()
+  local retired_containers=()
   local id name type compose_path project containers ports health access inject image volume build c
   while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
     IFS=',' read -ra cs <<< "$containers"
-    for c in "${cs[@]}"; do expected+=("$c"); done
+    if is_retired "$id"; then
+      for c in "${cs[@]}"; do retired_containers+=("$c"); done
+    else
+      for c in "${cs[@]}"; do expected+=("$c"); done
+    fi
   done < <(mj_tsv)
   local running=($("$DOCKER_BIN" ps --format '{{.Names}}' 2>/dev/null))
   local all=($("$DOCKER_BIN" ps -a --format '{{.Names}}' 2>/dev/null))
 
   echo
-  echo "Expected containers from manifest (${#expected[@]}):"
+  echo "Expected containers from manifest (${#expected[@]} active):"
   local missing=() extra=()
   for c in "${expected[@]}"; do
     if contains "$c" "${running[@]}"; then echo "  [UP]   $c"
     elif contains "$c" "${all[@]}"; then echo "  [DOWN] $c -- container exists but is stopped"
     else echo "  [MISS] $c -- not created"; missing+=("$c"); fi
   done
+  if [ ${#retired_containers[@]} -gt 0 ]; then
+    echo
+    echo "Retired services (excluded from drift check):"
+    for c in "${retired_containers[@]}"; do
+      if contains "$c" "${running[@]}"; then echo "  [UP]   $c -- retired but still running; stop it to finish retirement"
+      elif contains "$c" "${all[@]}"; then echo "  [KEPT] $c -- stopped, container retained (rollback asset)"
+      else echo "  [MISS] $c -- container not created"; fi
+    done
+  fi
   for c in "${running[@]}"; do
-    if ! contains "$c" "${expected[@]}"; then echo "  [DRIFT] $c -- running but not in manifest"; extra+=("$c"); fi
+    if ! contains "$c" "${expected[@]}" && ! contains "$c" "${retired_containers[@]}"; then echo "  [DRIFT] $c -- running but not in manifest"; extra+=("$c"); fi
   done
 
   echo
@@ -354,13 +390,15 @@ list_services() {
   echo
   local id name type compose_path project containers ports health access inject image volume build
   while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
-    echo "  [$id] $name <$type>"
+    if is_retired "$id"; then local tag=" [RETIRED]"; else local tag=""; fi
+    echo "  [$id] $name <$type>$tag"
     echo "      containers: $containers"
     echo "      ports: $ports"
     if [ "$type" = "compose" ]; then echo "      compose: $compose_path (project $project)"; else echo "      image: $image  volume: $volume"; fi
     [ -n "$health" ] && echo "      health: $health"
     echo "      access: $access"
     echo "      inject: $inject"
+    if is_retired "$id"; then echo "      retired: true (不参与 start/deploy/verify；容器只停不删，可回滚)"; fi
   done < <(mj_tsv)
   echo
   echo "To add/remove/rename a service, edit deploy-manifest.json only; both engines follow automatically."
@@ -405,12 +443,14 @@ if [ ! -f "$MANIFEST" ]; then
   exit 1
 fi
 detect_json_engine
+RETIRED_IDS=($(mj_retired_ids))
 if [ "$ACTION" != "list" ]; then ensure_docker; fi
 
 case "$ACTION" in
   start)
     DO_BUILD=0
     while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
+      is_retired "$id" && continue
       svc_start "$id" "$name" "$type" "$compose_path" "$project" "$containers" "$ports" "$health" "$access" "$inject" "$image" "$volume" "$build" "$DO_BUILD"
     done < <(mj_tsv)
     show_status
@@ -425,6 +465,7 @@ case "$ACTION" in
   deploy)
     DO_BUILD=1
     while IFS=$'\x1f' read -r id name type compose_path project containers ports health access inject image volume build; do
+      is_retired "$id" && continue
       svc_deploy "$id" "$name" "$type" "$compose_path" "$project" "$containers" "$ports" "$health" "$access" "$inject" "$image" "$volume" "$build"
     done < <(mj_tsv)
     show_status

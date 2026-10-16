@@ -9,15 +9,15 @@
 
 ### 1. 当前版本
 
-**`v1.36.0` · 2026-10-15 · 登录前首页（游客落地页）与登录页改版：sukai 风格信息架构 + 自建登录/注册表单**
+**`v2.2.0` · 2026-10-16 · 充值页大改：精确金额认单 + 小数位强提醒；后台报错排查 + 图标库全局兜底**
 
 ### 1b. 产品一句话
 
-ChatGPT Plus / Pro 自动代充平台。当前独立业务前台和后台仅运行 Mock：用户浏览后台配置的商品、创建自己的模拟订单、推进模拟支付/履约、提交售后留言并查看凭证。
-由 KC 引擎、独立业务前台、Xboard 旧流程回退商城、BEpusdt 旧收款网关和独立业务后台组成。**新前台不会收款、扣款、保存 ChatGPT Session 或调用 ZovoCard。**
+ChatGPT Plus / Pro 自动代充平台。主站前台由 **KC 原生前台**（`GET /`）承载，独立业务前台和后台仅运行 Mock：用户浏览后台配置的商品、创建自己的模拟订单、推进模拟支付/履约、提交售后留言并查看凭证。
+由 KC 引擎、KC 原生主站前台、BEpusdt 收款网关和独立业务后台组成。**主站前台不会保存 ChatGPT Session 或调用 ZovoCard。**
 功能清单、业务流程、未来规划详见 [`docs/产品全景.md`](docs/产品全景.md)。
 
-> **当前交付边界**：独立业务后台入口为 `http://localhost:3100/business-admin`，独立 Mock 用户前台入口为 `http://localhost:3001`；Xboard 管理菜单进入业务后台。`/admin` 保持现有 KC 技术后台不变；后台沿用管理员邮箱/密码及原有二次验证设置。旧 Xboard 商城保留为回退路径；真实支付、余额扣减、ZovoCard 和履约调用均关闭。
+> **当前交付边界**：主站 `GET /` 为 **KC 原生前台**；**Xboard 已退场（v2.0.0）且**网站已做**代码级摘除（v2.1.0）** —— `server.js`/`public/**`/`business/**` 均 **0 处 Xboard 引用**，商品/站点配置主数据已迁入 `kc_plans`/`kc_settings`/`kc_listing_cards`，业务模块不再直连旧系统；**Xboard 容器仍 `docker stop` 只停不删、保留可回滚**（`custom_html` 注入已清、9 补丁/注入链与 24 个 Xboard 时代工具已加退役标记）。独立业务后台入口为 `http://localhost:3100/business-admin`。独立 Mock 用户前台（`kc-gpt-pay2-web`，`:3001`）已于 **v1.37.0 从部署清单摘除并默认停用**（`docker-compose` 加 `legacy-web` profile，磁盘目录保留可回滚）。`/admin` 保持现有 KC 技术后台不变。**回滚到 Xboard 承载主站**：置回 `inject=true` + `docker start xboard` + 跑 `tools/xboard-apply-custom-html.js`（**切勿 `docker rm xboard`**）。真实支付、ZovoCard 和履约调用均关闭。
 
 ### 2. 强制阅读顺序（缺一不可）
 
@@ -36,6 +36,20 @@ ChatGPT Plus / Pro 自动代充平台。当前独立业务前台和后台仅运�
 
 ### 3. 当前进度
 
+- **充值页大改 + 后台报错排查（v2.2.0）**：按用户指令「充值页要大改、对客户不输小数位要明显提醒」——①**后端精确金额**（`server.js` 新增 `rechargeExactAmount`）：由 `recharge_no` 派生 4 位唯一小数尾数（如 `$200` → `200.0065 USDT`）作链上**认单标识**，**尾数不额外入账**（入账仍按整数分，余额精度不受影响、无需落库新列）；`POST /api/tenant/wallet/recharge` 响应加 `exact_amount`/`token`/`network`/`min`/`max`；②**充值弹层重写**（`public/site/index.html`）：`USDT · TRC20` 网络徽标 + 「选错链资金将无法找回」红字、「精确金额」红色区块 + 4 位小数强提醒（「少一位、多一分、或四舍五入成整数 → 转人工」）、手续费说明、**确认勾选闸门**（未勾选不能支付）、复制按钮 `clipboard`→`execCommand` 降级、金额限整数美元；③**后台报错普查**：`/admin` 23 tab + `/business-admin` 7 tab 全遍历，**231 次 `/api` 请求全 200**、无 4xx/5xx，唯一报错为离线 lucide CDN 级联（假报错）；④**图标库全局兜底**（`admin.html`/`index.html`/`subscription.html`）消除该假报错。验证：功能 **50/50**（含 F9 充值）+ 单元 **27/27** + UX 充值弹层 9 项（a~i）全 PASS + `/admin` 控制台 0 错误 + 三门禁全绿。**未动卡池 / 代理池等 KC 原生页面业务逻辑。**
+- **Xboard 代码级摘除 + 上线前功能/UX 验收（v2.1.0）**：按用户指令「网站不再引用任何 Xboard，剔除相关代码，工程文件做标记」——①**数据迁入 KC 原生表**（`kc_plans` 扩 `prices_json`/`content`/`is_topup`/`topup_amount`/`show_flag`/`sell_flag`/`sort_order` 七列 + 新表 `kc_settings` + 卡片统一 `kc_listing_cards.card_json`）；②**后台全面改读 KC 原生表**（`/api/admin/products`、`products/save`、`card-config/*`、`entitlements/prices`、`user-lookup`→`kc_customers`、`site-config`），**新商品 code 改为「最大 `xplan_<n>` +1」与 id 解耦**；③**删除 Xboard 服务端残留**（`readXboardPatchStatus`/`xboard_patches`、`diag/legacy-fields`、`XBOARD_DB_NAME`、`sync-to-v2`），`server.js` **0 处 xboard/v2_plan**；④**业务模块去直连**（`user-auth.js` 改本地校验 KC 顾客签名令牌、`reconciliation.js` 不再读旧库、`legacy_system` 标签改 `storefront:*`）；⑤**前台/后台去文案**（删「补丁绿灯」卡片与「同步到 v2」按钮；`business-admin.html` 对账标签改「旧系统订单（已退场）」）；⑥**工程文件退役标记**（24 个 Xboard 时代工具 + deploy 回滚函数 + 冻结 `web/`）。验证：**功能回归 50/50 PASS**（登录/注册/创建商品/维护报价/买代充/买权益包/买 CDK/充值/查订单）+ **单元测试 27/27** + **UX 3 面全绿**（`/`·`/admin`·`/business-admin`，0 处 Xboard 文本；唯一控制台报错为离线 CDN 失载，属环境）+ **三门禁全绿**。⚠️ **Xboard 容器仍只停不删**（回滚资产保留，**切勿 `docker rm`**）。
+- **Xboard 退场（Stage 3.9，v2.0.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.9，执行 Stage 3 中**唯一移除回滚安全网**的破坏性步骤（用户拍板口径：**接管根路径 + 保留容器可回滚**）—— ①主站 `GET /` **接管为 KC 原生主站前台** `public/site/index.html`（`?cdk=X` 自动进兑卡视图、无参进首页；旧落地页 `public/index.html` 不再由 `/` 提供）；②**清除 Xboard 注入**（`custom_html` 405268 → 0 字符）；③**9 补丁/注入链退役只读**（`tools/xboard-patch-checks.js` 加 `RETIRED` 常量，核查脚本退役态直接上报 `{retired:true}` 并 `exit 0`；`deploy-manifest.json` xboard 加 `retired:true`；部署引擎 `.ps1`/`.sh` 的 start/deploy/verify/open-urls 排除 retired 服务、verify 单列 `[KEPT]`）；④**Xboard 容器只停不删**（`docker stop xboard`，保留为回滚资产）。验证：**全链路 200**（`/`·`/?cdk=`·`/redeem`·`/site`·`/tenant`·`/tenant-admin`·`/admin` + 核心 API）+ **UX 6/6**（`/` 为 KC 原生前台首页、导航恰 5 项、无「订阅」字样）+ **端到端对照 14/14 PASS**（Xboard 停机状态下注册→充值→下单→发卡→兑卡→查单）+ **回滚演练 PASS**（start xboard → apply 注入 405268 → 前台含 `realProgress` → 再清 405268→0 → stop）+ **三门禁全绿**。⚠️ **回滚路径务必保留**：置回 `inject=true` + `docker start xboard` + 跑 `tools/xboard-apply-custom-html.js`；**切勿 `docker rm` / `compose down -v`**。退出后进入观察期（无回退事故方可按原计划彻底摘除容器，另案需批准）。
+- **退场第八步（Stage 3.8，v1.47.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.8，在 `deploy-manifest.json` 将 **xboard 服务的 `inject` 由 `true` 改为 `false`** —— 部署/启动**不再重放** KC 前端注入（`custom_html` + 清缓存 + octane reload），正式进入 **Xboard 退场观察期**。因 G1~G5 阻断缺口已闭环、G6/G9/G11 亦闭环，主站体验已由 KC 原生前台 `GET /site` 覆盖。**本步是配置变更，不摘容器、运行时不即时生效**；回滚 = 置回 `true` 并跑 `tools/xboard-apply-custom-html.js`。验证：JSON 合法 + 三服务 `inject` 均为 `false` + 回滚脚本在位 + 三门禁全绿。**Xboard 未摘除**（3.9 才退场，且须待观察期满足「无回退事故」）。
+- **退场第七步（Stage 3.7，v1.46.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.7 落地 **保留面迁移（G11 闭环）** —— 依《Xboard原生功能处置清单》「工单/知识库保留、邀请保留入口但佣金不出圈」的定调，在主站前台**页脚新增「帮助与支持」行**：**工单支持 / 使用文档 / 邀请好友** 三个入口。运营可在租户品牌 `kc_tenant_brand.extra_json` 配 `ticket_url`/`kb_url`/`invite_url` 走**外链**，未配时回落**原生入口**（工单 → 「我的订单 → 订单详情 → 申请售后」；使用文档 → 滚到首页「常见问题」；邀请 → 弹层说明「邀请佣金在平台内结算、不对外开放提现」）。**同时复核导航 5 项口径（G9 闭环）**：顶部导航恒为 代充/成品号/建站服务/权益包/我的订单，无冗余「首页」。验证：功能 **14/14 PASS** + UX 全绿（页脚三链接、弹层文案、375px 不溢出）+ 三门禁全绿。**Xboard 未退场、未关注入**。
+- **退场第六步（Stage 3.6，v1.45.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.6 落地 **订单中心增强（G6 闭环）** —— ①数据层新建 `kc_after_sales`（顾客订单售后申请）；②`GET /api/tenant/orders` 加 `updated_at`；③新增 `POST /api/tenant/after-sales`（`authenticateCustomer`，作用域取 `req.tenant.id` + `req.customer.id`）；④主站前台「我的订单」加**状态筛选 tab**（全部/处理中/已完成/失败，带计数）+ **订单详情「订单进度」四节点时间线** + **「申请售后」弹层** + **「联系客服」入口**；充值单加 **30 分钟支付时限倒计时**（KC 原生下单即扣款、无「待支付」态，故倒计时落在充值单上）。验证：功能 **16/16 PASS** + UX 全绿（筛选/时间线/售后/倒计时）+ 三门禁全绿。**Xboard 未退场、未关注入**。
+- **退场第五步（Stage 3.5，v1.44.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.5 落地 **商品双价卡 + 首页门户（G5/G7 闭环）** —— ①**G7 权益价参与 KC 原生下单结算**：`GET /api/tenant/catalog` 每项加 `base_price`/`entitlement_price`/`entitlement_rule`/`entitlement_discount`，`POST /api/tenant/quote` 命中权益时锁权益价，`POST /api/tenant/orders` 按权益价扣顾客钱包 + 交付后 `entitlementConsume` 扣次（幂等）；前台 `priceHtml()` 渲染「权益价大字 + 原价划线 + 『权益价』标签 + 『用 1 次权益 · 省 $X』」；②**G5 首页门户**：主站前台 Hero 后新增 5 区块（为什么更省 / 三步完成 / 热门商品 / 权益包推介 / 常见问题），退场后首屏不再依赖 Xboard 注入的 `kc_home_portal`。验证：功能 **19/19 PASS** + UX 实测（5 区块齐全、列表详情双价、375px 不破版、0 JS 报错）+ 三门禁全绿。**Xboard 未退场、未关注入**。⚠️ 为验证双价，向 `kc_entitlement_prices` 插入了示例报价 `pack_light_off40 × xplan_1 = 900`（保留待运营确认）。
+- **退场第四步（Stage 3.4，v1.43.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.4 落地 **权益包前台（G4 闭环）** —— 权益包=平台自有资产，退场后购买入口不能消失，故在 KC 原生前台重建：①数据层 `kc_entitlement_rules` 加**售价** `sale_price_cents`（0=前台不可售）+ `kc_entitlement_grants` 加**顾客维度** `customer_id`（与历史 Xboard `user_id` 并存）+ 新建 `kc_customer_pack_purchases`（`client_ref` 幂等）；②前台 API `GET /api/tenant/packs` / `GET /api/tenant/entitlements` / `POST /api/tenant/packs/purchase`（**用顾客钱包余额开通**：扣款 → 发权益 → 记购买 + 写钱包流水，幂等 + 回滚）；③主站前台「权益包」视图（我的权益 + 可开通权益包卡 + 「用余额开通」，替换原过渡态占位）；④运营定价入口 `POST /api/admin/entitlements/packs/:code/price`。验证：功能 **18/18 PASS**（未登录可见 2 包 / 未登录 401 / 余额不足 402 / 充值后购买成功扣至 $40 / 我的权益 1 条 / 重复开通 409 / 幂等 / 流水 / 管理端定价 401）+ 数据核对（顾客维度 grant `user_id=0`、购买单、售价回填）+ UX 实测（点击「用余额开通」→ 已开通徽章 + 我的权益剩余 5/共 5 + 钱包扣 $60、375px 不破版、0 JS 报错）+ 三门禁全绿。**Xboard 未退场、未关注入**（阻断缺口 G5 仍在；权益价应用到原生下单的双价卡留 Stage 3.5 G7）。
+- **退场第三步（Stage 3.3，v1.42.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.3 落地 **钱包/充值前台（G2 闭环）** —— 新增**顾客级钱包**（`kc_customers.balance_cents` + 独立流水 `kc_customer_wallet_ledger` + 充值单 `kc_customer_recharges`）；主站前台新增「**我的钱包**」视图（余额大卡 + 档位 $100/$300/$500 + 自定义 + 流水明细 + 充值弹层）；充值走 **BEpusdt USDT（TRC20）收款**（**模拟**：生成收款地址 → 前台「我已支付」触发**收款回调**入账，幂等防重复）；**`tenant_web` 站内下单改从顾客钱包扣**（open API 仍从**租户余额**扣），两条账本严格分离（R2 红线「用户资金与对接方资金分开记账」）。验证：功能 **15/15 PASS**（401/初始 $0/档位/发起不入账/回调入账/幂等/越权 404/金额边界/顾客钱包扣款/402 不足）+ UX 实测（注册→钱包→充值 $300 到账、375px 不破版、弹层不重叠、0 机场词）+ `check-currency`/`check-docs-sync`/`check-root-hygiene` 全绿。**Xboard 未退场、未关注入**（阻断缺口 G4/G5 仍在）。⚠️ 充值为模拟：`confirm` 端点须在真实接入前改为「仅 BEpusdt notify 服务端验签入账」。
+- **退场第二步（Stage 3.2，v1.41.0）**：落地 **兑卡/激活前台页（G1 闭环）** —— 主站前台新增「**兑换卡密 · 完成开通**」视图：卡密验证（`POST /api/verify-cdk`）→ 会话凭证本地校验（Session JSON / accessToken）→ 提交开通（`POST /api/run-process`）→ **WebSocket** 订阅 `jobKey` 实时进度；`GET /?cdk=X` 与新增 `GET /redeem` 均落到 KC 原生兑卡页（自动预填 + 自校验）。验证：路由/行为实测（`/?cdk=`、`/redeem`、`/` 回归）+ UX 实测（自动预填/自校验、375px 不破版、本页 0 JS 错误）+ `check-currency`/`check-docs-sync`/`check-root-hygiene` 全绿。**Xboard 未退场、未关注入**（阻断缺口 G2/G4/G5 仍在）。
+- **退场第一步（Stage 3.1，v1.40.0）**：按《Stage3切换前对照清单-v1.0.0》§六 步序 3.1 落地 **主站顾客登录/注册（G3 闭环）** —— 新增 KC 原生**主站前台骨架**`public/site/index.html`（新路由 `GET /site`：品牌头 + **5 项导航**（代充/成品号/建站服务/权益包/我的订单）+ 首页/商品分类/详情/下单/我的订单）；顾客**注册/登录/会话**复用既有 `/api/tenant/auth/*`（主站即 `cli_platform` 平台租户，令牌 `sub='customer'`、7 天、**不落库**），跨租户令牌访问 → `403`；`GET /api/tenant/catalog` 补 `category` 字段支撑分类导航；平台租户品牌播种为「**KC 直供**」。验证：功能 **14/14 PASS**（F1 注册→登录→me / F2 跨租户 403 / F3 无 token 列）+ UX 实测（默认/375px/1500px 不破版、0 机场词）+ `check-currency` 通过。**Xboard 未退场、未关注入**（阻断缺口 G1/G2/G4/G5 仍在）。
+- **多租户接手（Stage 2，v1.39.0）**：按《替换Xboard与白标多租户实施计划-v1.0.0》§十二 落地 —— ①KC 自建顾客账号（`kc_customers` + `/api/tenant/auth/*` 注册/登录/会话，令牌 `sub='customer'` 7 天不落库）；②租户白标前台最小版 `/tenant`（首页/商品/详情/下单/我的订单 + 品牌渲染，金额全 `$`、不启权益包）；③抽出**共享下单核心 `createApiOrderCore`**（open API 与租户前台同一套幂等 + 锁价 + 余额原子扣减 + 履约发卡）；④**代理商后台** `/tenant-admin` + `/api/tenant-admin/*`（`authenticateTenantStaff`，owner 才可改品牌/域名/员工，**不暴露平台成本/上游/其他租户**）；⑤前台直连 KC 的请求改走 Xboard 插件代理 `/kc-proxy/*`（前端源码无 KC 端口）；⑥`docs/方案/Xboard原生功能处置清单-v1.0.0.md`（工单/知识库保留、邀请保留入口但佣金不出圈、节点/流量/订阅/权限组隐藏）。**Xboard 未退场，主站切换留 Stage 3。** 验证：功能 F 全绿（幂等/跨租户 403/open API 回归）+ UX `/tenant/`、`/tenant-admin.html` PASS + 前台页无 `:3100`。遗留：「旧订阅折抵金额」是否隐藏待决策。
+- **多租户地基（Stage 1，v1.38.0）**：按《替换Xboard与白标多租户实施计划-v1.0.0》§十一 落地地基 —— ①数据层：`kc_api_clients` 扩 6 列 + 4 张租户表（`kc_tenant_domains`/`kc_tenant_brand`/`kc_tenant_catalog`/`kc_tenant_staff`）+ 播种 `cli_platform` 平台租户；②请求侧 `resolveTenant` 中间件（`X-KC-Tenant` 头 → `Host` 查域名表 → 回落平台租户）与公开接口 `GET /api/tenant/brand?host=`；③技术后台新增「**租户**」页（租户 CRUD + 品牌 + 域名 + 商品目录 + 员工账号）；④`/api/integration/health` 加 `xboard_patches` 字段 + 首页「补丁绿灯」卡片（9/9）；⑤「商品管理」页补「上游健康」可视图。**不替换 Xboard、不改前台。** 验证：`tools/_v138_stage1_verify.js` **19/19 PASS**（US-1.1~1.6/F1~F6）+ UX U1~U4 实测全通过。**铁律**：租户作用域一律取自 `req.tenant.id`，禁止从请求体读 `client_id`；**上游路由为平台级能力、不对租户开放**。下一步 Stage 2（v1.39.0）分步接手。
+- **工程目录归档整理 + 替换 Xboard 与白标多租户方案定稿（v1.37.0）**：按用户指令给工程目录瘦身归档（**只移动不删除**）——根目录顶层文件 138→59、`_*` 临时脚本 72→0，tools 顶层 330→87，共 347 项收进 `archive/`（五分类 + `_MOVE_LOG.md` 逐项登记「原路径 → 归档路径」）；新增 `tools/check-root-hygiene.js` 守护根目录整洁并挂 pre-commit；根目录散落文档归位（`docs/部署/`、`docs/接口/对接API.md`）；`deploy-manifest.json` 摘掉冻结的 `kc-gpt-pay2-web` 与 `3001:3000`、`docker-compose` web 服务加 `legacy-web` profile 停用。同时把「替换 Xboard + 白标多租户」定稿为 `docs/方案/替换Xboard与白标多租户实施计划-v1.0.0.md`（4 阶段路线 + 各阶段用例；**上游多源与多租户正交，上游路由不对租户开放**）。验证：4 个门禁脚本全绿 + `/api/public/runtime` 200 + US/F1-F4/U1-U3 全通过。**不动任何业务代码。** Stage 0 完成，下一步 Stage 1（v1.38.0）地基。
 - **登录前首页（游客落地页）+ 登录页改版（v1.36.0）**：游客落地页按 sukai 风格全量重写信息架构 —— 公告条 → Hero（双 CTA：买账号 / 给已有账号充值）→ 需求决策区 → **按需选服务**（配置驱动，读 `/plan/kc-cards` 的分类，无商品则自动隐藏）→ 价格区块 → 两条路径 → **权益包推介** → 为什么选我们 → FAQ（6 条）→ 底部 CTA；**登录改为自建弹层**（`#kc-gl-modal`，登录 / 注册 双 Tab，无忘记密码 → 提示联系客服），直调 `POST /api/v1/passport/auth/login|register` 并自写 token 后 reload。游客三种意图续接（`sessionStorage.kc_gate` 的 `{planId}|{cat}|{goto}`）登录后自动落位。验证：`tools/_v136_guest_verify.js` **33/33** 全绿；回归 `tools/check-airport-lexicon.js` 17/19（2 项 FAIL 属订单详情页既有问题、非本版本引入）。⚠️ 已知问题：「旧订阅折抵金额」未被隐藏规则覆盖（权益包兑换类订单触发），待决策是否修复。
 - **权益报价：每商品单独报价（v1.35.0）**：废弃「统一折扣」（规则级 6 折）口径 —— 权益价改为**每商品单独报价**，由运营在后台新页「**权益报价**」逐包逐商品维护（`kc_entitlement_prices` = 权益包 × 商品 一口价；**未配置 = 按原价**，不做兜底折扣）；**不同权益包对同一商品可报不同价**；首页门户与 `#/plan` 商品页**口径完全同源**（同调 `POST /user/kc/quotes`）。后台「权益」页规则表单与「站点与定价」面板保留不动（折扣字段降级为元数据）。验证：`tools/_v135_pricing_verify.js` **24/24** 全绿。⚠️ 报价表**初始为空**：运营未录价时前台全部按原价展示，属正常。
 - **后台管理体验修复（v1.28.2）**：按 19 页后台 UX 走查结论统一修复——P0 权益弹窗裸渲染（`dialog-backdrop` CSS 缺失）补齐；权益表单去 cents/JSON 改 $ 与逗号分隔、枚举中文化；任务管理/自动化任务列布局修复；toast 移右上角；导航新增「任务与日志」分组；权益查询支持邮箱（新只读接口 `user-lookup`）。续费管理按用户决策保持不改。验证：`tools/_v1282_ux_verify.js` 全 PASS + 浏览器实测截图 + 接口实测。
@@ -231,7 +245,7 @@ https://kc.vpss.eu.cc/
 3. 以 `/pay/inspect` 檢查 Session 格式與 JWT 有效期，再以 `/pay` 建立代充訂單。
 4. 輪詢供應商訂單結果；後台僅顯示失敗代充訂單及上游公開的 `topup_code` 前綴，不會保存或展示完整卡密。
 
-API Key 至少需要 `plans:read`、`balance:read`、`pay:write` Scope；如需使用任務查詢，另需 `tasks:read`。完整供應商協議見 [對接 API 文件](对接api.md)。
+API Key 至少需要 `plans:read`、`balance:read`、`pay:write` Scope；如需使用任務查詢，另需 `tasks:read`。完整供應商協議見 [對接 API 文件](docs/接口/对接API.md)。
 
 > 瀏覽器池預設關閉（`BROWSER_POOL=0`）。第三方代充模式不使用本地瀏覽器開通流程。
 
@@ -481,14 +495,14 @@ sudo certbot --nginx -d your-domain.com
 ├── Dockerfile
 ├── mysql-schema.sql
 ├── .env.example
-└── 对接api.md             # 第三方代充 API 對接文件
+└── docs/接口/对接API.md   # 第三方代充 API 對接文件
 ```
 
 ---
 
 ## 接口文档
 
-本系統 REST API 請依 `server.js` 路由使用；第三方代充接口見 [對接 API 文件](对接api.md)。常用接口：
+本系統 REST API 請依 `server.js` 路由使用；第三方代充接口見 [對接 API 文件](docs/接口/对接API.md)。常用接口：
 
 | 用途 | Method + Path | 鉴权 |
 |------|---------------|------|

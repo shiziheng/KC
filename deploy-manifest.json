@@ -9,17 +9,17 @@
       "type": "compose",
       "compose_path": "docker-compose.yml",
       "project": "kc-gpt-pay2",
-      "containers": ["kc-gpt-pay2-app", "kc-gpt-pay2-mysql", "kc-gpt-pay2-web"],
-      "ports": ["3100:3000", "3310:3306", "3001:3000"],
+      "containers": ["kc-gpt-pay2-app", "kc-gpt-pay2-mysql"],
+      "ports": ["3100:3000", "3310:3306"],
       "health_url": "http://localhost:3100/api/public/runtime",
-      "access_urls": ["http://localhost:3100/admin-login", "http://localhost:3001/"],
+      "access_urls": ["http://localhost:3100/admin-login"],
       "requires_env": [".env"],
       "build": true,
       "inject": false
     },
     {
       "id": "xboard",
-      "name": "Xboard storefront",
+      "name": "Xboard storefront (RETIRED)",
       "type": "compose",
       "compose_path": "../Xboard/docker-compose.yml",
       "project": "xboard",
@@ -29,7 +29,9 @@
       "access_urls": ["http://localhost:7001/5fea4ca1"],
       "requires_env": [],
       "build": false,
-      "inject": true
+      "inject": false,
+      "retired": true,
+      "note": "Stage 3.9（v2.0.0）：Xboard 已退场 —— 主站根路径 / 已由 KC 原生前台接管；custom_html 注入已清除（405268→0）；9 补丁/注入链标记退役只读（tools/xboard-patch-check.js 上报 retired）。本服务标记 retired=true，不参与 start/deploy/verify（容器只停不删，保留为回滚资产）。回滚 = 移除 retired、置回 inject=true、手动 start 本服务并跑 tools/xboard-apply-custom-html.js"
     },
     {
       "id": "bepusdt",

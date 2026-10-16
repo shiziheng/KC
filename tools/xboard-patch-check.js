@@ -16,30 +16,24 @@
  *
  * 说明：部署引擎（kc-deploy_20261007.ps1 / .sh）在每次注入后会自动调用等价逻辑；
  *       本脚本供开发/CI/人工修复使用。重打全部为覆盖式 + 幂等，不会重复改代码。
+ *
+ * ⚠️ 已退役（v2.0.0 · Stage 3.9，只读参考）：Xboard 已退场，主站由 KC 原生前台承载（`GET /`）。
+ *    脚本保留仅为历史参考；`--fix` 不再生效，核查不再告警（直接上报 retired）。
  */
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { checkPatches, RETIRED } = require('./xboard-patch-checks');
 
 const ROOT = path.resolve(__dirname, '..');
+// 核查结果落盘到 data/（app 容器挂载为 /app/data），供 /api/integration/health 读取上报
+const STATUS_FILE = path.join(ROOT, 'data', 'xboard-patch-status.json');
 const DOCKER_CANDIDATES = [
   process.env.DOCKER_BIN,
   'C:/Program Files/Docker/Docker/resources/bin/docker.exe',
   'docker',
 ].filter(Boolean);
 const DOCKER = DOCKER_CANDIDATES.find((p) => p === 'docker' || fs.existsSync(p)) || 'docker';
-
-const CHECKS = [
-  { name: 'P1 PlanService（kc_is_topup 豁免）', file: '/www/app/Services/PlanService.php', pattern: 'kc_is_topup', min: 1 },
-  { name: 'P1b PlanService（权益包豁免）', file: '/www/app/Services/PlanService.php', pattern: 'kc_entitlement_pack', min: 1 },
-  { name: 'P3 OrderService（充值不返佣）', file: '/www/app/Services/OrderService.php', pattern: 'kc_is_topup', min: 2 },
-  { name: 'P7 OrderService（权益包短路开通）', file: '/www/app/Services/OrderService.php', pattern: 'ENTITLEMENT-PACK', min: 1 },
-  { name: 'P8 OrderService（代充按用户权益价结算）', file: '/www/app/Services/OrderService.php', pattern: 'ENTITLEMENT-PRICE', min: 2 },
-  { name: 'P4 CheckCommission（交付才结算）', file: '/www/app/Console/Commands/CheckCommission.php', pattern: 'kcHasCardTable', min: 2 },
-  { name: 'P2 TopupController（show=0 复用）', file: '/www/plugins/KcIntegration/Controllers/TopupController.php', pattern: 'KC-PATCH2', min: 2 },
-  { name: 'P5 OrderService（允许多笔未支付单）', file: '/www/app/Services/OrderService.php', pattern: 'ALLOW-CONCURRENT-ORDERS', min: 1 },
-  { name: 'P6 V1 OrderController（允许多笔未支付单）', file: '/www/app/Http/Controllers/V1/User/OrderController.php', pattern: 'ALLOW-CONCURRENT-ORDERS', min: 1 },
-];
 
 const FIX_SOURCES = [
   path.join(ROOT, 'tools/xboard-patch-planservice.php'),
@@ -87,30 +81,41 @@ function docker(args, quiet = true) {
   }).toString();
 }
 
-function count(check) {
+/** 核查结果落盘，供 app 侧 /api/integration/health 上报（写失败不阻断核查） */
+function writeStatus(report) {
   try {
-    const out = docker(['exec', 'xboard', 'sh', '-c', `grep -c ${check.pattern} ${check.file}`]);
-    const m = out.match(/\d+/);
-    return m ? parseInt(m[0], 10) : 0;
+    fs.mkdirSync(path.dirname(STATUS_FILE), { recursive: true });
+    fs.writeFileSync(STATUS_FILE, JSON.stringify({
+      source: 'tools/xboard-patch-check.js',
+      checked_at: new Date().toISOString(),
+      ...report,
+    }, null, 2));
   } catch (e) {
-    return 0;
+    console.error('写入补丁状态文件失败: ' + e.message);
   }
 }
 
 function runCheck(verbose) {
-  let allOk = true;
-  for (const c of CHECKS) {
-    const n = count(c);
-    const ok = n >= c.min;
-    if (!ok) allOk = false;
-    if (verbose) console.log(`${ok ? '  [OK]  ' : '  [MISS]'} ${c.name}: ${n}/${c.min}`);
+  const report = checkPatches((args) => docker(args));
+  if (verbose) {
+    for (const i of report.items) {
+      console.log(`${i.ok ? '  [OK]  ' : '  [MISS]'} ${i.name}: ${i.got}/${i.min}`);
+    }
   }
-  return allOk;
+  writeStatus(report);
+  return report.ok;
 }
 
 (function main() {
   const wantFix = process.argv.includes('--fix');
   console.log('== Xboard 补丁核查 ==');
+  if (RETIRED.retired) {
+    console.log(`已退役（${RETIRED.since} · ${RETIRED.at}）：${RETIRED.reason}`);
+    if (wantFix) console.log('  --fix 已忽略：Xboard 已退场，补丁链不再重打。');
+    writeStatus({ retired: true, ok: null, total: 0, passed: 0, items: [], note: RETIRED.reason, since: RETIRED.since, at: RETIRED.at });
+    console.log('VERDICT: 已退役（只读参考，不核查）');
+    process.exit(0);
+  }
   let running = '';
   try {
     running = docker(['ps', '--filter', 'name=^xboard$', '--format', '{{.Names}}']).trim();

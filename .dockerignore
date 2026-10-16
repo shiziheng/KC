@@ -11,3 +11,12 @@ data/browser-pool
 .DS_Store
 .vscode
 .idea
+# --- Stage 0 (v1.37.0)：归档区与历史产物一律不进镜像 ---
+# Dockerfile 是 COPY . .，漏掉这些会让镜像凭空变大。
+archive
+web
+logs
+_bak_v114_promo
+.trae
+.workbuddy
+.git_broken_backup

@@ -12,9 +12,9 @@ function responseMock() {
 }
 
 describe('storefront user authentication', () => {
-    it('rejects missing customer tokens without calling Xboard', async () => {
-        const fetchImpl = vi.fn();
-        const middleware = createRequireStorefrontUser({ fetchImpl, origin: 'http://xboard.test' });
+    it('rejects missing customer tokens without verifying', async () => {
+        const verifyToken = vi.fn();
+        const middleware = createRequireStorefrontUser({ verifyToken });
         const req = { headers: {} };
         const res = responseMock();
         const next = vi.fn();
@@ -23,33 +23,28 @@ describe('storefront user authentication', () => {
 
         expect(res.statusCode).toBe(401);
         expect(res.payload.code).toBe('USER_AUTH_REQUIRED');
-        expect(fetchImpl).not.toHaveBeenCalled();
+        expect(verifyToken).not.toHaveBeenCalled();
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('validates the bearer token against the fixed Xboard identity endpoint', async () => {
-        const fetchImpl = vi.fn(async (url, options) => {
-            expect(String(url)).toBe('http://xboard.test/api/v1/user/info');
-            expect(options.headers.Authorization).toBe('Bearer xboard-user-token');
-            return { ok: true, status: 200, json: async () => ({ status: 'success', data: { id: 42, email: 'buyer@example.com' } }) };
-        });
-        const middleware = createRequireStorefrontUser({ fetchImpl, origin: 'http://xboard.test' });
-        const req = { headers: { authorization: 'Bearer xboard-user-token' } };
+    it('accepts a locally verified customer token and maps payload to req.storefrontUser', async () => {
+        const verifyToken = vi.fn(() => ({ sub: 'customer', cid: 42, em: 'buyer@example.com' }));
+        const middleware = createRequireStorefrontUser({ verifyToken });
+        const req = { headers: { authorization: 'Bearer signed.customer.token' } };
         const res = responseMock();
         const next = vi.fn();
 
         await middleware(req, res, next);
 
+        expect(verifyToken).toHaveBeenCalledWith('signed.customer.token');
         expect(req.storefrontUser).toEqual({ id: '42', email: 'buyer@example.com' });
         expect(next).toHaveBeenCalledOnce();
         expect(res.payload).toBeNull();
     });
 
     it('never forwards an invalid identity or leaks the supplied token in the response', async () => {
-        const middleware = createRequireStorefrontUser({
-            origin: 'http://xboard.test',
-            fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ status: 'fail', message: 'invalid token' }) })
-        });
+        const verifyToken = vi.fn(() => null);
+        const middleware = createRequireStorefrontUser({ verifyToken });
         const req = { headers: { authorization: 'Bearer do-not-echo-this-token' } };
         const res = responseMock();
         const next = vi.fn();
@@ -57,19 +52,22 @@ describe('storefront user authentication', () => {
         await middleware(req, res, next);
 
         expect(res.statusCode).toBe(401);
+        expect(res.payload.code).toBe('USER_AUTH_INVALID');
         expect(JSON.stringify(res.payload)).not.toContain('do-not-echo-this-token');
         expect(req.storefrontUser).toBeUndefined();
         expect(next).not.toHaveBeenCalled();
     });
 
-    it('fails closed when Xboard cannot be reached', async () => {
-        const middleware = createRequireStorefrontUser({ origin: 'http://xboard.test', fetchImpl: async () => { throw new Error('offline'); } });
-        const req = { headers: { authorization: 'Bearer valid-shape-token' } };
+    it('rejects malformed authorization headers before verification', async () => {
+        const verifyToken = vi.fn();
+        const middleware = createRequireStorefrontUser({ verifyToken });
+        const req = { headers: { authorization: 'Token abc' } };
         const res = responseMock();
 
         await middleware(req, res, vi.fn());
 
-        expect(res.statusCode).toBe(503);
-        expect(res.payload.code).toBe('USER_AUTH_UNAVAILABLE');
+        expect(res.statusCode).toBe(401);
+        expect(res.payload.code).toBe('USER_AUTH_REQUIRED');
+        expect(verifyToken).not.toHaveBeenCalled();
     });
 });

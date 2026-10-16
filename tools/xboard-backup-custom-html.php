@@ -1,4 +1,5 @@
 <?php
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // FEAT-005 S1：备份当前 custom_html 到容器内 /www/_backup_custom_html.txt
 // 配合 docker cp 导出回滚文件（回滚 = 用备份内容调 ThemeService::updateConfig 还原）
 require __DIR__ . '/vendor/autoload.php';

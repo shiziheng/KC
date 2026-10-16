@@ -1,5 +1,10 @@
 # Xboard 容器内补丁清单（容器重建后必须重打！）
 
+> ⚠️ **已退役（v2.0.0 · Stage 3.9，只读参考）**：Xboard 已退场，主站改由 KC 原生前台承载（`GET /`）。
+> 本目录 9 处补丁与注入链**不再重打、不再核查告警**（`tools/xboard-patch-check.js` 已上报 `retired`）。
+> 仅当需要回退到「Xboard 承载主站」时，才按下文重打并配合 `tools/xboard-apply-custom-html.js` 恢复注入。
+> 退役后如仍重启 xboard 容器，主站不受影响（`/` 已由 KC 提供）。
+
 容器内改动**不进镜像**，`docker compose up -d --build` 或重建 xboard 容器后会全部丢失。重建后按本文档重打。
 
 ## ⚠️ 重建后核查（2026-10-10 新增，防静默丢失）

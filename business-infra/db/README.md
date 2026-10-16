@@ -2,7 +2,7 @@
 
 ## 当前环境的只读核验结果（2026-10-07）
 
-- 业务库为 `kc_business`，与 `plus_papay`、`xboard` 分离，使用同一 MySQL 服务。
+- 业务库为 `kc_business`，与主库 `plus_papay` 分离，使用同一 MySQL 服务。
 - 数据库的 `business_schema_migrations` 记录了两次已应用迁移：
   - `0001_business_core.up.sql`：`7eb0f2ef2acb9ba6b3249a294ac3bb16ca1ead2d680f87bd66066c0cb5764ffc`
   - `0002_operations_enhancements.up.sql`：`7481b95086b8a35e90c60f9157f72683ae28662b1e362c889c8507258c0124f5`
@@ -13,5 +13,5 @@
 
 1. 需要新表/字段时只能新增递增编号迁移，不得改写已应用的迁移。
 2. 本地审阅迁移 SQL 和影响面后，使用显式目标库确认参数执行；禁止启动时自动迁移。
-3. `kc_business` 必须与 `DB_NAME` 和 `XBOARD_DB_NAME` 不同；生产业务数据不得用于模拟造数或回归清理。
+3. `kc_business` 必须与 `DB_NAME` 不同；生产业务数据不得用于模拟造数或回归清理。
 4. 迁移工具、恢复下行 SQL 和数据库写操作需单独审核；本次 R0–R2 没有执行数据库写入。

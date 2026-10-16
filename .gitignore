@@ -10,6 +10,11 @@ yarn-error.log*
 !.env.example
 *.env
 
+# --- Stage 0 (v1.37.0) 工程目录归档区 ---
+# 历史产物 / 一次性脚本 / 大件交付物的归档地，只移动不删除。
+# 说明见 archive/README.md，逐项映射见 archive/_MOVE_LOG.md。
+/archive/
+
 # Runtime artefacts
 _server.out.log
 _server.err.log

@@ -1,7 +1,7 @@
 <!-- KC-HOME-PORTAL-BEGIN · v1.32 首页门户改版（Step 2）
      目标：把 dashboard 首页改造成「价格前置」门户 —— 压制旧版门户(#kc-portal)，
            注入：价格前置 Hero + 门槛对比 + 三步 + 商品双价卡 + 权益包三档。
-     数据源：GET {KC_BASE}/api/public/site-config（品牌 / 权益包 / 文案）
+     数据源：GET /kc-proxy/site-config（同源代理 → KC 公开接口，品牌 / 权益包 / 文案）
              GET /api/v1/user/plan/fetch（登录态，取商品原价）
              POST /user/kc/quotes（登录态，取「当前用户真实权益报价」——Step 8 起口径与 #/plan 商品页完全同源）
      ⚠️ Step 8（v1.35）：不再读 site_config.plans[].quotaPrice/marketPrice；权益价一律来自真实报价，
@@ -167,7 +167,7 @@
   if (window.__kcHomePortalLoaded) { return; }
   window.__kcHomePortalLoaded = true;
 
-  var KC_BASE = 'http://localhost:3100';
+  var KC_BASE = '/kc-proxy';   // v1.39.0 Stage 2.4 收口：同源代理，前端不再直连 KC
   var CACHE_KEY = 'kc_site_config';
   var TOKEN_KEY = 'VUE_NAIVE_ACCESS_TOKEN';
   var HOST_ID = 'kc-home-portal';
@@ -215,7 +215,7 @@
 
   // ---------- 数据 ----------
   function fetchConfig() {
-    return fetch(KC_BASE + '/api/public/site-config', { credentials: 'omit' })
+    return fetch(KC_BASE + '/site-config', { credentials: 'omit' })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j && j.success && j.config) {

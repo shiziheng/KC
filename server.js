@@ -342,6 +342,120 @@ async function attachAdminPaths(payload) {
     };
 }
 
+// ===== v1.38.0 多租户解析（Stage 1.2）=====
+// 识别顺序：X-KC-Tenant 头 → Host 查 kc_tenant_domains → 回落 platform 租户，产出 req.tenant。
+// 铁律：所有租户作用域接口一律从 req.tenant.id 取值，禁止从请求体读 client_id。
+const TENANT_CACHE_TTL_MS = 30 * 1000;
+const tenantByHostCache = new Map();
+const tenantByCodeCache = new Map();
+let platformTenantCache = null;
+
+/** 规范化 Host：小写、去端口、去尾点，多值取第一段 */
+function normalizeTenantHost(raw) {
+    return String(raw || '').trim().toLowerCase().split(',')[0].replace(/:\d+$/, '').replace(/\.$/, '');
+}
+
+/** 读取平台租户（tenant_kind='platform'），缓存到进程内 */
+async function loadPlatformTenant() {
+    if (platformTenantCache) {
+        return platformTenantCache;
+    }
+    const rows = await store.runQuery(
+        "SELECT * FROM kc_api_clients WHERE tenant_kind='platform' AND status='active' ORDER BY id LIMIT 1"
+    );
+    if (rows.length) {
+        platformTenantCache = rows[0];
+    }
+    return platformTenantCache;
+}
+
+/** 按租户 code 查租户（如 cli_platform / cli_xxx） */
+async function findTenantByCode(code) {
+    const key = String(code || '').trim();
+    if (!key) return null;
+    const cached = tenantByCodeCache.get(key);
+    if (cached && cached.expires > Date.now()) {
+        return cached.tenant;
+    }
+    const rows = await store.runQuery('SELECT * FROM kc_api_clients WHERE code=? LIMIT 1', [key]);
+    const tenant = rows.length ? rows[0] : null;
+    tenantByCodeCache.set(key, { tenant, expires: Date.now() + TENANT_CACHE_TTL_MS });
+    return tenant;
+}
+
+/** 按 Host 查租户（走 kc_tenant_domains 绑定表），命中后回带租户主档 */
+async function findTenantByHost(host) {
+    const key = normalizeTenantHost(host);
+    if (!key) return null;
+    const cached = tenantByHostCache.get(key);
+    if (cached && cached.expires > Date.now()) {
+        return cached.tenant;
+    }
+    const rows = await store.runQuery(
+        'SELECT c.* FROM kc_tenant_domains d INNER JOIN kc_api_clients c ON c.id = d.client_id ' +
+        "WHERE d.host=? AND d.status='active' LIMIT 1", [key]
+    );
+    const tenant = rows.length ? rows[0] : null;
+    tenantByHostCache.set(key, { tenant, expires: Date.now() + TENANT_CACHE_TTL_MS });
+    return tenant;
+}
+
+/** 判定请求所属租户：头 → Host → 平台租户兜底 */
+async function resolveTenantForRequest(req) {
+    await ensureStoreReady();
+    const header = String(req.headers['x-kc-tenant'] || '').trim();
+    if (header) {
+        const byHeader = (await findTenantByCode(header)) || (await findTenantByHost(header));
+        if (byHeader) return byHeader;
+    }
+    const byHost = await findTenantByHost(req.headers.host);
+    if (byHost) return byHost;
+    return await loadPlatformTenant();
+}
+
+/** 租户/域名/品牌变更后调用，清空进程内缓存 */
+function invalidateTenantCache() {
+    tenantByHostCache.clear();
+    tenantByCodeCache.clear();
+    platformTenantCache = null;
+}
+
+/** 读取租户品牌配置，无记录时返回 null 由调用方兜底 */
+async function loadTenantBrand(clientId) {
+    const rows = await store.runQuery('SELECT * FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [clientId]);
+    if (!rows.length) return null;
+    const r = rows[0];
+    let extra = null;
+    try { extra = r.extra_json ? JSON.parse(r.extra_json) : null; } catch (_) { extra = null; }
+    return {
+        brand_name: r.brand_name || '',
+        logo_url: r.logo_url || '',
+        primary_color: r.primary_color || '',
+        accent_color: r.accent_color || '',
+        support_contact: r.support_contact || '',
+        support_url: r.support_url || '',
+        hero_title: r.hero_title || '',
+        hero_subtitle: r.hero_subtitle || '',
+        footer_text: r.footer_text || '',
+        extra: extra
+    };
+}
+
+// 仅 /api/ 请求在入口解析租户；其他请求保留惰性解析入口，避免静态资源多余查询
+app.use(async (req, res, next) => {
+    req.resolveTenant = () => resolveTenantForRequest(req);
+    if (!String(req.path || '').startsWith('/api/')) {
+        req.tenant = null;
+        return next();
+    }
+    try {
+        req.tenant = await resolveTenantForRequest(req);
+    } catch (_) {
+        req.tenant = null;
+    }
+    return next();
+});
+
 app.use((req, res, next) => {
     if (req.method === 'GET' && ['/admin.html', '/admin-login.html'].includes(req.path)) {
         return res.status(404).type('text/plain').send('Not Found');
@@ -370,9 +484,31 @@ app.use(async (req, res, next) => {
     return next();
 });
 
+// v2.0.0 · Stage 3.9 主站根路径接管：/ 与 /?cdk= 均落到 KC 原生主站前台
+//   （?cdk=X 时前台自动进入兑卡视图并预填校验；无 cdk 时进入首页）
+//   回滚：删除本路由即回落 express.static 的旧落地页 public/index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'site', 'index.html'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/business-admin', (_req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'business-admin.html'));
+});
+// v1.39.0 · Stage 2.2 租户白标站前台（品牌渲染 + 商品/报价/下单/我的订单）
+app.get('/tenant', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'tenant', 'index.html'));
+});
+// v2.0.0 · Stage 3.1 主站 KC 原生前台（platform 租户复用 kc_customers；Stage 3.9 接管 /）
+app.get('/site', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'site', 'index.html'));
+});
+// v2.0.0 · Stage 3.2 兑卡/激活前台入口（独立路径，等价于 /?cdk=）
+app.get('/redeem', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'site', 'index.html'));
+});
+// v1.39.0 · Stage 2.3 代理商后台（独立于 KC 技术后台/运营台）
+app.get('/tenant-admin', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'tenant-admin.html'));
 });
 
 function ensureStoreReady() {
@@ -1604,6 +1740,887 @@ app.post('/api/public/subscription/check', async (req, res) => {
     }
 });
 
+// ===== v1.38.0 租户品牌公开接口（Stage 1.2）：只回品牌字段，不含任何业务数据 =====
+app.get('/api/tenant/brand', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const queryHost = normalizeTenantHost(req.query.host);
+        let tenant = queryHost ? await findTenantByHost(queryHost) : null;
+        if (!tenant) {
+            tenant = req.tenant || await loadPlatformTenant();
+        }
+        if (!tenant) {
+            return res.status(503).json({ success: false, code: 'NO_TENANT', message: '租户未初始化' });
+        }
+        const brand = await loadTenantBrand(tenant.id);
+        return res.json({
+            success: true,
+            tenant: { id: tenant.id, code: tenant.code, kind: tenant.tenant_kind },
+            brand: brand || {
+                brand_name: tenant.name || '', logo_url: '', primary_color: '', accent_color: '',
+                support_contact: '', support_url: '', hero_title: '', hero_subtitle: '', footer_text: '', extra: null
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ===== v1.38.0 租户员工鉴权（Stage 1.3）：租户后台登录 + 铁律守门 =====
+function getTenantStaffToken(req) {
+    const header = req.headers.authorization || '';
+    const [scheme, token] = header.split(' ');
+    if (scheme === 'Bearer' && token) return token.trim();
+    return String(req.headers['x-tenant-token'] || (req.query && req.query.tenant_token) || '').trim() || null;
+}
+
+app.post('/api/tenant-admin/login', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const email = String(b.email || '').trim().toLowerCase();
+        const password = String(b.password || '');
+        if (!email || !password) return res.status(400).json({ success: false, message: '邮箱与密码必填' });
+        const rows = await store.runQuery('SELECT * FROM kc_tenant_staff WHERE email=? LIMIT 1', [email]);
+        if (!rows.length || rows[0].status !== 'active') return res.status(401).json({ success: false, message: '账号或密码错误' });
+        const staff = rows[0];
+        if (!adminAuth.verifyPassword(password, staff.password_hash)) return res.status(401).json({ success: false, message: '账号或密码错误' });
+        const issued = adminAuth.issueSignedToken(
+            { sub: 'tenant_staff', sid: staff.id, cid: staff.client_id, role: staff.role },
+            12 * 60 * 60 * 1000
+        );
+        await store.runExecute('UPDATE kc_tenant_staff SET last_login_at=NOW() WHERE id=?', [staff.id]);
+        const tRows = await store.runQuery('SELECT code FROM kc_api_clients WHERE id=? LIMIT 1', [staff.client_id]);
+        res.json({ success: true, data: { token: issued.token, client_id: staff.client_id, code: tRows.length ? tRows[0].code : '', role: staff.role, email: email } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+async function authenticateTenantStaff(req, res, next) {
+    try {
+        const payload = adminAuth.verifySignedToken(getTenantStaffToken(req), { expectedSub: 'tenant_staff' });
+        if (!payload) return res.status(401).json({ success: false, message: '未授权，请登录租户后台' });
+        await ensureStoreReady();
+        const rows = await store.runQuery('SELECT * FROM kc_tenant_staff WHERE id=? LIMIT 1', [payload.sid]);
+        if (!rows.length || rows[0].status !== 'active') return res.status(401).json({ success: false, message: '账号已停用' });
+        const staff = rows[0];
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant || Number(tenant.id) !== Number(staff.client_id)) {
+            return res.status(403).json({ success: false, message: '租户身份与登录账号不匹配' });
+        }
+        // 铁律：租户作用域一律取自 req.tenant.id；请求显式携带 client_id 且不一致 → 403
+        let claimed;
+        if (req.body && req.body.client_id !== undefined) claimed = req.body.client_id;
+        else if (req.query && req.query.client_id !== undefined) claimed = req.query.client_id;
+        if (claimed !== undefined && claimed !== null && String(claimed) !== '' && Number(claimed) !== Number(tenant.id)) {
+            return res.status(403).json({ success: false, message: '越权访问：client_id 与当前租户不一致' });
+        }
+        req.tenantStaff = staff;
+        req.tenant = tenant;
+        next();
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+}
+
+app.get('/api/tenant-admin/whoami', authenticateTenantStaff, async (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            tenant: { id: req.tenant.id, code: req.tenant.code, kind: req.tenant.tenant_kind },
+            staff: { email: req.tenantStaff.email, role: req.tenantStaff.role }
+        }
+    });
+});
+
+// ===== v1.39.0 · Stage 2.1 租户站顾客账号（KC 自有顾客账号体系）=====
+// 铁律：租户作用域一律取 req.tenant.id，禁止从请求体读 client_id。
+// 红线：会话为无状态签名令牌，Session/access_token/Cookie 一律不落库（kc_customers 只存邮箱 + 口令哈希）。
+const CUSTOMER_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const customerLoginBuckets = new Map();
+
+function getCustomerToken(req) {
+    const header = String(req.headers.authorization || '');
+    const [scheme, token] = header.split(' ');
+    if (scheme === 'Bearer' && token) return token.trim();
+    return String(req.headers['x-customer-token'] || '').trim() || null;
+}
+function issueCustomerToken(customer, tenantId) {
+    return adminAuth.issueSignedToken(
+        { sub: 'customer', cid: Number(customer.id), tid: Number(tenantId), em: String(customer.email || '') },
+        CUSTOMER_TOKEN_TTL_MS
+    ).token;
+}
+function publicCustomer(c) {
+    return { id: Number(c.id), email: c.email, display_name: c.display_name || '' };
+}
+async function authenticateCustomer(req, res, next) {
+    try {
+        const payload = adminAuth.verifySignedToken(getCustomerToken(req), { expectedSub: 'customer' });
+        if (!payload) return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '登录已过期，请重新登录' });
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        // 令牌里的租户必须与当前站点租户一致，否则视为跨站访问
+        if (!tenant || Number(tenant.id) !== Number(payload.tid)) {
+            return res.status(403).json({ success: false, code: 'TENANT_MISMATCH', message: '账号与当前站点不匹配，请重新登录' });
+        }
+        const rows = await store.runQuery('SELECT * FROM kc_customers WHERE id=? LIMIT 1', [payload.cid]);
+        if (!rows.length || rows[0].status !== 'active') {
+            return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '账号已停用' });
+        }
+        req.customer = rows[0];
+        req.tenant = tenant;
+        next();
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+}
+
+// v1.44.0 · Stage 3.5：可选顾客身份（有有效令牌则回写 req.customer，否则返回 null，不拒绝请求）
+async function maybeCustomer(req) {
+    try {
+        const payload = adminAuth.verifySignedToken(getCustomerToken(req), { expectedSub: 'customer' });
+        if (!payload) return null;
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant || Number(tenant.id) !== Number(payload.tid)) return null;
+        const rows = await store.runQuery('SELECT * FROM kc_customers WHERE id=? LIMIT 1', [payload.cid]);
+        if (!rows.length || rows[0].status !== 'active') return null;
+        req.customer = rows[0];
+        req.tenant = tenant;
+        return rows[0];
+    } catch (e) { return null; }
+}
+
+function customerRegisterRateLimited(req) {
+    const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown');
+    const nowMs = Date.now();
+    let bucket = customerLoginBuckets.get(ip);
+    if (!bucket || nowMs - bucket.start > 60000) { bucket = { start: nowMs, count: 0 }; customerLoginBuckets.set(ip, bucket); }
+    bucket.count += 1;
+    return bucket.count > 20;
+}
+
+// 注册（站点内唯一邮箱；同租户重复邮箱 → 409）
+app.post('/api/tenant/auth/register', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant) return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: '站点未识别' });
+        if (customerRegisterRateLimited(req)) {
+            return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '尝试过于频繁，请 1 分钟后再试' });
+        }
+        const b = req.body || {};
+        const email = adminAuth.normalizeEmail(b.email);
+        const password = String(b.password || '');
+        const displayName = String(b.display_name || '').trim().slice(0, 128);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, code: 'INVALID_EMAIL', message: '请输入有效的邮箱地址' });
+        }
+        if (password.length < 6 || password.length > 128) {
+            return res.status(400).json({ success: false, code: 'INVALID_PASSWORD', message: '密码长度需为 6~128 位' });
+        }
+        const exist = await store.runQuery('SELECT id FROM kc_customers WHERE client_id=? AND email=? LIMIT 1', [tenant.id, email]);
+        if (exist.length) return res.status(409).json({ success: false, code: 'EMAIL_TAKEN', message: '该邮箱已在本站注册' });
+        let insertId;
+        try {
+            const ins = await store.runExecute(
+                'INSERT INTO kc_customers (client_id, email, password_hash, display_name) VALUES (?, ?, ?, ?)',
+                [tenant.id, email, adminAuth.createPasswordHash(password), displayName]
+            );
+            insertId = ins && ins.insertId;
+        } catch (e) {
+            // 并发下唯一键冲突，等价于邮箱已被占用
+            if (/duplicate|UK|uk_tenant_email/i.test(String(e && e.message))) {
+                return res.status(409).json({ success: false, code: 'EMAIL_TAKEN', message: '该邮箱已在本站注册' });
+            }
+            throw e;
+        }
+        const customer = { id: insertId, email: email, display_name: displayName };
+        res.json({ success: true, message: '注册成功', data: { token: issueCustomerToken(customer, tenant.id), customer: publicCustomer(customer) } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 登录（统一报"邮箱或密码错误"，不区分具体原因）
+app.post('/api/tenant/auth/login', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant) return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: '站点未识别' });
+        if (customerRegisterRateLimited(req)) {
+            return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '尝试过于频繁，请 1 分钟后再试' });
+        }
+        const b = req.body || {};
+        const email = adminAuth.normalizeEmail(b.email);
+        const password = String(b.password || '');
+        if (!email || !password) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '请输入邮箱与密码' });
+        const rows = await store.runQuery('SELECT * FROM kc_customers WHERE client_id=? AND email=? LIMIT 1', [tenant.id, email]);
+        if (!rows.length || rows[0].status !== 'active' || !adminAuth.verifyPassword(password, rows[0].password_hash)) {
+            return res.status(401).json({ success: false, code: 'INVALID_CREDENTIALS', message: '邮箱或密码错误' });
+        }
+        const customer = rows[0];
+        await store.runExecute('UPDATE kc_customers SET last_login_at=NOW() WHERE id=?', [customer.id]);
+        res.json({ success: true, message: '登录成功', data: { token: issueCustomerToken(customer, tenant.id), customer: publicCustomer(customer) } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 当前登录顾客（无状态令牌，登出由前端丢弃令牌即可）
+app.get('/api/tenant/auth/me', authenticateCustomer, async (req, res) => {
+    res.json({ success: true, data: { customer: publicCustomer(req.customer), tenant: { id: req.tenant.id, code: req.tenant.code } } });
+});
+
+// ===== v1.39.0 · Stage 2.2 租户站前台 API（商品目录 / 报价 / 下单 / 我的订单）=====
+// 定价唯一事实源：kc_tenant_catalog.retail_price_cents（分）；为 0 → 回落 openApiQuotePrice(平台成本, 加价率)。
+// 红线：对外（顾客可见）响应一律不暴露平台成本 cost_cents 与上游字段。
+async function tenantCatalogMap(tenantId) {
+    const rows = await store.runQuery('SELECT plan_code, visible, retail_price_cents, sort, status FROM kc_tenant_catalog WHERE client_id=?', [tenantId]);
+    const map = new Map();
+    rows.forEach(function (r) { map.set(String(r.plan_code), r); });
+    return map;
+}
+function tenantSkuPrice(catRow, plan) {
+    const retail = catRow ? (Number(catRow.retail_price_cents) || 0) : 0;
+    if (retail > 0) return retail;
+    return openApiQuotePrice(Number(plan.upstream_price_cents) || 0, plan.api_markup_percent);
+}
+function tenantSkuVisible(tenant, catRow) {
+    if (catRow) return Number(catRow.visible) === 1 && catRow.status === 'active';
+    // 平台主站无目录行 → 回落 api_enabled 全量；代理商租户必须显式勾选可见
+    return !!tenant && tenant.tenant_kind === 'platform';
+}
+function tenantSkuAvailable(plan, catRow, tenant) {
+    if (!plan || !tenantSkuVisible(tenant, catRow)) return false;
+    const cost = Number(plan.upstream_price_cents) || 0;
+    return Number(plan.api_enabled) === 1 && !!plan.upstream_plan_key &&
+        PRODUCT_UPSTREAM_KEY_WHITELIST.indexOf(String(plan.upstream_plan_key)) >= 0 && cost > 0;
+}
+
+// 商品目录（只回本租户可见商品；不含成本/上游字段）。v1.44.0 · Stage 3.5：带有效顾客令牌时附「权益价」（双价卡 G7）
+app.get('/api/tenant/catalog', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant) return res.status(503).json({ success: false, code: 'NO_TENANT', message: '站点未识别' });
+        const customer = await maybeCustomer(req);
+        let grants = [], entIndex = {};
+        if (customer) {
+            grants = await entitlementActiveGrantsByCustomer(customer.id);
+            if (grants.length) entIndex = await loadEntitlementPrices(grants.map(function (g) { return g.rule_code; }));
+        }
+        const catMap = await tenantCatalogMap(tenant.id);
+        const rows = await store.runQuery(
+            'SELECT k.code, k.display_name, k.api_enabled, k.api_markup_percent, k.upstream_plan_key, u.upstream_price_cents, c.card_json ' +
+            'FROM kc_plans k LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
+            'LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
+            'WHERE k.api_enabled = 1 ORDER BY k.id'
+        );
+        const items = [];
+        rows.forEach(function (r) {
+            const catRow = catMap.get(String(r.code)) || null;
+            if (!tenantSkuVisible(tenant, catRow)) return;
+            const avail = tenantSkuAvailable(r, catRow, tenant);
+            const card = cardParse(r.card_json);
+            const baseCents = avail ? tenantSkuPrice(catRow, r) : 0;
+            const ent = (avail && grants.length) ? pickBestEntitlementPrice(grants, entIndex, baseCents, r.code, new Date()) : null;
+            items.push({
+                sku: r.code,
+                name: r.display_name,
+                category: (card && card.category) || 'recharge',
+                currency: 'USD',
+                available: avail,
+                price: avail ? openApiUsd(baseCents) : null,
+                base_price: avail ? openApiUsd(baseCents) : null,
+                entitlement_price: (avail && ent) ? openApiUsd(ent.cents) : null,
+                entitlement_rule: (avail && ent) ? ent.rule_code : null,
+                entitlement_discount: (avail && ent) ? openApiUsd(baseCents - ent.cents) : 0,
+                sort: catRow ? (Number(catRow.sort) || 0) : 0
+            });
+        });
+        items.sort(function (a, b) { return a.sort - b.sort; });
+        res.json({ success: true, data: items.map(function (i) {
+            return {
+                sku: i.sku, name: i.name, category: i.category, currency: i.currency, available: i.available,
+                price: i.price, base_price: i.base_price, entitlement_price: i.entitlement_price,
+                entitlement_rule: i.entitlement_rule, entitlement_discount: i.entitlement_discount
+            };
+        }) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 报价（锁价 60 秒；写入同一张 kc_api_quote_logs，client_id=req.tenant.id）。v1.44.0 · Stage 3.5：登录顾客若有可用权益 → 按权益价锁价（G7 双价结算）
+app.post('/api/tenant/quote', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant) return res.status(503).json({ success: false, code: 'NO_TENANT', message: '站点未识别' });
+        const customer = await maybeCustomer(req);
+        const sku = String((req.body || {}).sku || '').trim();
+        const qty = Math.max(1, Math.min(100, parseInt((req.body || {}).qty, 10) || 1));
+        if (!sku) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 sku' });
+        const plan = await openApiFindSku(sku);
+        if (!plan) return res.status(404).json({ success: false, code: 'SKU_NOT_FOUND', message: '商品不存在：' + sku });
+        const catMap = await tenantCatalogMap(tenant.id);
+        const catRow = catMap.get(String(sku)) || null;
+        if (!tenantSkuAvailable(plan, catRow, tenant)) {
+            return res.status(409).json({ success: false, code: 'SKU_UNAVAILABLE', message: '该商品当前不可售' });
+        }
+        const cost = Number(plan.upstream_price_cents) || 0;
+        const baseUnit = tenantSkuPrice(catRow, plan);
+        const ent = customer ? await entitlementPricingForCustomer(customer.id, plan.code, baseUnit) : null;
+        const unit = ent ? ent.cents : baseUnit;
+        const total = unit * qty;
+        const quoteId = 'q_' + crypto.randomBytes(8).toString('hex');
+        const expiresAt = new Date(Date.now() + OPEN_API_QUOTE_TTL_MS);
+        await store.runExecute(
+            'INSERT INTO kc_api_quote_logs (client_id, quote_id, sku_code, cost_cents, markup_percent, unit_price_cents, qty, total_cents, expires_at) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [tenant.id, quoteId, sku, cost, Number(plan.api_markup_percent) || 0, unit, qty, total, expiresAt]
+        );
+        res.json({
+            success: true,
+            data: {
+                quote_id: quoteId, sku: sku, qty: qty,
+                unit_price: openApiUsd(unit), total: openApiUsd(total), currency: 'USD',
+                base_price: openApiUsd(baseUnit), entitlement_price: ent ? openApiUsd(ent.cents) : null,
+                entitlement_rule: ent ? ent.rule_code : null, entitlement_discount: ent ? openApiUsd((baseUnit - ent.cents) * qty) : 0,
+                expires_at: expiresAt.toISOString(), expires_in: 60
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 下单（顾客登录后；共用 createApiOrderCore，tenant_web 从顾客钱包扣）。v1.44.0 · Stage 3.5：权益价下单成功后扣 1 次权益（幂等）
+app.post('/api/tenant/orders', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const tenant = req.tenant;
+        let entApplied = null; // { grant_id, rule_code, baseUnit, finalUnit }
+        const result = await createApiOrderCore({
+            tenantId: tenant.id,
+            customerId: req.customer.id,
+            clientOrderNo: String(b.client_order_no || b.order_no || '').trim(),
+            quoteId: String(b.quote_id || '').trim(),
+            source: 'tenant_web',
+            userRef: 'customer:' + req.customer.id,
+            resolveCurrent: async (plan) => {
+                if (!plan) return { available: false, unitCents: 0 };
+                const catMap = await tenantCatalogMap(tenant.id);
+                const catRow = catMap.get(String(plan.code)) || null;
+                const base = tenantSkuPrice(catRow, plan);
+                const ent = await entitlementPricingForCustomer(req.customer.id, plan.code, base);
+                const unit = ent ? ent.cents : base;
+                if (ent) entApplied = { grant_id: ent.grant_id, rule_code: ent.rule_code, baseUnit: base, finalUnit: unit };
+                return { available: tenantSkuAvailable(plan, catRow, tenant), unitCents: unit };
+            }
+        });
+        // 交付成功后扣次（幂等键 = 订单号；重复下单 reused 不重复扣）
+        if (entApplied && result.http === 200 && result.body && result.body.data && !result.body.data.reused) {
+            try {
+                const ord = await store.runQuery('SELECT sku_code, qty FROM kc_api_orders WHERE our_order_no=? LIMIT 1', [result.body.data.order_id]);
+                const qty = ord.length ? (Number(ord[0].qty) || 1) : 1;
+                const planCode = ord.length ? String(ord[0].sku_code) : String(b.sku || '');
+                await entitlementConsume({
+                    grant_id: entApplied.grant_id,
+                    order_trade_no: result.body.data.order_id,
+                    plan_code: planCode,
+                    original_cents: entApplied.baseUnit * qty,
+                    final_cents: entApplied.finalUnit * qty
+                });
+            } catch (ce) { /* 扣次失败不阻塞订单（下单已完成） */ }
+        }
+        return res.status(result.http).json(result.body);
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 我的订单（仅本租户本顾客；不含成本）
+app.get('/api/tenant/orders', authenticateCustomer, async (req, res) => {
+    try {
+        const rows = await store.runQuery(
+            'SELECT our_order_no, client_order_no, sku_code, qty, amount_cents, status, cdk, created_at, updated_at ' +
+            'FROM kc_api_orders WHERE client_id=? AND customer_id=? ORDER BY id DESC LIMIT 100',
+            [req.tenant.id, req.customer.id]
+        );
+        const items = rows.map(function (r) {
+            return {
+                order_id: r.our_order_no, sku: r.sku_code, qty: r.qty,
+                amount: openApiUsd(r.amount_cents), currency: 'USD',
+                status: r.status, cdk: r.cdk || null, created_at: r.created_at, updated_at: r.updated_at
+            };
+        });
+        res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 订单售后申请（v1.45.0 · Stage 3.6 G6）：仅限本租户本顾客自己的订单。
+// 红线：作用域一律取 req.tenant.id + req.customer.id，禁止从请求体读归属。
+app.post('/api/tenant/after-sales', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const orderNo = String(b.order_no || b.trade_no || '').trim();
+        const message = String(b.message || '').trim();
+        let type = String(b.request_type || 'other').trim();
+        if (['failed', 'timeout', 'refund', 'other'].indexOf(type) < 0) type = 'other';
+        if (!orderNo) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少订单号' });
+        if (!message) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '请填写问题描述' });
+        if (message.length > 2000) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '问题描述过长' });
+        const rows = await store.runQuery(
+            'SELECT id FROM kc_api_orders WHERE our_order_no=? AND client_id=? AND customer_id=? LIMIT 1',
+            [orderNo, req.tenant.id, req.customer.id]
+        );
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '订单不存在' });
+        const r = await store.runExecute(
+            'INSERT INTO kc_after_sales (client_id, customer_id, order_no, request_type, message) VALUES (?, ?, ?, ?, ?)',
+            [req.tenant.id, req.customer.id, orderNo, type, message]
+        );
+        res.json({ success: true, data: { id: r.insertId || 0, order_no: orderNo, request_type: type, status: 'open' } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ===== v1.42.0 · Stage 3.3 钱包 / 充值前台（G2 闭环，BEpusdt 收款模拟）=====
+// 铁律：钱包作用域一律 customer_id=req.customer.id + client_id=req.tenant.id（由 authenticateCustomer 回写）。
+// 红线：入账只由「收款回调」路径触发，前端不得直接改余额；顾客钱包与租户余额分离记账。
+const WALLET_RECHARGE_TTL_MS = 30 * 60 * 1000;
+const WALLET_MIN_CENTS = 100;            // $1
+const WALLET_MAX_CENTS = 1000000;        // $10000
+const WALLET_PRESETS = [10000, 30000, 50000]; // $100 / $300 / $500
+
+// 模拟 TRC20 收款地址（T 开头 33 位 base58）；真实环境由 BEpusdt 下单接口返回
+function mockPayAddress() {
+    const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const bytes = crypto.randomBytes(33);
+    let s = 'T';
+    for (let i = 0; i < 33; i++) s += alphabet[bytes[i] % alphabet.length];
+    return s;
+}
+
+// 精确金额：基础金额 + 由单号派生的唯一小数尾数（4 位，0.0001~0.0099 USDT），作为链上「认单标识」。
+// 铁律：尾数仅用于对单，不额外入账——入账口径仍是 amount_cents（整数分），余额精度不受影响。
+// 与 recharge_no 一一对应且可重算（无需落库新列），POST 与对账侧都可用同一函数复现。
+function rechargeExactAmount(rechargeNo, amountCents) {
+    const h = crypto.createHash('sha1').update(String(rechargeNo)).digest();
+    const tail = (h.readUInt16BE(0) % 99) + 1;                                     // 1..99
+    const micro = Math.round(Number(amountCents) || 0) * 10000 + tail * 100;        // 分→micro-USDT（×1e4），再加尾数
+    return (micro / 1e6).toFixed(4);                                               // 如 100.0073
+}
+
+// 钱包余额 + 流水（顾客维度）
+app.get('/api/tenant/wallet', authenticateCustomer, async (req, res) => {
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        const rows = await store.runQuery(
+            'SELECT change_cents, balance_after_cents, type, ref, note, created_at FROM kc_customer_wallet_ledger WHERE customer_id=? ORDER BY id DESC LIMIT 50',
+            [req.customer.id]
+        );
+        res.json({
+            success: true,
+            data: {
+                balance: openApiUsd(w ? w.balance_cents : 0),
+                balance_cents: w ? Number(w.balance_cents) : 0,
+                currency: 'USD',
+                presets: WALLET_PRESETS.map(function (c) { return openApiUsd(c); }),
+                min: openApiUsd(WALLET_MIN_CENTS),
+                max: openApiUsd(WALLET_MAX_CENTS),
+                ledger: rows.map(function (r) {
+                    return {
+                        type: r.type,
+                        change: openApiUsd(r.change_cents),
+                        balance: openApiUsd(r.balance_after_cents),
+                        ref: r.ref || '', note: r.note || '', created_at: r.created_at
+                    };
+                })
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 发起充值（生成收款地址与充值单；不立即入账）
+app.post('/api/tenant/wallet/recharge', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        let amountCents = parseInt(b.amount_cents, 10);
+        if (!isFinite(amountCents) || amountCents <= 0) {
+            const usd = Number(b.amount);
+            amountCents = isFinite(usd) && usd > 0 ? Math.round(usd * 100) : 0;
+        }
+        if (!isFinite(amountCents) || amountCents < WALLET_MIN_CENTS || amountCents > WALLET_MAX_CENTS) {
+            return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: '充值金额需在 ' + openApiUsd(WALLET_MIN_CENTS) + ' ~ ' + openApiUsd(WALLET_MAX_CENTS) + ' 之间' });
+        }
+        const rechargeNo = 'rc_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+        const payAddress = mockPayAddress();
+        const expiresAt = new Date(Date.now() + WALLET_RECHARGE_TTL_MS);
+        await store.runExecute(
+            'INSERT INTO kc_customer_recharges (client_id, customer_id, recharge_no, amount_cents, currency, channel, pay_address, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [req.tenant.id, req.customer.id, rechargeNo, amountCents, 'USD', 'bepusdt', payAddress, 'pending', expiresAt]
+        );
+        res.json({
+            success: true,
+            data: {
+                recharge_no: rechargeNo, amount: openApiUsd(amountCents), currency: 'USD',
+                exact_amount: rechargeExactAmount(rechargeNo, amountCents),
+                token: 'USDT', network: 'TRC20',
+                min: openApiUsd(WALLET_MIN_CENTS), max: openApiUsd(WALLET_MAX_CENTS),
+                channel: 'bepusdt', pay_address: payAddress, status: 'pending',
+                expires_at: expiresAt.toISOString(), expires_in: Math.floor(WALLET_RECHARGE_TTL_MS / 1000)
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 收款回调（模拟）：真实环境由 BEpusdt notify 服务端触发；此处供前台「模拟到账」调用。
+// 幂等：已 paid 直接回现状，不重复入账。
+app.post('/api/tenant/wallet/recharge/confirm', authenticateCustomer, async (req, res) => {
+    try {
+        const rechargeNo = String((req.body || {}).recharge_no || '').trim();
+        if (!rechargeNo) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 recharge_no' });
+        const rows = await store.runQuery(
+            'SELECT * FROM kc_customer_recharges WHERE recharge_no=? AND customer_id=? AND client_id=? LIMIT 1',
+            [rechargeNo, req.customer.id, req.tenant.id]
+        );
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '充值单不存在' });
+        const rc = rows[0];
+        if (rc.status === 'paid') {
+            return res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: false, balance: openApiUsd(rc.amount_cents) } });
+        }
+        if (rc.status !== 'pending') return res.status(409).json({ success: false, code: 'RECHARGE_CLOSED', message: '充值单已关闭，请重新发起' });
+        if (rc.expires_at && new Date(rc.expires_at).getTime() < Date.now()) {
+            await store.runExecute("UPDATE kc_customer_recharges SET status='expired' WHERE id=?", [rc.id]);
+            return res.status(409).json({ success: false, code: 'RECHARGE_EXPIRED', message: '充值单已过期，请重新发起' });
+        }
+        const amount = Number(rc.amount_cents) || 0;
+        // 条件入账（仅 pending → paid 生效），天然防重复回调
+        const lock = await store.runExecute("UPDATE kc_customer_recharges SET status='paid', paid_at=NOW() WHERE id=? AND status='pending'", [rc.id]);
+        if (!lock || Number(lock.affectedRows) === 0) {
+            return res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: false } });
+        }
+        await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, req.customer.id]);
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        try {
+            await store.runExecute(
+                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [req.tenant.id, req.customer.id, amount, w ? w.balance_cents : 0, 'recharge', rechargeNo, '充值 ' + openApiUsd(amount) + '（bepusdt 模拟到账）']
+            );
+        } catch (le) { /* 流水失败不阻塞入账 */ }
+        res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: true, amount: openApiUsd(amount), balance: openApiUsd(w ? w.balance_cents : 0) } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ===== v1.43.0 · Stage 3.4 权益包前台（G4 闭环）=====
+// 铁律：作用域一律 customer_id=req.customer.id + client_id=req.tenant.id（由 authenticateCustomer 回写）。
+// 权益包 = 平台自有资产：目录来自 kc_entitlement_rules（sale_price_cents>0 才可售），顾客维度权益记在 kc_entitlement_grants.customer_id。
+// 「用余额开通」= 从顾客钱包（kc_customers.balance_cents）扣款，与租户余额分离记账（R2 红线）。
+
+// 顾客维度发权益：user_id=0（历史用户维度），customer_id=顾客 id；同 owner 同规则同 status 去重（INSERT IGNORE）
+async function entitlementGrantIssueForCustomer(customerId, ruleCode, source = 'purchase', sourceRef = '', note = '') {
+    await ensureStoreReady();
+    const ruleRows = await store.runQuery('SELECT * FROM kc_entitlement_rules WHERE code=? AND status=? LIMIT 1', [ruleCode, 'active']);
+    if (!ruleRows.length) return { success: false, message: '权益包不存在或未启用：' + ruleCode };
+    const rule = ruleRows[0];
+    const total_uses = rule.grant_uses;
+    const expires_at = rule.grant_period_days > 0 ? new Date(Date.now() + rule.grant_period_days * 86400000) : null;
+    const r = await store.runExecute(
+        'INSERT IGNORE INTO kc_entitlement_grants (user_id, customer_id, rule_code, source, source_ref, remaining_uses, total_uses, expires_at, status, note) VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [customerId, ruleCode, source, sourceRef, total_uses, total_uses, expires_at, 'active', note]
+    );
+    if (r.affectedRows === 0) return { success: true, reused: true, rule_code: ruleCode };
+    return { success: true, reused: false, grant_id: r.insertId, rule_code: ruleCode, total_uses, expires_at };
+}
+
+// 可售权益包列表（sale_price_cents>0；不含任何平台成本/上游字段）
+app.get('/api/tenant/packs', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rows = await store.runQuery(
+            'SELECT code, display_name, grant_uses, grant_period_days, sale_price_cents, note FROM kc_entitlement_rules WHERE status=? AND sale_price_cents > 0 ORDER BY priority DESC, id DESC',
+            ['active']
+        );
+        const items = rows.map(function (r) {
+            return {
+                code: r.code,
+                name: r.display_name || r.code,
+                uses: Number(r.grant_uses) || 0,
+                period_days: Number(r.grant_period_days) || 0,
+                price: openApiUsd(r.sale_price_cents),
+                currency: 'USD',
+                note: r.note || ''
+            };
+        });
+        res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 我的权益（顾客维度持有，active）；附带生效权益包定义
+app.get('/api/tenant/entitlements', authenticateCustomer, async (req, res) => {
+    try {
+        const rows = await store.runQuery(
+            'SELECT g.rule_code, g.remaining_uses, g.total_uses, g.expires_at, g.status, g.created_at, r.display_name ' +
+            'FROM kc_entitlement_grants g LEFT JOIN kc_entitlement_rules r ON r.code = g.rule_code ' +
+            'WHERE g.customer_id=? AND g.status=? ORDER BY g.id DESC',
+            [req.customer.id, 'active']
+        );
+        const items = rows.map(function (r) {
+            return {
+                rule_code: r.rule_code,
+                name: r.display_name || r.rule_code,
+                remaining_uses: Number(r.remaining_uses) || 0,
+                total_uses: Number(r.total_uses) || 0,
+                expires_at: r.expires_at, status: r.status, created_at: r.created_at
+            };
+        });
+        res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 用余额开通（顾客钱包扣款 → 发权益 → 记购买 + 写钱包流水）；client_ref 幂等；已持有 active 权益 → 409 并回滚
+app.post('/api/tenant/packs/purchase', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const packCode = String(b.pack_code || b.code || '').trim().slice(0, 64);
+        const clientRef = String(b.client_ref || '').trim().slice(0, 64);
+        if (!packCode) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 pack_code' });
+        const tenantId = req.tenant.id, customerId = req.customer.id;
+
+        const packRows = await store.runQuery(
+            'SELECT code, display_name, grant_uses, grant_period_days, sale_price_cents FROM kc_entitlement_rules WHERE code=? AND status=? LIMIT 1',
+            [packCode, 'active']
+        );
+        if (!packRows.length || Number(packRows[0].sale_price_cents) <= 0) {
+            return res.status(404).json({ success: false, code: 'PACK_NOT_FOUND', message: '权益包不存在或未开售' });
+        }
+        const pack = packRows[0];
+        const price = Number(pack.sale_price_cents) || 0;
+
+        // 幂等：同客户同 client_ref 直接复用既有购买单
+        if (clientRef) {
+            const dup = await store.runQuery('SELECT * FROM kc_customer_pack_purchases WHERE customer_id=? AND client_ref=? LIMIT 1', [customerId, clientRef]);
+            if (dup.length) {
+                return res.json({ success: true, data: { purchase_no: dup[0].purchase_no, pack_code: dup[0].pack_code, amount: openApiUsd(dup[0].price_cents), currency: 'USD', reused: true } });
+            }
+        }
+        // 已持有生效权益 → 不重复开通
+        const owned = await store.runQuery('SELECT id FROM kc_entitlement_grants WHERE customer_id=? AND rule_code=? AND status=? LIMIT 1', [customerId, packCode, 'active']);
+        if (owned.length) return res.status(409).json({ success: false, code: 'PACK_ALREADY_OWNED', message: '该权益包已开通，无需重复购买' });
+
+        // 钱包扣款（条件更新，余额不足则不扣）
+        const deducted = await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents - ? WHERE id=? AND balance_cents >= ?', [price, customerId, price]);
+        if (!deducted || Number(deducted.affectedRows) === 0) {
+            return res.status(402).json({ success: false, code: 'INSUFFICIENT_BALANCE', message: '钱包余额不足，请先充值' });
+        }
+        // 发权益（顾客维度）；并发下同 owner 同规则已存在 → reused，需回滚余额
+        const issued = await entitlementGrantIssueForCustomer(customerId, packCode, 'purchase', clientRef || '', '前台用余额开通');
+        if (!issued.success || issued.reused) {
+            await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [price, customerId]);
+            return res.status(409).json({ success: false, code: 'PACK_ALREADY_OWNED', message: '该权益包已开通，无需重复购买' });
+        }
+        const purchaseNo = 'pp_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+        try {
+            await store.runExecute(
+                'INSERT INTO kc_customer_pack_purchases (client_id, customer_id, purchase_no, client_ref, pack_code, price_cents, grant_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [tenantId, customerId, purchaseNo, clientRef || purchaseNo, packCode, price, issued.grant_id || null, 'paid']
+            );
+        } catch (pe) {
+            // 购买记录落库失败 → 回滚权益与余额，避免白付
+            await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [price, customerId]);
+            try { await store.runExecute('DELETE FROM kc_entitlement_grants WHERE id=?', [issued.grant_id]); } catch (e) { /* ignore */ }
+            throw pe;
+        }
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+        try {
+            await store.runExecute(
+                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [tenantId, customerId, -price, w ? w.balance_cents : 0, 'consume', purchaseNo, '开通权益包 ' + (pack.display_name || packCode)]
+            );
+        } catch (le) { /* 流水失败不阻塞开通 */ }
+        res.json({
+            success: true,
+            data: {
+                purchase_no: purchaseNo, pack_code: packCode, amount: openApiUsd(price), currency: 'USD',
+                reused: false, grant: { rule_code: packCode, total_uses: Number(pack.grant_uses) || 0, expires_at: issued.expires_at || null },
+                balance: openApiUsd(w ? w.balance_cents : 0)
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ===== v1.39.0 · Stage 2.3 代理商后台 API =====
+// 铁律：所有查询强制 client_id=req.tenant.id（由 authenticateTenantStaff 校验并回写 req.tenant）。
+// 红线（明确不做）：不提供「查看平台成本价 / 修改上游通道 / 查看其他租户」的任何接口。
+function requireTenantOwner(req, res, next) {
+    if (!req.tenantStaff || req.tenantStaff.role !== 'owner') {
+        return res.status(403).json({ success: false, message: '仅租户负责人可操作' });
+    }
+    next();
+}
+const TENANT_BRAND_COLS = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
+
+// 概览
+app.get('/api/tenant-admin/overview', authenticateTenantStaff, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const [bal] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [tid]);
+        const [tot] = await store.runQuery(
+            "SELECT COUNT(*) AS orders_total, COALESCE(SUM(CASE WHEN status='delivered' THEN amount_cents ELSE 0 END),0) AS gmv_cents FROM kc_api_orders WHERE client_id=?", [tid]);
+        const [today] = await store.runQuery(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(CASE WHEN status='delivered' THEN amount_cents ELSE 0 END),0) AS gmv FROM kc_api_orders WHERE client_id=? AND DATE(created_at)=CURDATE()", [tid]);
+        const [cust] = await store.runQuery('SELECT COUNT(*) AS c FROM kc_customers WHERE client_id=?', [tid]);
+        res.json({
+            success: true,
+            data: {
+                balance: openApiUsd(bal ? bal.balance_cents : 0),
+                orders_total: Number(tot.orders_total) || 0,
+                gmv: openApiUsd(tot.gmv_cents || 0),
+                today_orders: Number(today.c) || 0,
+                today_gmv: openApiUsd(today.gmv || 0),
+                customers: Number(cust.c) || 0,
+                settlement_mode: req.tenant.settlement_mode || 'prepaid'
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 订单列表（不含成本）
+app.get('/api/tenant-admin/orders', authenticateTenantStaff, async (req, res) => {
+    try {
+        const rows = await store.runQuery(
+            'SELECT our_order_no, client_order_no, sku_code, qty, amount_cents, status, cdk, customer_id, created_at ' +
+            'FROM kc_api_orders WHERE client_id=? ORDER BY id DESC LIMIT 200', [req.tenant.id]);
+        res.json({
+            success: true,
+            data: rows.map(function (r) {
+                return {
+                    order_id: r.our_order_no, client_order_no: r.client_order_no, sku: r.sku_code, qty: r.qty,
+                    amount: openApiUsd(r.amount_cents), currency: 'USD', status: r.status,
+                    cdk: r.cdk || null, customer_ref: r.customer_id ? ('C' + r.customer_id) : null, created_at: r.created_at
+                };
+            })
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 商品（可见开关 + 零售价；不回平台成本）
+app.get('/api/tenant-admin/products', authenticateTenantStaff, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const catMap = await tenantCatalogMap(tid);
+        const rows = await store.runQuery(
+            'SELECT k.code, k.display_name, k.api_enabled, k.api_markup_percent, k.upstream_plan_key, u.upstream_price_cents ' +
+            'FROM kc_plans k LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
+            'WHERE k.api_enabled = 1 ORDER BY k.id'
+        );
+        res.json({
+            success: true,
+            data: rows.map(function (r) {
+                const c = catMap.get(String(r.code)) || null;
+                return {
+                    sku: r.code, name: r.display_name,
+                    visible: c ? Number(c.visible) === 1 : false,
+                    retail_price: c && Number(c.retail_price_cents) > 0 ? openApiUsd(c.retail_price_cents) : null,
+                    available: tenantSkuAvailable(r, c, req.tenant)
+                };
+            })
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/products', authenticateTenantStaff, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const b = req.body || {};
+        const planCode = String(b.plan_code || b.sku || '').trim();
+        if (!planCode) return res.status(400).json({ success: false, message: '缺少 plan_code' });
+        const visible = b.visible ? 1 : 0;
+        const retail = Math.max(0, Math.round(Number(b.retail_price || 0) * 100));
+        await store.runExecute(
+            'INSERT INTO kc_tenant_catalog (client_id, plan_code, visible, retail_price_cents, sort, status) VALUES (?, ?, ?, ?, 0, ?) ' +
+            'ON DUPLICATE KEY UPDATE visible=VALUES(visible), retail_price_cents=VALUES(retail_price_cents), status=VALUES(status)',
+            [tid, planCode, visible, retail, 'active']
+        );
+        res.json({ success: true, message: '已保存' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 品牌
+app.get('/api/tenant-admin/brand', authenticateTenantStaff, async (req, res) => {
+    try {
+        const brand = await loadTenantBrand(req.tenant.id);
+        res.json({ success: true, data: brand || {
+            brand_name: '', logo_url: '', primary_color: '', accent_color: '',
+            support_contact: '', support_url: '', hero_title: '', hero_subtitle: '', footer_text: '', extra: null
+        } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/brand', authenticateTenantStaff, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const b = req.body || {};
+        const vals = TENANT_BRAND_COLS.map(function (c) { return String(b[c] || '').slice(0, 500); });
+        const exist = await store.runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [tid]);
+        if (exist.length) {
+            await store.runExecute(
+                'UPDATE kc_tenant_brand SET ' + TENANT_BRAND_COLS.map(function (c) { return c + '=?'; }).join(', ') + ' WHERE client_id=?',
+                vals.concat([tid])
+            );
+        } else {
+            await store.runExecute(
+                'INSERT INTO kc_tenant_brand (client_id, ' + TENANT_BRAND_COLS.join(', ') + ') VALUES (?' + ',?'.repeat(TENANT_BRAND_COLS.length) + ')',
+                [tid].concat(vals)
+            );
+        }
+        invalidateTenantCache();
+        res.json({ success: true, message: '已保存' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 域名（查看；新增仅 owner）
+app.get('/api/tenant-admin/domains', authenticateTenantStaff, async (req, res) => {
+    try {
+        const rows = await store.runQuery('SELECT id, host, is_primary, status, ssl_status FROM kc_tenant_domains WHERE client_id=? ORDER BY id', [req.tenant.id]);
+        res.json({ success: true, data: rows });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/domains', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const host = String((req.body || {}).host || '').trim().toLowerCase();
+        if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return res.status(400).json({ success: false, message: '域名格式不正确' });
+        const dup = await store.runQuery('SELECT client_id FROM kc_tenant_domains WHERE host=? LIMIT 1', [host]);
+        if (dup.length) return res.status(409).json({ success: false, message: '该域名已被绑定' });
+        await store.runExecute("INSERT INTO kc_tenant_domains (client_id, host, is_primary, status) VALUES (?, ?, 0, 'pending')", [tid, host]);
+        invalidateTenantCache();
+        res.json({ success: true, message: '已提交（待平台审核生效）' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 账本
+app.get('/api/tenant-admin/ledger', authenticateTenantStaff, async (req, res) => {
+    try {
+        const rows = await store.runQuery(
+            'SELECT change_cents, balance_after_cents, type, ref, note, created_at FROM kc_api_balance_ledger WHERE client_id=? ORDER BY id DESC LIMIT 100',
+            [req.tenant.id]);
+        res.json({
+            success: true,
+            data: rows.map(function (r) {
+                return { change: openApiUsd(r.change_cents), balance_after: openApiUsd(r.balance_after_cents), type: r.type, ref: r.ref, note: r.note, created_at: r.created_at };
+            })
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 员工（仅 owner 可见/可增）
+app.get('/api/tenant-admin/staff', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const rows = await store.runQuery('SELECT id, email, role, status, last_login_at FROM kc_tenant_staff WHERE client_id=? ORDER BY id', [req.tenant.id]);
+        res.json({ success: true, data: rows });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/staff', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const tid = req.tenant.id;
+        const b = req.body || {};
+        const email = adminAuth.normalizeEmail(b.email);
+        const password = String(b.password || '');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ success: false, message: '邮箱格式不正确' });
+        if (password.length < 6) return res.status(400).json({ success: false, message: '密码至少 6 位' });
+        const dup = await store.runQuery('SELECT id FROM kc_tenant_staff WHERE email=? LIMIT 1', [email]);
+        if (dup.length) return res.status(409).json({ success: false, message: '该邮箱已存在' });
+        const hash = adminAuth.createPasswordHash(password);
+        await store.runExecute("INSERT INTO kc_tenant_staff (client_id, email, password_hash, role, status) VALUES (?, ?, ?, 'staff', 'active')", [tid, email, hash]);
+        res.json({ success: true, message: '已创建员工' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 app.use('/api/public/business', createBusinessStorefrontRouter(createRequireStorefrontUser()));
 app.use('/api/admin/business', createBusinessAdminRouter(authenticateAdmin));
 app.use('/api/admin', authenticateAdmin);
@@ -1716,26 +2733,11 @@ app.post('/api/admin/site-config', requireSecondaryAuth, async (req, res) => {
             copy: Object.assign({}, cur.copy, body.copy || {})
         };
         await store.setAppConfigValue('site_config', JSON.stringify(next));
-
-        let siteNameSynced = false;
         const brandName = String((next.brand && next.brand.name) || '').trim();
-        if (brandName) {
-            try {
-                await store.runQuery(
-                    "UPDATE `xboard`.`v2_settings` SET value = ?, updated_at = NOW() WHERE name = 'app_name'",
-                    [brandName]
-                );
-                siteNameSynced = true;
-            } catch (e) {
-                siteNameSynced = false;
-            }
-        }
         return res.json({
             success: true,
-            message: siteNameSynced
-                ? '站点配置已保存。若前台浏览器标题未变，请执行一次 Xboard 缓存清理（optimize:clear）。'
-                : '站点配置已保存（站点名跨库同步失败，请检查 KC 对 xboard 库的写权限）。',
-            site_name_synced: siteNameSynced,
+            message: brandName ? '站点配置已保存（品牌名已生效）' : '站点配置已保存',
+            site_name_synced: Boolean(brandName),
             config: next
         });
     } catch (error) {
@@ -4061,7 +5063,7 @@ app.get('/api/cdk/download', async (req, res) => {
     return res.status(410).send('成品号下载功能已移除，仅支持自助开通');
 });
 
-// ─── 对外集成接口（供 Xboard 等前台商城调用）─────────────────────────────────
+// ─── 对外集成接口（供外部商城 / 合作方调用）─────────────────────────────────
 
 function timingSafeEqualString(a, b) {
     const bufA = Buffer.from(String(a || ''), 'utf8');
@@ -4120,7 +5122,7 @@ app.post('/api/integration/cdk/issue', requireIntegrationAuth, async (req, res) 
 
         const result = await store.issueCdkByRef(ref, {
             planType,
-            source: String(body.source || 'xboard').trim() || 'xboard',
+            source: String(body.source || 'storefront').trim() || 'storefront',
             orderId: body.order_id,
             userRef: body.user_ref,
             createCdks
@@ -4396,7 +5398,7 @@ app.post('/api/integration/entitlement/issue-after-cdk', requireIntegrationAuth,
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 集成端点：查询某用户的生效权益（grants），供 Xboard 插件代理给前台「权益包」页展示。
+// 集成端点：查询某用户的生效权益（grants），供前台「权益包」页展示。
 // 只返回展示所需字段，不返回内部审计信息。
 // Query: ?user_id=123  ｜ Header: X-Integration-Key
 app.get('/api/integration/entitlement/grants', requireIntegrationAuth, async (req, res) => {
@@ -4458,9 +5460,9 @@ app.post('/api/integration/entitlement/refund', requireIntegrationAuth, async (r
 // ============================================================
 // v1.34.0 · Step 7：代充按「用户权益价」结算（结算层接线）
 // ============================================================
-// 缺口：代充商品价格以 Xboard v2_plan.prices 为准（kc_pricing_rules 不参与），
+// 缺口：代充商品原价以商品原价（kc_plans.prices_json）为准，
 //       因此「买权益包 → 代充更便宜」原先只停留在展示层。这里补两个集成端点把
-//       「用户手里的 grant」折算进 Xboard 的订单金额：
+//       「用户手里的 grant」折算进商城的订单金额：
 //         quote   —— 下单前按 base_cents 折算权益价（并落盘 snapshot 记住用了哪个 grant）
 //         consume —— 交付成功后按 trade_no 幂等扣次（失败/退款走已有的 /refund）
 // v1.35.0 · 权益定价口径：一律取自「权益报价」表 kc_entitlement_prices（权益包 × 商品 一口价），
@@ -4480,6 +5482,28 @@ async function entitlementActiveGrants(user_id) {
     } catch (e) {
         return [];
     }
+}
+
+// v1.44.0 · Stage 3.5：顾客维度「生效中」权益 grant（customer_id 维度，与历史 user_id 维度并存）
+async function entitlementActiveGrantsByCustomer(customerId) {
+    try {
+        return await store.runQuery(
+            'SELECT g.id, g.rule_code, g.remaining_uses, g.expires_at ' +
+            'FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code=g.rule_code ' +
+            'WHERE g.customer_id=? AND g.status=? AND r.status=?',
+            [customerId, 'active', 'active']
+        );
+    } catch (e) {
+        return [];
+    }
+}
+
+// v1.44.0 · Stage 3.5：为顾客算某商品的「最优权益价」（无可用权益/未配置报价 → null）
+async function entitlementPricingForCustomer(customerId, planCode, baseCents) {
+    const grants = await entitlementActiveGrantsByCustomer(customerId);
+    if (!grants.length) return null;
+    const index = await loadEntitlementPrices(grants.map(function (g) { return g.rule_code; }));
+    return pickBestEntitlementPrice(grants, index, baseCents, planCode, new Date());
 }
 
 // 批量读取「权益报价」（权益包 × 商品 一口价），返回索引 { [rule_code]: { [plan_code]: price_cents } }。
@@ -4530,7 +5554,7 @@ function pickBestEntitlementPrice(grants, priceIndex, baseCents, planCode, now) 
 // 出参：{ success:true, data:{ quotes:[{ plan_code, base_cents, final_cents, applied_source,
 //         applied_grant_id, applied_rule_code, discount_cents }] } }
 // 当 trade_no 存在且真的用上了权益价时，落一条 kc_order_pricing_snapshot 记住 grant，
-// 供后续 consume 按 trade_no 反查（无需 Xboard 侧新增任何列）。
+// 供后续 consume 按 trade_no 反查（无需外部系统侧新增任何列）。
 app.post('/api/integration/entitlement/quote', requireIntegrationAuth, async (req, res) => {
     try {
         await ensureStoreReady();
@@ -4562,7 +5586,7 @@ app.post('/api/integration/entitlement/quote', requireIntegrationAuth, async (re
             const useEnt = best != null && best.cents < baseCents;
             const finalCents = useEnt ? (best.cents * qtyN) : (baseCents * qtyN);
             if (useEnt && tradeNo) {
-                // plan_id：从 xplan_<id> 反解 Xboard 套餐 id（解析不到记 0；该列 NOT NULL 无默认）
+                // plan_id：从 xplan_<id> 反解套餐 id（解析不到记 0；该列 NOT NULL 无默认）
                 const pid = Number(String(planCode).replace(/^xplan_/, '')) || 0;
                 try {
                     await store.runExecute(
@@ -4712,72 +5736,11 @@ app.get('/api/admin/entitlements/actions', requireSecondaryAuth, async (req, res
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ============================================================
-// v1.21.0 · R7 数据健康诊断（SP §R7 老字段下掉评估）
-// 比对 xboard.v2_plan 老字段 vs plus_papay.kc_* 新表字段
-// ============================================================
-const V2_KC_PERIOD_MAP = { monthly: 'month', onetime: 'once', quarterly: 'quarter', yearly: 'year' };
-async function diagnoseLegacyFields() {
-    const out = { ts: new Date().toISOString(), legacy_v2_plan_count: 0, kc_plans_count: 0, plans: [], summary: { matches: 0, mismatches: 0, kc_only: 0, legacy_only: 0 } };
-    const legacyRows = await store.runQuery('SELECT id, name, prices, kc_card, kc_is_topup, kc_topup_amount FROM xboard.v2_plan ORDER BY id');
-    out.legacy_v2_plan_count = legacyRows.length;
-    const kcRows = await store.runQuery('SELECT * FROM kc_plans ORDER BY id');
-    out.kc_plans_count = kcRows.length;
-    const ruleRows = await store.runQuery("SELECT plan_id, period, amount_cents FROM kc_pricing_rules WHERE source='manual' AND enabled=1");
-    const ruleMap = {}; for (const r of ruleRows) { (ruleMap[r.plan_id] = ruleMap[r.plan_id] || {})[r.period] = Number(r.amount_cents); }
-    const cardRows = await store.runQuery('SELECT plan_id, listing_state, is_visible FROM kc_listing_cards');
-    const cardMap = {}; for (const r of cardRows) { cardMap[r.plan_id] = r; }
-
-    for (const v of legacyRows) {
-        const code = 'xplan_' + v.id;
-        const kc = kcRows.find(k => k.code === code);
-        const item = { v2_plan_id: v.id, name: v.name, code, kc_plan_id: kc && kc.id, mismatches: [] };
-        if (!kc) {
-            item.mismatches.push('KC 侧无对应 plan（kc_plans.code=' + code + ' 不存在）');
-            out.summary.legacy_only++;
-        } else {
-            let vPrices = {};
-            try { vPrices = typeof v.prices === 'string' ? JSON.parse(v.prices) : (v.prices || {}); } catch (e) { vPrices = {}; }
-            const kcPrices = ruleMap[kc.id] || {};
-            for (const [vKey, vVal] of Object.entries(vPrices)) {
-                const kKey = V2_KC_PERIOD_MAP[vKey] || vKey;
-                const kVal = kcPrices[kKey];
-                if (kVal == null) { item.mismatches.push('KC 侧缺价 period=' + kKey); continue; }
-                const vCents = Math.round(Number(vVal) * 100);
-                if (vCents !== kVal) item.mismatches.push('价不一致：v2_plan.' + vKey + '=' + vCents + 'c ≠ kc_pricing_rules.' + kKey + '=' + kVal + 'c');
-            }
-            if (Number(v.kc_is_topup) === 1 && kc.kc_type !== 'recharge') item.mismatches.push('kc_type≠recharge（v2_plan.kc_is_topup=1）');
-            let vCard = null;
-            try { vCard = typeof v.kc_card === 'string' ? JSON.parse(v.kc_card) : (v.kc_card || null); } catch (e) {}
-            const kcCard = cardMap[kc.id];
-            if (!kcCard && vCard && Object.keys(vCard).length) item.mismatches.push('kc_listing_cards 缺失（v2_plan.kc_card 非空）');
-            else if (kcCard && Number(v.kc_is_topup) === 0 && kcCard.is_visible === 0) item.mismatches.push('is_visible=0 但 v2_plan.kc_is_topup=0（v1.17.0 回填可能未对齐）');
-            if (item.mismatches.length) out.summary.mismatches++; else out.summary.matches++;
-        }
-        out.plans.push(item);
-    }
-    for (const k of kcRows) {
-        const id = Number(String(k.code).replace('xplan_', ''));
-        if (!legacyRows.find(v => v.id === id)) { out.summary.kc_only++; out.plans.push({ code: k.code, kc_plan_id: k.id, mismatches: ['v2_plan 缺失（KC 侧孤儿 plan）'] }); }
-    }
-    out.ready_to_drop_legacy = (out.summary.mismatches === 0 && out.summary.legacy_only === 0 && out.summary.kc_only === 0);
-    return out;
-}
-
-app.get('/api/admin/diag/legacy-fields', requireSecondaryAuth, async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const r = await diagnoseLegacyFields();
-        res.json({ success: true, data: r });
-    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-});
-
 // ─── 后台：集成配置管理 ─────────────────────────────────────────────────────
 
 // ============================================================
-// FEAT-006：商品卡片配置（后台可配 · 读写 Xboard v2_plan.kc_card）
+// FEAT-006：商品卡片配置（后台可配 · 读写 KC 原生 kc_listing_cards）
 // ============================================================
-const XBOARD_DB_NAME = process.env.XBOARD_DB_NAME || 'xboard';
 
 const CARD_STATES = ['onsale', 'featured', 'recommend', 'soon'];
 const CARD_BTN_STYLES = ['solid', 'outline', 'ghost'];
@@ -4865,7 +5828,7 @@ function cardParse(raw) {
 }
 
 // ============================================================
-// FEAT-009：服务分类 + 商品页常见问题（存 xboard.v2_settings，key-value）
+// FEAT-009：服务分类 + 商品页常见问题（存 kc_settings，key-value）
 // ============================================================
 const CARD_CATEGORIES_DEFAULT = [
     { key: 'recharge', name: '代充', nav: true },
@@ -4912,34 +5875,23 @@ function faqNorm(input) {
 async function readKcSetting(name) {
     try {
         const rows = await store.runQuery(
-            'SELECT `value` FROM `' + XBOARD_DB_NAME + '`.v2_settings WHERE `name` = ? LIMIT 1', [name]
+            'SELECT `value` FROM kc_settings WHERE `name` = ? LIMIT 1', [name]
         );
-        if (!rows.length) { return null; }
+        if (!rows.length || rows[0].value == null) { return null; }
         return JSON.parse(rows[0].value);
     } catch (e) { return null; }
 }
 
 async function writeKcSetting(name, value) {
     const json = JSON.stringify(value);
-    // 注意：v2_settings 的 created_at/updated_at 是 DATETIME 类型（不是 unix 时间戳），必须用 NOW()
-    const rows = await store.runQuery(
-        'SELECT id FROM `' + XBOARD_DB_NAME + '`.v2_settings WHERE `name` = ? LIMIT 1', [name]
+    await store.runExecute(
+        'INSERT INTO kc_settings (`name`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = CURRENT_TIMESTAMP',
+        [name, json]
     );
-    if (rows.length) {
-        await store.runExecute(
-            'UPDATE `' + XBOARD_DB_NAME + '`.v2_settings SET `value` = ?, updated_at = NOW() WHERE id = ?',
-            [json, rows[0].id]
-        );
-    } else {
-        await store.runExecute(
-            'INSERT INTO `' + XBOARD_DB_NAME + '`.v2_settings (`group`, `type`, `name`, `value`, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())',
-            ['kc', 'string', name, json]
-        );
-    }
 }
 
 // v1.14.0：优惠行「全局开关」——一次关闭，全站（商品页 + 游客落地页套餐区）优惠行全部隐藏；
-// 单卡开关（card.promo.enabled）保留，两者为「与」关系；默认开启，存 v2_settings 即时生效。
+// 单卡开关（card.promo.enabled）保留，两者为「与」关系；默认开启，存 kc_settings 即时生效。
 function promoRowNorm(input) {
     const o = (input && typeof input === 'object') ? input : {};
     return { enabled: o.enabled !== false };
@@ -4970,7 +5922,7 @@ app.post('/api/admin/card-config/categories', requireSecondaryAuth, async (req, 
 });
 
 // ============================================================
-// v1.15.0 · 上游管理层（独立于 v2_plan，SP-2026-10-11-v1.0.1 §4.1）
+// v1.15.0 · 上游管理层（SP-2026-10-11-v1.0.1 §4.1）
 // ============================================================
 // 归一化：code 仅小写字母/数字/下划线，≤32
 function upstreamCodeNorm(v) {
@@ -5190,7 +6142,7 @@ app.post('/api/admin/upstreams/:code/health/refresh', requireSecondaryAuth, asyn
 });
 
 // ============================================================
-// v1.16.0 · 资费层（独立于 v2_plan.prices，SP-2026-10-11-v1.0.1 §4.2）
+// v1.16.0 · 资费层（SP-2026-10-11-v1.0.1 §4.2）
 // ============================================================
 function planCodeNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 64); }
 function planTypeNorm(v) { return ['recharge', 'account', 'entitlement'].includes(v) ? v : 'recharge'; }
@@ -5364,7 +6316,7 @@ app.post('/api/admin/plans/:id/pricing/preview', requireSecondaryAuth, async (re
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ⑦ 价格引擎 quote —— 公共给 Xboard 插件通过 BFF 代理调用（本期 Xboard 暂不改读，按 SP §9 阶段 3）
+// ⑦ 价格引擎 quote —— 供前台/外部系统经服务端代理调用
 // 入参 {plan_code, user_id?, qty=1}；权益分支 R4 上；R2 仅 manual/promotion
 async function priceQuote({ plan_code, user_id = null, qty = 1, trade_no = null }) {
     const plan = await store.runQuery('SELECT * FROM kc_plans WHERE code=? LIMIT 1', [plan_code]);
@@ -5550,7 +6502,7 @@ app.patch('/api/admin/entitlements/rules/:code', requireSecondaryAuth, async (re
 // 语义：每个权益包对每个商品可配置独立一口价；未配置 = 按原价（不优惠）
 // ============================================================
 // 取商品「我方原价」（分）：与前台 #/plan / 首页同口径 —— 按周期顺序取第一个 >0 的价 ×100
-// 注意：v2_plan.prices 存的是「主单位」（如 {"monthly":15} = $15），Xboard 出 API 时 ×100 转成分
+// 注意：商品原价存的是「主单位」（如 {"monthly":15} = $15），对外出 API 时 ×100 转成分
 const EP_PERIOD_ORDER = ['monthly', 'quarterly', 'half_yearly', 'yearly', 'two_yearly', 'three_yearly', 'onetime'];
 function entitlementListPriceCents(pricesRaw) {
     try {
@@ -5572,8 +6524,8 @@ app.get('/api/admin/entitlements/prices', requireSecondaryAuth, async (req, res)
             cur.forEach(r => { priceMap[String(r.plan_code)] = Number(r.price_cents); });
         }
         const rows = await store.runQuery(
-            'SELECT k.code AS plan_code, COALESCE(NULLIF(p.name, ""), k.display_name, k.code) AS name, p.prices AS prices ' +
-            'FROM kc_plans k LEFT JOIN xboard.v2_plan p ON p.id = CAST(SUBSTRING(k.code, 7) AS UNSIGNED) ' +
+            'SELECT k.code AS plan_code, COALESCE(NULLIF(k.display_name, ""), k.code) AS name, k.prices_json AS prices ' +
+            'FROM kc_plans k ' +
             'WHERE k.code REGEXP "^xplan_[0-9]+$" AND (k.status IS NULL OR k.status <> ?) ORDER BY k.code ASC',
             ['archived']
         );
@@ -5620,6 +6572,23 @@ app.post('/api/admin/entitlements/prices', requireSecondaryAuth, async (req, res
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+// v1.43.0 · Stage 3.4：设置权益包「售价」（分；0=前台不可售）
+// 独立于规则表单与站点定价面板：sale_price_cents 只由本端点维护，避免被 PATCH /rules 覆盖。
+app.post('/api/admin/entitlements/packs/:code/price', requireSecondaryAuth, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const code = String(req.params.code || '').trim().slice(0, 64);
+        const raw = (req.body || {}).sale_price_cents;
+        const cents = Math.floor(Number(raw));
+        if (!code) return res.status(400).json({ success: false, message: 'code 必填' });
+        if (!isFinite(cents) || cents < 0) return res.status(400).json({ success: false, message: 'sale_price_cents 必须为 ≥0 的整数（分）' });
+        const exist = await store.runQuery('SELECT code FROM kc_entitlement_rules WHERE code=? LIMIT 1', [code]);
+        if (!exist.length) return res.status(404).json({ success: false, message: '权益包不存在：' + code });
+        await store.runExecute('UPDATE kc_entitlement_rules SET sale_price_cents=? WHERE code=?', [cents, code]);
+        res.json({ success: true, data: { code, sale_price_cents: cents, price: openApiUsd(cents), sellable: cents > 0 } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
 // 给 user 授权（手动或自动发权益共用入口）
 async function entitlementGrantIssue(user_id, rule_code, source = 'manual', source_ref = '', note = '') {
     await ensureStoreReady();
@@ -5661,14 +6630,14 @@ app.post('/api/admin/entitlements/grants/:id/revoke', requireSecondaryAuth, asyn
 });
 
 // 查某 user 的 grants
-// v1.28.2 · 邮箱 → Xboard user_id 查询（运营不记得数字 ID，权益查询/发放按邮箱定位用户）
+// v2.1.0 · 邮箱 → 顾客 ID 查询（运营不记得数字 ID，权益查询/发放按邮箱定位顾客）
 app.get('/api/admin/entitlements/user-lookup', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const email = String(req.query.email || '').trim().toLowerCase();
         if (!email) return res.status(400).json({ success: false, message: 'email 必填' });
         const rows = await store.runQuery(
-            'SELECT id, email FROM xboard.v2_user WHERE LOWER(email)=? ORDER BY id ASC LIMIT 5',
+            'SELECT id, email FROM kc_customers WHERE LOWER(email)=? ORDER BY id ASC LIMIT 5',
             [email]
         );
         res.json({ success: true, data: rows.map(r => ({ user_id: r.id, email: r.email })) });
@@ -5711,7 +6680,7 @@ async function entitlementConsume({ grant_id, user_id, order_trade_no, plan_code
 }
 
 // ============================================================
-// v1.17.0 · 商品展示层（独立于 v2_plan.kc_card，SP-2026-10-11-v1.0.1 §4.3）
+// v1.17.0 · 商品展示层（SP-2026-10-11-v1.0.1 §4.3）
 // ============================================================
 function listingStateNorm(v) { return ['onsale', 'featured', 'soon', 'soldout', 'manual'].includes(v) ? v : 'onsale'; }
 function listingCardRow(c, plan) {
@@ -5765,7 +6734,7 @@ app.put('/api/admin/listing-cards/:plan_id', requireSecondaryAuth, async (req, r
             'ON DUPLICATE KEY UPDATE card_json=VALUES(card_json), is_visible=VALUES(is_visible), listing_state=VALUES(listing_state), sort=VALUES(sort)',
             [pid, card_json, is_visible, listing_state, sort]
         );
-        res.json({ success: true, message: '已保存（前台刷新即生效；双轨期内可 sync 到 v2_plan.kc_card）', card });
+        res.json({ success: true, message: '已保存（前台刷新即生效）', card });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -5791,10 +6760,9 @@ app.post('/api/admin/listing-cards/:plan_id/visibility', requireSecondaryAuth, a
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ④ 反向同步到 v2_plan.kc_card（双轨兜底：让插件立即读到新配置；R3 终极方案是改插件读法）
-// ─── v1.24.0 · 商品管理 MVP（SP-2026-10-13 精简执行：一个页面配商品，保存即同步商城）───
-// 数据口径：商城主数据在 xboard.v2_plan（name/prices/show/sell/kc_card/content）；
-// KC 侧 kc_plans 承载货源绑定与 API 分销配置（配置存储，对外接口 v2 启用）。
+// ─── v1.24.0 · 商品管理 MVP（SP-2026-10-13 精简执行：一个页面配商品，保存即生效）───
+// 数据口径：v2.1.0 起商城主数据统一在 KC 原生表 kc_plans（display_name/prices_json/show_flag/sell_flag/sort_order/content/is_topup/topup_amount）；
+// 商品卡片 kc_listing_cards.card_json 为前台唯一展示口径。
 const PRODUCT_UPSTREAM_KEY_WHITELIST = ['plus', 'pro_5x', 'pro_20x']; // 与插件自动发卡白名单一致
 
 function productParsePrices(pricesRaw) {
@@ -5815,33 +6783,42 @@ function productCardOf(raw) {
     return typeof raw === 'object' ? raw : null;
 }
 
-// 商品列表（v2_plan 主 + kc_plans 关联）
+// 商品列表（KC 原生 kc_plans 主表 + 卡片/上游关联）
 app.get('/api/admin/products', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const rows = await store.runQuery(
-            'SELECT p.id, p.name, p.prices, p.`show`, p.sell, p.sort, p.content, p.kc_card, p.kc_is_topup, p.kc_topup_amount, ' +
-            '       k.upstream_code, k.upstream_plan_key, k.status AS kc_status, k.api_enabled, k.api_markup_percent ' +
-            'FROM xboard.v2_plan p ' +
-            "LEFT JOIN kc_plans k ON k.code = CONCAT('xplan_', p.id) " +
-            'ORDER BY (p.sort IS NULL) ASC, p.sort ASC, p.id ASC'
+            'SELECT k.id, k.code, k.display_name, k.prices_json, k.show_flag, k.sell_flag, k.sort_order, k.content, k.is_topup, ' +
+            '       k.upstream_code, k.upstream_plan_key, k.status AS kc_status, k.api_enabled, k.api_markup_percent, ' +
+            '       c.card_json, u.display_name AS upstream_display_name, u.status AS upstream_status, h.state AS upstream_health_state, h.checked_at AS upstream_health_at ' +
+            'FROM kc_plans k ' +
+            'LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
+            'LEFT JOIN kc_upstreams u ON u.code = k.upstream_code ' +
+            'LEFT JOIN (SELECT upstream_code, MAX(id) AS max_id FROM kc_upstream_health_snapshots GROUP BY upstream_code) hs ON hs.upstream_code = k.upstream_code ' +
+            'LEFT JOIN kc_upstream_health_snapshots h ON h.id = hs.max_id ' +
+            'WHERE k.prices_json IS NOT NULL ' +
+            'ORDER BY k.sort_order ASC, k.id ASC'
         );
         const list = rows.map(function (r) {
-            const pp = productParsePrices(r.prices);
-            const card = productCardOf(r.kc_card) || {};
+            const pp = productParsePrices(r.prices_json);
+            const card = productCardOf(r.card_json) || {};
             return {
                 plan_id: r.id,
-                name: r.name,
+                name: r.display_name || r.code,
                 period: pp.period,
                 price: pp.price,
-                show: Number(r.show) === 1,
-                sell: Number(r.sell) === 1,
-                sort: r.sort == null ? null : Number(r.sort),
+                show: Number(r.show_flag) === 1,
+                sell: Number(r.sell_flag) === 1,
+                sort: r.sort_order == null ? null : Number(r.sort_order),
                 content: r.content || '',
                 subtitle: card.subtitle || '',
-                is_topup: Number(r.kc_is_topup) === 1,
+                is_topup: Number(r.is_topup) === 1,
                 upstream_code: r.upstream_code || '',
                 upstream_plan_key: r.upstream_plan_key || '',
+                upstream_display_name: r.upstream_display_name || '',
+                upstream_status: r.upstream_status || '',
+                upstream_health_state: r.upstream_health_state || '',
+                upstream_health_at: r.upstream_health_at || '',
                 api_enabled: Number(r.api_enabled) === 1,
                 api_markup_percent: Number(r.api_markup_percent) || 0
             };
@@ -5850,7 +6827,255 @@ app.get('/api/admin/products', requireSecondaryAuth, async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 商品保存（聚合）：v2_plan + kc_plans + 资费规则 + 卡片 + 插件映射 —— 保存即同步商城
+// ===== v1.38.0 技术后台「租户」管理（Stage 1.3）：租户 CRUD / 品牌 / 域名 / 目录 / 员工 =====
+function tenantGenCode() { return 'cli_' + crypto.randomBytes(5).toString('hex'); }
+function tenantGenApiKey() { return 'ak_live_' + crypto.randomBytes(12).toString('hex'); }
+function tenantGenApiSecret() { return 'sk_live_' + crypto.randomBytes(20).toString('hex'); }
+
+function tenantAdminRow(r) {
+    return {
+        id: r.id, code: r.code, name: r.name || '',
+        tenant_kind: r.tenant_kind || 'agent',
+        settlement_mode: r.settlement_mode || 'prepaid',
+        settle_period: r.settle_period || 'monthly',
+        credit_limit_cents: Number(r.credit_limit_cents) || 0,
+        max_concurrent: Number(r.max_concurrent) || 0,
+        upstream_channel: r.upstream_channel || '',
+        status: r.status,
+        rate_limit: Number(r.rate_limit) || 0,
+        balance_cents: Number(r.balance_cents) || 0,
+        note: r.note || ''
+    };
+}
+
+app.get('/api/admin/tenants', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rows = await store.runQuery("SELECT * FROM kc_api_clients ORDER BY (tenant_kind='platform') DESC, id ASC");
+        const domains = await store.runQuery('SELECT client_id, host, is_primary, status FROM kc_tenant_domains ORDER BY id ASC');
+        const brands = await store.runQuery('SELECT client_id, brand_name, primary_color FROM kc_tenant_brand');
+        const staff = await store.runQuery('SELECT client_id, COUNT(*) AS c FROM kc_tenant_staff GROUP BY client_id');
+        const dmap = {}, bmap = {}, smap = {};
+        domains.forEach(function (d) { (dmap[d.client_id] = dmap[d.client_id] || []).push({ host: d.host, is_primary: Number(d.is_primary) === 1, status: d.status }); });
+        brands.forEach(function (b) { bmap[b.client_id] = { brand_name: b.brand_name || '', primary_color: b.primary_color || '' }; });
+        staff.forEach(function (s) { smap[s.client_id] = Number(s.c) || 0; });
+        const list = rows.map(function (r) {
+            const base = tenantAdminRow(r);
+            base.domains = dmap[r.id] || [];
+            base.brand = bmap[r.id] || null;
+            base.staff_count = smap[r.id] || 0;
+            return base;
+        });
+        res.json({ success: true, data: list });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/tenants', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const name = String(b.name || '').trim();
+        if (!name) return res.status(400).json({ success: false, message: '租户名称必填' });
+        const kind = b.tenant_kind === 'platform' ? 'platform' : 'agent';
+        const code = String(b.code || '').trim() || tenantGenCode();
+        if (!/^cli_[a-z0-9_]{2,28}$/.test(code)) return res.status(400).json({ success: false, message: '租户编号须形如 cli_xxx（小写字母/数字/下划线）' });
+        const key = tenantGenApiKey();
+        const secret = tenantGenApiSecret();
+        const settlePeriod = ['weekly', 'biweekly', 'monthly'].indexOf(String(b.settle_period)) >= 0 ? b.settle_period : 'monthly';
+        await store.runExecute(
+            'INSERT INTO kc_api_clients (code, name, api_key, api_secret, status, tenant_kind, settlement_mode, settle_period, credit_limit_cents, max_concurrent, upstream_channel, rate_limit) ' +
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            [code, name, key, secret, 'active', kind,
+                b.settlement_mode === 'postpaid' ? 'postpaid' : 'prepaid',
+                settlePeriod,
+                Number(b.credit_limit_cents) || 0,
+                Number(b.max_concurrent) || (kind === 'platform' ? 10 : 3),
+                String(b.upstream_channel || ''),
+                Number(b.rate_limit) || (kind === 'platform' ? 600 : 120)]
+        );
+        invalidateTenantCache();
+        res.json({ success: true, data: { code: code, name: name, tenant_kind: kind, api_key: key, api_secret: secret } });
+    } catch (error) {
+        const dup = /ER_DUP_ENTRY|Duplicate entry/i.test(error.message || '');
+        res.status(dup ? 409 : 500).json({ success: false, message: dup ? '租户编号或密钥已存在' : error.message });
+    }
+});
+
+app.get('/api/admin/tenants/:id', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const rows = await store.runQuery('SELECT * FROM kc_api_clients WHERE id=? LIMIT 1', [id]);
+        if (!rows.length) return res.status(404).json({ success: false, message: '租户不存在' });
+        const domains = await store.runQuery('SELECT id, host, is_primary, status FROM kc_tenant_domains WHERE client_id=? ORDER BY id ASC', [id]);
+        const brandRows = await store.runQuery('SELECT * FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [id]);
+        const staff = await store.runQuery('SELECT id, email, role, status, last_login_at FROM kc_tenant_staff WHERE client_id=? ORDER BY id ASC', [id]);
+        const catalog = await store.runQuery('SELECT plan_code, visible, retail_price_cents FROM kc_tenant_catalog WHERE client_id=? ORDER BY id ASC', [id]);
+        res.json({
+            success: true,
+            data: {
+                tenant: tenantAdminRow(rows[0]),
+                brand: await loadTenantBrand(id),
+                brand_raw: brandRows.length ? brandRows[0] : null,
+                domains: domains,
+                staff: staff,
+                catalog: catalog
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.patch('/api/admin/tenants/:id', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const b = req.body || {};
+        const sets = [], params = [];
+        if (b.name !== undefined) { sets.push('name=?'); params.push(String(b.name).trim()); }
+        if (b.status !== undefined) { sets.push('status=?'); params.push(b.status === 'disabled' ? 'disabled' : 'active'); }
+        if (b.settlement_mode !== undefined) { sets.push('settlement_mode=?'); params.push(b.settlement_mode === 'postpaid' ? 'postpaid' : 'prepaid'); }
+        if (b.settle_period !== undefined) { sets.push('settle_period=?'); params.push(['weekly', 'biweekly', 'monthly'].indexOf(String(b.settle_period)) >= 0 ? b.settle_period : 'monthly'); }
+        if (b.credit_limit_cents !== undefined) { sets.push('credit_limit_cents=?'); params.push(Math.max(0, Number(b.credit_limit_cents) || 0)); }
+        if (b.max_concurrent !== undefined) { sets.push('max_concurrent=?'); params.push(Math.max(1, Number(b.max_concurrent) || 1)); }
+        if (b.upstream_channel !== undefined) { sets.push('upstream_channel=?'); params.push(String(b.upstream_channel || '')); }
+        if (b.rate_limit !== undefined) { sets.push('rate_limit=?'); params.push(Math.max(1, Number(b.rate_limit) || 1)); }
+        if (b.note !== undefined) { sets.push('note=?'); params.push(String(b.note || '').slice(0, 255)); }
+        if (!sets.length) return res.status(400).json({ success: false, message: '没有需要更新的字段' });
+        params.push(id);
+        await store.runExecute('UPDATE kc_api_clients SET ' + sets.join(', ') + ' WHERE id=?', params);
+        invalidateTenantCache();
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.put('/api/admin/tenants/:id/brand', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const b = req.body || {};
+        const exist = await store.runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [id]);
+        const cols = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
+        const vals = cols.map(function (c) { return String(b[c] || '').slice(0, 500); });
+        let extraJson = null;
+        if (b.extra !== undefined && b.extra !== null) { try { extraJson = JSON.stringify(b.extra); } catch (_) { extraJson = null; } }
+        if (exist.length) {
+            await store.runExecute(
+                'UPDATE kc_tenant_brand SET ' + cols.map(function (c) { return c + '=?'; }).join(', ') +
+                ', extra_json=? WHERE client_id=?',
+                vals.concat([extraJson, id])
+            );
+        } else {
+            await store.runExecute(
+                'INSERT INTO kc_tenant_brand (client_id, ' + cols.join(', ') + ', extra_json) VALUES (?' + ',?'.repeat(cols.length) + ',?)',
+                [id].concat(vals, [extraJson])
+            );
+        }
+        invalidateTenantCache();
+        res.json({ success: true, data: await loadTenantBrand(id) });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/tenants/:id/domains', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const host = normalizeTenantHost(req.body && req.body.host);
+        if (!host || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return res.status(400).json({ success: false, message: '域名格式不合法（如 agent-a.com）' });
+        await store.runExecute(
+            "INSERT INTO kc_tenant_domains (client_id, host, is_primary, status) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE client_id=VALUES(client_id), is_primary=VALUES(is_primary), status='active'",
+            [id, host, req.body && req.body.is_primary ? 1 : 0, 'active']
+        );
+        invalidateTenantCache();
+        res.json({ success: true, data: { host: host } });
+    } catch (error) {
+        const dup = /ER_DUP_ENTRY|Duplicate entry/i.test(error.message || '');
+        res.status(dup ? 409 : 500).json({ success: false, message: dup ? '该域名已绑定其他租户' : error.message });
+    }
+});
+
+app.delete('/api/admin/tenants/:id/domains/:host', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const host = normalizeTenantHost(decodeURIComponent(req.params.host));
+        await store.runExecute('DELETE FROM kc_tenant_domains WHERE client_id=? AND host=?', [id, host]);
+        invalidateTenantCache();
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.get('/api/admin/tenants/:id/catalog', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const plans = await store.runQuery('SELECT code, display_name FROM kc_plans ORDER BY id ASC');
+        const rows = await store.runQuery('SELECT plan_code, visible, retail_price_cents FROM kc_tenant_catalog WHERE client_id=?', [id]);
+        const map = {};
+        rows.forEach(function (r) { map[r.plan_code] = r; });
+        const items = plans.map(function (p) {
+            const cur = map[p.code];
+            return {
+                plan_code: p.code,
+                name: p.display_name || p.code,
+                visible: cur ? Number(cur.visible) === 1 : false,
+                retail_price_cents: cur ? Number(cur.retail_price_cents) || 0 : null
+            };
+        });
+        res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.put('/api/admin/tenants/:id/catalog', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const items = Array.isArray(req.body && req.body.items) ? req.body.items : [];
+        for (const it of items) {
+            const planCode = String(it && it.plan_code || '').trim();
+            if (!planCode) continue;
+            const price = (it.retail_price_cents === null || it.retail_price_cents === undefined || it.retail_price_cents === '')
+                ? null : Math.max(0, Number(it.retail_price_cents) || 0);
+            await store.runExecute(
+                'INSERT INTO kc_tenant_catalog (client_id, plan_code, visible, retail_price_cents, status) VALUES (?,?,?,?,?) ' +
+                "ON DUPLICATE KEY UPDATE visible=VALUES(visible), retail_price_cents=VALUES(retail_price_cents), status='active'",
+                [id, planCode, it.visible ? 1 : 0, price, 'active']
+            );
+        }
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.post('/api/admin/tenants/:id/staff', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const b = req.body || {};
+        const email = String(b.email || '').trim().toLowerCase();
+        const password = String(b.password || '');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ success: false, message: '邮箱格式不合法' });
+        if (password.length < 6) return res.status(400).json({ success: false, message: '密码至少 6 位' });
+        const role = b.role === 'owner' ? 'owner' : 'staff';
+        const hash = adminAuth.createPasswordHash(password);
+        await store.runExecute(
+            "INSERT INTO kc_tenant_staff (client_id, email, password_hash, role, status) VALUES (?,?,?,?, 'active') " +
+            'ON DUPLICATE KEY UPDATE client_id=VALUES(client_id), password_hash=VALUES(password_hash), role=VALUES(role), status=\'active\'',
+            [id, email, hash, role]
+        );
+        res.json({ success: true, data: { email: email, role: role } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+app.delete('/api/admin/tenants/:id/staff/:email', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = Number(req.params.id);
+        const email = String(decodeURIComponent(req.params.email || '')).trim().toLowerCase();
+        await store.runExecute('UPDATE kc_tenant_staff SET status=\'disabled\' WHERE client_id=? AND email=?', [id, email]);
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 商品保存（聚合）：v2.1.0 起统一落 KC 原生表 kc_plans + kc_pricing_rules + kc_listing_cards —— 保存即生效
 app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
@@ -5875,21 +7100,18 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
         const apiMarkup = Math.max(0, Math.min(500, Number(b.api_markup_percent) || 0));
 
         const pricesJson = JSON.stringify(period === 'onetime' ? { onetime: price } : { monthly: price });
-        const nowSec = Math.floor(Date.now() / 1000);
         let planId = parseInt(b.plan_id, 10) || 0;
         const isTopup = !upstreamKey && Number(b.is_topup) === 1;
+        const topupAmount = isTopup ? Math.round(price * 100) : 0;
 
         if (planId > 0) {
-            const rows = await store.runQuery('SELECT id, kc_card, kc_is_topup, kc_topup_amount FROM xboard.v2_plan WHERE id=? LIMIT 1', [planId]);
+            const rows = await store.runQuery('SELECT id FROM kc_plans WHERE id=? LIMIT 1', [planId]);
             if (!rows.length) return res.status(404).json({ success: false, message: '商品不存在：' + planId });
-            const cur = rows[0];
-            const card = productCardOf(cur.kc_card) || {};
-            card.subtitle = subtitle;
-            const curTopup = Number(cur.kc_is_topup) === 1;
             await store.runExecute(
-                'UPDATE xboard.v2_plan SET name=?, prices=?, `show`=?, sell=?, sort=?, content=?, kc_card=?, kc_topup_amount=?, updated_at=? WHERE id=?',
-                [name, pricesJson, show, sell, sort, content, JSON.stringify(card),
-                 curTopup ? Math.round(price * 100) : (Number(cur.kc_topup_amount) || 0), nowSec, planId]
+                'UPDATE kc_plans SET display_name=?, prices_json=?, show_flag=?, sell_flag=?, sort_order=?, content=?, is_topup=?, topup_amount=?, ' +
+                "status=?, api_enabled=?, api_markup_percent=?, upstream_code=?, upstream_plan_key=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                [name, pricesJson, show, sell, sort, content, isTopup ? 1 : 0, topupAmount,
+                 sell ? 'active' : 'paused', apiEnabled, apiMarkup, upstreamCode, upstreamKey, planId]
             );
         } else {
             const card = {
@@ -5902,62 +7124,45 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
                 button: { text: '立即办理', style: 'solid' },
                 category: 'recharge'
             };
-            const result = await store.runExecute(
-                'INSERT INTO xboard.v2_plan (name, prices, `show`, sell, sort, group_id, transfer_enable, renew, kc_is_topup, kc_topup_amount, kc_card, content, created_at, updated_at) ' +
-                'VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [name, pricesJson, show, sell, sort, isTopup ? 0 : 100, isTopup ? 0 : 1,
-                 isTopup ? 1 : 0, isTopup ? Math.round(price * 100) : 0, JSON.stringify(card), content, nowSec, nowSec]
+            // SKU 规范：code='xplan_<序号>'，序号取现有最大序号 +1（与 kc_plans.id 解耦，保证数字型 SKU 唯一）
+            const maxRows = await store.runQuery(
+                "SELECT COALESCE(MAX(CAST(SUBSTRING(code, 7) AS UNSIGNED)), 0) AS mx FROM kc_plans WHERE code REGEXP '^xplan_[0-9]+$'"
             );
-            planId = result && result.insertId ? Number(result.insertId) : 0;
+            const nextNo = Number(maxRows[0] && maxRows[0].mx || 0) + 1;
+            const newCode = 'xplan_' + nextNo;
+            const ins = await store.runExecute(
+                'INSERT INTO kc_plans (code, kc_type, display_name, prices_json, show_flag, sell_flag, sort_order, content, is_topup, topup_amount, status, api_enabled, api_markup_percent, upstream_code, upstream_plan_key, note) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [newCode, isTopup ? 'recharge' : 'subscription', name, pricesJson, show, sell, sort, content,
+                 isTopup ? 1 : 0, topupAmount, sell ? 'active' : 'paused', apiEnabled, apiMarkup, upstreamCode, upstreamKey, 'v2.1.0 商品管理保存']
+            );
+            planId = ins && ins.insertId ? Number(ins.insertId) : 0;
             if (!planId) return res.status(500).json({ success: false, message: '创建商品失败（未取得 insertId）' });
+            await store.runExecute(
+                'INSERT INTO kc_listing_cards (plan_id, card_json, is_visible, listing_state, sort) VALUES (?, ?, ?, ?, ?) ' +
+                'ON DUPLICATE KEY UPDATE card_json=VALUES(card_json)',
+                [planId, JSON.stringify(card), show, show ? 'onsale' : 'soon', sort]
+            );
         }
 
-        // KC 侧：kc_plans（货源与 API 配置）
+        // manual 资费规则整体替换
+        await store.runExecute("DELETE FROM kc_pricing_rules WHERE plan_id=? AND source='manual'", [planId]);
         await store.runExecute(
-            'INSERT INTO kc_plans (code, kc_type, display_name, upstream_code, upstream_plan_key, status, api_enabled, api_markup_percent, note) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
-            'ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), upstream_code=VALUES(upstream_code), upstream_plan_key=VALUES(upstream_plan_key), ' +
-            'status=VALUES(status), api_enabled=VALUES(api_enabled), api_markup_percent=VALUES(api_markup_percent), updated_at=CURRENT_TIMESTAMP',
-            ['xplan_' + planId, 'recharge', name, upstreamCode, upstreamKey, sell ? 'active' : 'paused', apiEnabled, apiMarkup, 'v1.24.0 商品管理保存']
+            'INSERT INTO kc_pricing_rules (plan_id, source, period, amount_cents, priority, enabled, note) VALUES (?, ?, ?, ?, 0, 1, ?)',
+            [planId, 'manual', period === 'onetime' ? 'once' : 'month', Math.round(price * 100), 'v2.1.0 商品管理保存']
         );
 
-        // KC 侧：manual 资费规则整体替换
-        const kcRows = await store.runQuery('SELECT id FROM kc_plans WHERE code=? LIMIT 1', ['xplan_' + planId]);
-        if (kcRows.length) {
-            const kcPlanId = kcRows[0].id;
-            await store.runExecute("DELETE FROM kc_pricing_rules WHERE plan_id=? AND source='manual'", [kcPlanId]);
-            await store.runExecute(
-                'INSERT INTO kc_pricing_rules (plan_id, source, period, amount_cents, priority, enabled, note) VALUES (?, ?, ?, ?, 0, 1, ?)',
-                [kcPlanId, 'manual', period === 'onetime' ? 'onetime' : 'month', Math.round(price * 100), 'v1.24.0 商品管理保存']
-            );
-        }
+        // 商品卡片 subtitle（kc_listing_cards.card_json 为前台唯一展示口径）
+        const cardRows = await store.runQuery('SELECT card_json FROM kc_listing_cards WHERE plan_id=? LIMIT 1', [planId]);
+        const cardJson = cardRows.length ? (productCardOf(cardRows[0].card_json) || {}) : {};
+        cardJson.subtitle = subtitle;
+        await store.runExecute(
+            'INSERT INTO kc_listing_cards (plan_id, card_json, is_visible, listing_state, sort) VALUES (?, ?, ?, ?, ?) ' +
+            'ON DUPLICATE KEY UPDATE card_json=VALUES(card_json), updated_at=CURRENT_TIMESTAMP',
+            [planId, JSON.stringify(cardJson), show, show ? 'onsale' : 'soon', sort]
+        );
 
-        // KC 侧：listing_cards（仅更新已存在行）
-        try {
-            const cardRows = await store.runQuery('SELECT kc_card FROM xboard.v2_plan WHERE id=? LIMIT 1', [planId]);
-            const cardJson = cardRows.length ? (productCardOf(cardRows[0].kc_card) || {}) : {};
-            await store.runExecute('UPDATE kc_listing_cards SET card_json=?, updated_at=CURRENT_TIMESTAMP WHERE plan_id=?', [JSON.stringify(cardJson), planId]);
-        } catch (e) { /* 卡片行不存在时忽略 */ }
-
-        // Xboard 插件映射（packages）：订阅类商品确保 plan_id → plan_type 可自动发卡
-        if (upstreamKey) {
-            try {
-                const plugins = await store.runQuery("SELECT id, config FROM xboard.v2_plugins WHERE code='kc_integration' LIMIT 1");
-                if (plugins.length) {
-                    let cfg = plugins[0].config;
-                    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg); } catch (e) { cfg = {}; } }
-                    cfg = cfg && typeof cfg === 'object' ? cfg : {};
-                    let pk = cfg.packages;
-                    if (typeof pk === 'string') { try { pk = JSON.parse(pk); } catch (e) { pk = {}; } }
-                    pk = pk && typeof pk === 'object' ? pk : {};
-                    pk[String(planId)] = upstreamKey;
-                    cfg.packages = JSON.stringify(pk);
-                    await store.runExecute('UPDATE xboard.v2_plugins SET config=?, updated_at=NOW() WHERE id=?', [JSON.stringify(cfg), plugins[0].id]);
-                }
-            } catch (e) { /* 映射写失败不阻塞商品保存 */ }
-        }
-
-        res.json({ success: true, message: '已保存并同步商城', data: { plan_id: planId } });
+        res.json({ success: true, message: '已保存', data: { plan_id: planId } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -6104,110 +7309,168 @@ app.post('/api/open/v1/quote', requireOpenApiAuth, async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
-// 3) 下单（幂等 + 锁价校验 + 余额原子扣减 + 履约同步发卡）
-app.post('/api/open/v1/orders', requireOpenApiAuth, async (req, res) => {
-    try {
-        const b = req.body || {};
-        const clientOrderNo = String(b.client_order_no || '').trim();
-        const quoteId = String(b.quote_id || '').trim();
-        if (!clientOrderNo || clientOrderNo.length > 64) {
-            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'client_order_no 必填且 ≤64 字符（幂等键）' });
-        }
-        if (!quoteId) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 quote_id' });
+// 共享下单核心（v1.39.0 · Stage 2.2b）：open API 与租户站前台共用，避免两份实现。
+// 调用方负责：① tenantId（=kc_api_clients.id，一律来自已验证身份，禁止读请求体 client_id）
+//            ② resolveCurrent(plan) 返回 { available, unitCents }（各自定价口径）
+// 返回 { http, body }，由调用方 res.status(http).json(body)。
+// 红线：本函数不做角色判断；租户作用域仅由 tenantId 参数进入。
+async function createApiOrderCore(opts) {
+    const tenantId = Number(opts.tenantId) || 0;
+    const clientOrderNo = String(opts.clientOrderNo || '').trim();
+    const quoteId = String(opts.quoteId || '').trim();
+    const customerId = opts.customerId ? Number(opts.customerId) : null;
+    const source = String(opts.source || 'open_api');
+    const userRef = String(opts.userRef || ('client:' + tenantId));
+    const resolveCurrent = opts.resolveCurrent;
+    if (!clientOrderNo || clientOrderNo.length > 64) {
+        return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: 'client_order_no 必填且 ≤64 字符（幂等键）' } };
+    }
+    if (!quoteId) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '缺少 quote_id' } };
 
-        // 幂等：同客户同单号直接回原单
-        const dup = await store.runQuery('SELECT * FROM kc_api_orders WHERE client_id=? AND client_order_no=? LIMIT 1', [req.openApiClient.id, clientOrderNo]);
-        if (dup.length) {
-            const d = dup[0];
-            return res.json({
-                success: true,
-                data: { order_id: d.our_order_no, status: d.status, amount: openApiUsd(d.amount_cents), currency: 'USD', cdk: d.cdk || null, reused: true }
-            });
-        }
+    // 幂等：同租户同单号直接回原单
+    const dup = await store.runQuery('SELECT * FROM kc_api_orders WHERE client_id=? AND client_order_no=? LIMIT 1', [tenantId, clientOrderNo]);
+    if (dup.length) {
+        const d = dup[0];
+        return { http: 200, body: { success: true, data: { order_id: d.our_order_no, status: d.status, amount: openApiUsd(d.amount_cents), currency: 'USD', cdk: d.cdk || null, reused: true } } };
+    }
 
-        const qRows = await store.runQuery('SELECT * FROM kc_api_quote_logs WHERE quote_id=? AND client_id=? LIMIT 1', [quoteId, req.openApiClient.id]);
-        if (!qRows.length) return res.status(404).json({ success: false, code: 'QUOTE_NOT_FOUND', message: '报价不存在' });
-        const q = qRows[0];
-        if (q.consumed_order_id) return res.status(409).json({ success: false, code: 'QUOTE_CONSUMED', message: '报价已被使用' });
-        if (new Date(q.expires_at).getTime() < Date.now()) {
-            return res.status(409).json({ success: false, code: 'QUOTE_EXPIRED', message: '报价已过期（60 秒），请重新报价' });
-        }
+    const qRows = await store.runQuery('SELECT * FROM kc_api_quote_logs WHERE quote_id=? AND client_id=? LIMIT 1', [quoteId, tenantId]);
+    if (!qRows.length) return { http: 404, body: { success: false, code: 'QUOTE_NOT_FOUND', message: '报价不存在' } };
+    const q = qRows[0];
+    if (q.consumed_order_id) return { http: 409, body: { success: false, code: 'QUOTE_CONSUMED', message: '报价已被使用' } };
+    if (new Date(q.expires_at).getTime() < Date.now()) {
+        return { http: 409, body: { success: false, code: 'QUOTE_EXPIRED', message: '报价已过期（60 秒），请重新报价' } };
+    }
 
-        // 成本变动容忍（3%）
-        const plan = await openApiFindSku(q.sku_code);
-        const curCost = plan ? (Number(plan.upstream_price_cents) || 0) : 0;
-        const baseCost = Number(q.cost_cents) || 0;
-        const drift = baseCost > 0 ? Math.abs(curCost - baseCost) / baseCost : 1;
-        if (drift > OPEN_API_PRICE_DRIFT_TOLERANCE || !plan || !openApiSkuAvailable(plan, curCost)) {
-            const newUnit = plan && curCost > 0 ? openApiQuotePrice(curCost, plan.api_markup_percent) : null;
-            return res.status(409).json({
-                success: false, code: 'PRICE_CHANGED',
-                message: '价格已更新（成本自报价后变动 ' + (drift * 100).toFixed(1) + '% > 3%），请重新报价',
-                data: { new_unit_price: newUnit === null ? null : openApiUsd(newUnit) }
-            });
-        }
+    // 价格变动容忍（3%）：以「当前可售价」对「报价时单价」比对，兼容固定零售价与平台加价率两种口径
+    const plan = await openApiFindSku(q.sku_code);
+    const curCost = plan ? (Number(plan.upstream_price_cents) || 0) : 0;
+    const current = resolveCurrent ? await resolveCurrent(plan) : null;
+    if (!plan || !current || !current.available) {
+        return { http: 409, body: { success: false, code: 'PRICE_CHANGED', message: '该商品当前不可售，请重新报价', data: { new_unit_price: null } } };
+    }
+    const baseUnit = Number(q.unit_price_cents) || 0;
+    const curUnit = Number(current.unitCents) || 0;
+    const drift = baseUnit > 0 ? Math.abs(curUnit - baseUnit) / baseUnit : 1;
+    if (drift > OPEN_API_PRICE_DRIFT_TOLERANCE) {
+        return { http: 409, body: {
+            success: false, code: 'PRICE_CHANGED',
+            message: '价格已更新（自报价后变动 ' + (drift * 100).toFixed(1) + '% > 3%），请重新报价',
+            data: { new_unit_price: openApiUsd(curUnit) }
+        } };
+    }
 
-        const amount = Number(q.total_cents) || 0;
-        const deducted = await store.runExecute(
+    const amount = Number(q.total_cents) || 0;
+    // v1.42.0 · Stage 3.3（G2）：租户站前台（tenant_web）顾客下单从「顾客钱包」扣；open API 仍从「租户余额」扣。
+    // 两条账本严格分离（R2 红线：用户资金与对接方资金分开记账）。
+    const payFromWallet = (source === 'tenant_web' && !!customerId);
+    const deducted = payFromWallet
+        ? await store.runExecute(
+            'UPDATE kc_customers SET balance_cents = balance_cents - ? WHERE id=? AND balance_cents >= ?',
+            [amount, customerId, amount]
+        )
+        : await store.runExecute(
             'UPDATE kc_api_clients SET balance_cents = balance_cents - ? WHERE id=? AND balance_cents >= ?',
-            [amount, req.openApiClient.id, amount]
+            [amount, tenantId, amount]
         );
-        if (!deducted || Number(deducted.affectedRows) === 0) {
-            return res.status(402).json({ success: false, code: 'INSUFFICIENT_BALANCE', message: '预充值余额不足' });
-        }
+    if (!deducted || Number(deducted.affectedRows) === 0) {
+        return { http: 402, body: { success: false, code: 'INSUFFICIENT_BALANCE', message: payFromWallet ? '钱包余额不足，请先充值' : '预充值余额不足' } };
+    }
 
-        const ourOrderNo = 'api_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
-        try {
-            const [balRow] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [req.openApiClient.id]);
+    const ourOrderNo = 'api_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+    try {
+        if (payFromWallet) {
+            const [wRow] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+            if (wRow) {
+                await store.runExecute(
+                    'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [tenantId, customerId, -amount, wRow.balance_cents, 'consume', ourOrderNo, '下单 ' + clientOrderNo]
+                );
+            }
+        } else {
+            const [balRow] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [tenantId]);
             if (balRow) {
                 await store.runExecute(
                     'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
-                    [req.openApiClient.id, -amount, balRow.balance_cents, 'consume', ourOrderNo, '下单 ' + clientOrderNo]
+                    [tenantId, -amount, balRow.balance_cents, 'consume', ourOrderNo, '下单 ' + clientOrderNo]
                 );
             }
-        } catch (le) { /* 流水失败不阻塞订单 */ }
-        let cdk = '';
-        let status = 'created';
-        let failReason = '';
-        try {
-            const result = await store.issueCdkByRef(ourOrderNo, {
-                planType: String(plan.upstream_plan_key),
-                source: 'open_api',
-                orderId: null,
-                userRef: 'client:' + req.openApiClient.code,
-                createCdks: createCdks
-            });
-            cdk = result && result.cdk ? String(result.cdk) : '';
-            status = cdk ? 'delivered' : 'failed';
-        } catch (e) {
-            status = 'failed';
-            failReason = String((e && e.message) || e).slice(0, 200);
-            await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [amount, req.openApiClient.id]).catch(function () { });
+        }
+    } catch (le) { /* 流水失败不阻塞订单 */ }
+    let cdk = '';
+    let status = 'created';
+    let failReason = '';
+    try {
+        const result = await store.issueCdkByRef(ourOrderNo, {
+            planType: String(plan.upstream_plan_key),
+            source: source,
+            orderId: null,
+            userRef: userRef,
+            createCdks: createCdks
+        });
+        cdk = result && result.cdk ? String(result.cdk) : '';
+        status = cdk ? 'delivered' : 'failed';
+    } catch (e) {
+        status = 'failed';
+        failReason = String((e && e.message) || e).slice(0, 200);
+        if (payFromWallet) {
+            await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, customerId]).catch(function () { });
             try {
-                const [balRow2] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [req.openApiClient.id]);
+                const [wRow2] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+                if (wRow2) {
+                    await store.runExecute(
+                        'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        [tenantId, customerId, amount, wRow2.balance_cents, 'refund', ourOrderNo, '履约失败退回 ' + clientOrderNo]
+                    );
+                }
+            } catch (le2) { /* 流水失败不阻塞回滚 */ }
+        } else {
+            await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [amount, tenantId]).catch(function () { });
+            try {
+                const [balRow2] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [tenantId]);
                 if (balRow2) {
                     await store.runExecute(
                         'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
-                        [req.openApiClient.id, amount, balRow2.balance_cents, 'refund', ourOrderNo, '履约失败退回 ' + clientOrderNo]
+                        [tenantId, amount, balRow2.balance_cents, 'refund', ourOrderNo, '履约失败退回 ' + clientOrderNo]
                     );
                 }
             } catch (le2) { /* 流水失败不阻塞回滚 */ }
         }
+    }
 
-        const ins = await store.runExecute(
-            'INSERT INTO kc_api_orders (client_id, client_order_no, our_order_no, sku_code, qty, quote_id, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.openApiClient.id, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, curCost, q.unit_price_cents, amount, status, cdk, failReason]
-        );
-        await store.runExecute('UPDATE kc_api_quote_logs SET consumed_order_id=? WHERE id=?', [ins.insertId, q.id]);
+    const ins = await store.runExecute(
+        'INSERT INTO kc_api_orders (client_id, customer_id, client_order_no, our_order_no, sku_code, qty, quote_id, source, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [tenantId, customerId, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, source, curCost, q.unit_price_cents, amount, status, cdk, failReason]
+    );
+    await store.runExecute('UPDATE kc_api_quote_logs SET consumed_order_id=? WHERE id=?', [ins.insertId, q.id]);
 
-        if (status !== 'delivered') {
-            return res.status(502).json({ success: false, code: 'FULFILL_FAILED', message: '履约失败（余额已退回）：' + failReason });
-        }
-        res.json({
-            success: true,
-            data: { order_id: ourOrderNo, status: status, amount: openApiUsd(amount), currency: 'USD', cdk: cdk }
+    if (status !== 'delivered') {
+        return { http: 502, body: { success: false, code: 'FULFILL_FAILED', message: '履约失败（余额已退回）：' + failReason } };
+    }
+    return { http: 200, body: {
+        success: true,
+        data: { order_id: ourOrderNo, status: status, amount: openApiUsd(amount), currency: 'USD', cdk: cdk }
+    } };
+}
+
+// 3) 下单（幂等 + 锁价校验 + 余额原子扣减 + 履约同步发卡）
+app.post('/api/open/v1/orders', requireOpenApiAuth, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const result = await createApiOrderCore({
+            tenantId: req.openApiClient.id,
+            clientOrderNo: String(b.client_order_no || '').trim(),
+            quoteId: String(b.quote_id || '').trim(),
+            source: 'open_api',
+            userRef: 'client:' + req.openApiClient.code,
+            resolveCurrent: async (plan) => {
+                if (!plan) return { available: false, unitCents: 0 };
+                const cost = Number(plan.upstream_price_cents) || 0;
+                return { available: openApiSkuAvailable(plan, cost), unitCents: openApiQuotePrice(cost, plan.api_markup_percent) };
+            }
         });
+        return res.status(result.http).json(result.body);
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
@@ -6532,27 +7795,6 @@ app.post('/api/admin/upstreams/:code/plans/:key/price', requireSecondaryAuth, as
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-app.post('/api/admin/listing-cards/sync-to-v2', requireSecondaryAuth, async (req, res) => {
-    try {
-        await ensureStoreReady();
-        const rows = await store.runQuery('SELECT c.*, p.code AS plan_code FROM kc_listing_cards c LEFT JOIN kc_plans p ON p.id = c.plan_id');
-        if (!rows.length) return res.json({ success: true, message: '无卡片可同步', synced: 0 });
-        let synced = 0, skipped = 0;
-        for (const r of rows) {
-            // 约定：migrate-pricing 生成 kc_plans.code='xplan_<v2id>'，从 code 解析 v2_plan.id
-            const m = String(r.plan_code || '').match(/^xplan_(\d+)$/);
-            if (!m) { skipped++; continue; }
-            const v2id = Number(m[1]);
-            await store.runExecute(
-                'UPDATE xboard.v2_plan SET kc_card=? WHERE id=?',
-                [r.card_json, v2id]
-            );
-            synced++;
-        }
-        res.json({ success: true, message: '已反向同步 ' + synced + ' 张卡片（跳过 ' + skipped + ' 张无映射）', synced, skipped });
-    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-});
-
 // 保存商品页常见问题
 app.post('/api/admin/card-config/faq', requireSecondaryAuth, async (req, res) => {
     try {
@@ -6565,26 +7807,28 @@ app.post('/api/admin/card-config/faq', requireSecondaryAuth, async (req, res) =>
     }
 });
 
-// 商品卡片配置：套餐列表（含充值套餐过滤）
+// 商品卡片配置：套餐列表（含充值套餐过滤）— v2.1.0 起读 KC 原生 kc_plans + kc_listing_cards
 app.get('/api/admin/card-config/list', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const rows = await store.runQuery(
-            'SELECT id, name, content, prices, kc_card, `show`, sell, sort FROM `' + XBOARD_DB_NAME + '`.v2_plan ' +
-            'WHERE (kc_is_topup IS NULL OR kc_is_topup = 0) ORDER BY sort ASC, id ASC'
+            'SELECT k.id, k.display_name, k.content, k.prices_json, k.is_topup, k.show_flag, k.sell_flag, k.sort_order, c.card_json ' +
+            'FROM kc_plans k LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
+            'WHERE k.prices_json IS NOT NULL AND k.is_topup = 0 ORDER BY k.sort_order ASC, k.id ASC'
         );
         const plans = rows.map((r) => {
             let prices = {};
-            try { prices = JSON.parse(r.prices || '{}'); } catch (e) { prices = {}; }
+            try { prices = typeof r.prices_json === 'string' ? JSON.parse(r.prices_json) : (r.prices_json || {}); } catch (e) { prices = {}; }
+            const card = cardParse(r.card_json);
             return {
                 id: r.id,
-                name: r.name,
+                name: r.display_name,
                 content: r.content || '',
-                show: Boolean(r.show),
-                sell: Boolean(r.sell),
+                show: Boolean(r.show_flag),
+                sell: Boolean(r.sell_flag),
                 prices,
-                configured: Boolean(r.kc_card),
-                card: cardParse(r.kc_card) || cardDefault()
+                configured: !!(card && Object.keys(card).length),
+                card: card || cardDefault()
             };
         });
         res.json({
@@ -6599,7 +7843,7 @@ app.get('/api/admin/card-config/list', requireSecondaryAuth, async (req, res) =>
     }
 });
 
-// 商品卡片配置：保存
+// 商品卡片配置：保存（写入 KC 原生 kc_listing_cards.card_json）
 app.post('/api/admin/card-config/save', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
@@ -6610,15 +7854,16 @@ app.post('/api/admin/card-config/save', requireSecondaryAuth, async (req, res) =
         if (!card.rules) {
             try {
                 const rows = await store.runQuery(
-                    'SELECT kc_card FROM `' + XBOARD_DB_NAME + '`.v2_plan WHERE id = ? LIMIT 1', [planId]
+                    'SELECT card_json FROM kc_listing_cards WHERE plan_id = ? LIMIT 1', [planId]
                 );
-                const old = rows.length ? cardParse(rows[0].kc_card) : null;
+                const old = rows.length ? cardParse(rows[0].card_json) : null;
                 if (old && old.rules) { card.rules = old.rules; }
             } catch (e) { /* 读取失败不阻塞保存 */ }
         }
         await store.runExecute(
-            'UPDATE `' + XBOARD_DB_NAME + '`.v2_plan SET kc_card = ? WHERE id = ?',
-            [JSON.stringify(card), planId]
+            'INSERT INTO kc_listing_cards (plan_id, card_json) VALUES (?, ?) ' +
+            'ON DUPLICATE KEY UPDATE card_json = VALUES(card_json), updated_at = CURRENT_TIMESTAMP',
+            [planId, JSON.stringify(card)]
         );
         res.json({ success: true, message: '已保存，前台刷新即生效', card });
     } catch (error) {
@@ -6633,8 +7878,8 @@ app.post('/api/admin/card-config/reset', requireSecondaryAuth, async (req, res) 
         const planId = Number(req.body && req.body.plan_id);
         if (!planId) { return res.status(400).json({ success: false, message: '缺少 plan_id' }); }
         await store.runExecute(
-            'UPDATE `' + XBOARD_DB_NAME + '`.v2_plan SET kc_card = NULL WHERE id = ?',
-            [planId]
+            'UPDATE kc_listing_cards SET card_json = ? WHERE plan_id = ?',
+            [JSON.stringify({}), planId]
         );
         res.json({ success: true, message: '已重置为未配置（前台使用默认模板）' });
     } catch (error) {

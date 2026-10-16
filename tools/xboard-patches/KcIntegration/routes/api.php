@@ -147,3 +147,19 @@ Route::get('/plan/kc-cards', [PlanCardController::class, 'index']);
 Route::prefix('kc/order')->middleware('user')->group(function () {
     Route::post('/pay-balance', [OrderPayController::class, 'payBalance']);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Stage 2.4 收口：前台同源代理（公开 · 免登录）
+|--------------------------------------------------------------------------
+| 目的：注入前台的页面（kc_home_portal / kc_theme_inject / kc_activate_inject）
+|       不再直连 KC（避免把 KC 端口/域名写进前端源码、避免跨域），只请求本插件同源路径。
+|       KC 真实地址仅来自插件配置 kc_base_url（仅存在于服务端）。
+| 真实访问路径（同样无 /api 前缀）：
+|     GET /kc-proxy/site-config   （代理 KC /api/public/site-config）
+|     GET /kc-proxy/redeem        （302 → KC 兑卡页，cdk 透传）
+*/
+Route::prefix('kc-proxy')->group(function () {
+    Route::get('/site-config', [\Plugin\KcIntegration\Controllers\ProxyController::class, 'siteConfig'])->middleware('throttle:120,1');
+    Route::get('/redeem', [\Plugin\KcIntegration\Controllers\ProxyController::class, 'redeem'])->middleware('throttle:60,1');
+});

@@ -166,6 +166,8 @@ function Resolve-ComposePath {
 }
 
 # ============ Xboard container patches: check + auto-repair (2026-10-11) ============
+# RETIRED (v2.1.0): rollback-only asset. The xboard service is retired=true/inject=false, so normal
+# deploy/start/verify never reaches this block; it exists only to restore the Xboard rollback path.
 # Container rebuilds wipe in-container patches (1/3/4 once lost silently: checkout blocked / wrong commission).
 # Delegates to the node tool (same impl as manual/CI): verify first, auto-repair per tools/xboard-patches/README.md.
 # NOTE: keep this block ASCII-only -- PowerShell 5.1 mis-decodes UTF-8 Chinese comments in no-BOM files.
@@ -194,6 +196,8 @@ function Check-XboardPatches {
 }
 
 # ============ Xboard frontend injection (only for services with inject=true) ============
+# RETIRED (v2.1.0): rollback-only asset. Runs only when a manifest service sets inject=true (currently none);
+# normal deploy skips it. Re-enable to roll back to the Xboard-hosted site (see deploy-manifest.json note).
 function Apply-XboardInjection {
   Step "Applying Xboard frontend injection (custom_html + cache clear + octane reload)"
   $running = & $script:docker ps --filter "name=^xboard$" --format '{{.Names}}' 2>$null
@@ -284,10 +288,19 @@ function Deploy-Service {
   if ($svc.inject) { Apply-XboardInjection }
 }
 
+# ============ active (non-retired) services ============
+# v2.0.0 Stage 3.9: services with retired=true in the manifest (e.g. the retired xboard)
+#   are excluded from start/stop/deploy/verify/open-urls.
+#   The container is retained (stopped, not removed) and can be rolled back at any time:
+#   set inject=true again and start that service manually.
+function Get-ActiveServices {
+  return @($script:manifest.services | Where-Object { -not $_.retired })
+}
+
 # ============ open admin urls ============
 function Open-Urls {
   Step "Opening admin backends (if not auto-opened, visit manually)"
-  foreach ($svc in $script:manifest.services) {
+  foreach ($svc in Get-ActiveServices) {
     foreach ($u in $svc.access_urls) {
       try { Start-Process $u | Out-Null; Ok "Opened $u" }
       catch { Warn "Could not open $u automatically; visit manually" }
@@ -299,13 +312,13 @@ function Open-Urls {
 function Show-Status {
   Step "Current container status"
   $filters = @()
-  foreach ($svc in $script:manifest.services) {
+  foreach ($svc in Get-ActiveServices) {
     foreach ($c in $svc.containers) { $filters += '--filter'; $filters += "name=$c" }
   }
   & $script:docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' @filters
   Write-Host ""
   C White "Access URLs:"
-  foreach ($svc in $script:manifest.services) {
+  foreach ($svc in Get-ActiveServices) {
     foreach ($u in $svc.access_urls) { C White "  $($svc.name): $u" }
   }
 }
@@ -314,7 +327,8 @@ function Show-Status {
 function Verify-Deploy {
   Step "Verifying running containers against deploy-manifest.json"
   $expected = @()
-  foreach ($s in $script:manifest.services) { foreach ($c in $s.containers) { $expected += $c } }
+  $active = Get-ActiveServices
+  foreach ($s in $active) { foreach ($c in $s.containers) { $expected += $c } }
 
   $running = @(& $script:docker ps --format '{{.Names}}' 2>$null) | Where-Object { $_ }
   $all = @(& $script:docker ps -a --format '{{.Names}}' 2>$null) | Where-Object { $_ }
@@ -323,12 +337,24 @@ function Verify-Deploy {
   $extra   = $running | Where-Object { $expected -notcontains $_ }
 
   Write-Host ""
-  C White "Expected containers from manifest ($($expected.Count)):"
-  foreach ($s in $script:manifest.services) {
+  C White "Expected containers from manifest ($($expected.Count) active):"
+  foreach ($s in $active) {
     foreach ($c in $s.containers) {
       if ($running -contains $c) { C Green "  [UP]   $c  ($($s.name))" }
       elseif ($all -contains $c) { C Yellow "  [DOWN] $c  ($($s.name)) -- container exists but is stopped" }
       else { C Red "  [MISS] $c  ($($s.name)) -- not created" }
+    }
+  }
+  $retiredSvcs = @($script:manifest.services | Where-Object { $_.retired })
+  if ($retiredSvcs.Count -gt 0) {
+    Write-Host ""
+    C White "Retired services (excluded from drift check):"
+    foreach ($s in $retiredSvcs) {
+      foreach ($c in $s.containers) {
+        if ($running -contains $c) { C Yellow "  [UP]   $c  ($($s.name)) -- retired but still running; stop it to finish retirement" }
+        elseif ($all -contains $c) { C Green "  [KEPT] $c  ($($s.name)) -- stopped, container retained (rollback asset)" }
+        else { C Red "  [MISS] $c  ($($s.name)) -- container not created" }
+      }
     }
   }
   if ($extra.Count -gt 0) {
@@ -353,7 +379,8 @@ function List-Services {
   Step "Service list from deploy-manifest.json (manifest_version $($script:manifest.manifest_version))"
   Write-Host ""
   foreach ($s in $script:manifest.services) {
-    C Cyan "  [$($s.id)] $($s.name)  <$($s.type)>"
+    $tag = if ($s.retired) { ' [RETIRED]' } else { '' }
+    C Cyan "  [$($s.id)] $($s.name)  <$($s.type)>$tag"
     C White "      containers : $($s.containers -join ', ')"
     C White "      ports      : $($s.ports -join ', ')"
     if ($s.type -eq 'compose') { C White "      compose    : $($s.compose_path) (project $($s.project))" }
@@ -361,6 +388,7 @@ function List-Services {
     if ($s.health_url) { C White "      health     : $($s.health_url)" }
     C White "      access     : $($s.access_urls -join ', ')"
     C White "      inject     : $($s.inject)"
+    if ($s.retired) { C White "      retired    : true (excluded from start/deploy/verify; container stopped but kept for rollback)" }
   }
   Write-Host ""
   C White "To add/remove/rename a service, edit deploy-manifest.json only; both engines follow automatically."
@@ -402,9 +430,9 @@ C White "KC-PAY-GPT one-click deploy console  (version $SCRIPT_VERSION)"
 if ($Action -ne 'list') { Ensure-Docker }
 
 switch ($Action) {
-  'start'  { foreach ($svc in $script:manifest.services) { Start-Service $svc $false }; Show-Status; Open-Urls }
+  'start'  { foreach ($svc in Get-ActiveServices) { Start-Service $svc $false }; Show-Status; Open-Urls }
   'stop'   { foreach ($svc in $script:manifest.services) { Stop-Service $svc }; Show-Status }
-  'deploy' { foreach ($svc in $script:manifest.services) { Deploy-Service $svc }; Show-Status; Open-Urls }
+  'deploy' { foreach ($svc in Get-ActiveServices) { Deploy-Service $svc }; Show-Status; Open-Urls }
   'inject' { Apply-XboardInjection; Show-Status }
   'status' { Show-Status }
   'verify' { Verify-Deploy }

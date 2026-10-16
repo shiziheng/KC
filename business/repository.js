@@ -147,17 +147,17 @@ async function getOrCreateStorefrontUser(connection, user) {
     if (!/^\d{1,20}$/.test(userId)) throw new BusinessError(401, 'USER_AUTH_INVALID', '登录状态无效，请重新登录');
     const email = normalizeEmail(user.email);
     const emailFingerprint = accountFingerprint(email);
-    const businessUserRef = `usr_${accountFingerprint(`xboard:${userId}`).slice(0, 48)}`;
+    const businessUserRef = `usr_${accountFingerprint(`storefront:${userId}`).slice(0, 48)}`;
     await connection.execute(
         `INSERT IGNORE INTO biz_user_mappings
             (business_user_ref, legacy_system, legacy_user_ref, account_email_masked,
              account_fingerprint, status, source_channel)
-         VALUES (?, 'xboard', ?, ?, ?, 'active', 'storefront_mock')`,
+         VALUES (?, 'storefront', ?, ?, ?, 'active', 'storefront_mock')`,
         [businessUserRef, userId, maskEmail(email), emailFingerprint]
     );
     const [rows] = await connection.execute(
         `SELECT id, business_user_ref, status FROM biz_user_mappings
-          WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1 FOR UPDATE`,
+          WHERE legacy_system = 'storefront' AND legacy_user_ref = ? LIMIT 1 FOR UPDATE`,
         [userId]
     );
     const mapped = rows[0];
@@ -229,7 +229,7 @@ async function createStorefrontMockOrder(input, idempotencyRaw, user) {
             [orderRef, idempotencyKey, mappedUser.id, product.id, JSON.stringify(snapshot), product.currency,
                 product.selling_amount_minor, maskEmail(mappedUser.email), mappedUser.emailFingerprint]
         );
-        await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_created',
+        await insertAuditAs(connection, 'user', `storefront:${userId}`, 'customer', 'order.mock_created',
             'order', orderRef, 'MOCK_ORDER_CREATED', { product_id: productId, execution_mode: 'mock' });
         return { orderRef, reused: false };
     });
@@ -241,7 +241,7 @@ async function listStorefrontOrders(user) {
     const userId = String(user?.id || '').trim();
     if (!/^\d{1,20}$/.test(userId)) throw new BusinessError(401, 'USER_AUTH_INVALID', '登录状态无效，请重新登录');
     const [mappings] = await getBusinessPool().execute(
-        `SELECT id FROM biz_user_mappings WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1`,
+        `SELECT id FROM biz_user_mappings WHERE legacy_system = 'storefront' AND legacy_user_ref = ? LIMIT 1`,
         [userId]
     );
     if (!mappings.length) return [];
@@ -279,7 +279,7 @@ async function updateStorefrontMockOrder(orderRefRaw, action, user) {
     }
     return withBusinessTransaction(async (connection) => {
         const [mappings] = await connection.execute(
-            `SELECT id FROM biz_user_mappings WHERE legacy_system = 'xboard' AND legacy_user_ref = ? LIMIT 1`,
+            `SELECT id FROM biz_user_mappings WHERE legacy_system = 'storefront' AND legacy_user_ref = ? LIMIT 1`,
             [userId]
         );
         if (!mappings.length) throw new BusinessError(404, 'ORDER_NOT_FOUND', '订单不存在');
@@ -301,7 +301,7 @@ async function updateStorefrontMockOrder(orderRefRaw, action, user) {
                 `UPDATE biz_recharge_orders SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
                 [orderRef]
             );
-            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_paid', 'order', orderRef,
+            await insertAuditAs(connection, 'user', `storefront:${userId}`, 'customer', 'order.mock_paid', 'order', orderRef,
                 'MOCK_PAYMENT_CONFIRMED', { execution_mode: 'mock', no_money_moved: true });
             return { orderRef, reused: false, message: '模拟支付已确认；没有收款或余额变动' };
         }
@@ -316,7 +316,7 @@ async function updateStorefrontMockOrder(orderRefRaw, action, user) {
                     updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
                 [orderRef]
             );
-            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'order.mock_fulfilled', 'order', orderRef,
+            await insertAuditAs(connection, 'user', `storefront:${userId}`, 'customer', 'order.mock_fulfilled', 'order', orderRef,
                 'MOCK_FULFILLMENT_COMPLETED', { execution_mode: 'mock', external_call: false });
             return { orderRef, reused: false, message: '模拟履约已完成；没有调用 ZovoCard 或其他上游' };
         }
@@ -329,7 +329,7 @@ async function updateStorefrontMockOrder(orderRefRaw, action, user) {
                 `UPDATE biz_recharge_orders SET after_sales_status = 'pending', updated_at = CURRENT_TIMESTAMP(3) WHERE order_ref = ?`,
                 [orderRef]
             );
-            await insertAuditAs(connection, 'user', `xboard:${userId}`, 'customer', 'after_sales.requested', 'order', orderRef,
+            await insertAuditAs(connection, 'user', `storefront:${userId}`, 'customer', 'after_sales.requested', 'order', orderRef,
                 'AFTER_SALES_REQUESTED', { reason, refund_executed: false });
             return { orderRef, reused: false, message: '售后申请已提交，等待运营处理；不会自动退款' };
         }

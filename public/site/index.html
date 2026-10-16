@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加载中…</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F6F7F5;--card:#FFFFFF;--line:#E4E5DF;--line2:#D3D5CC;
+  --text:#1F2328;--sub:#6B6F76;--dim:#9AA0A6;
+  --brand:#0F6E56;--brand-deep:#0B5341;--brand-bg:#E6F4EF;
+  --amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB;
+  --radius:14px;--radius-sm:9px;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+a{color:var(--brand)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+header.site{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+header.site .inner{display:flex;align-items:center;gap:10px;height:60px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;cursor:pointer;flex:0 0 auto}
+.logo .dot{width:22px;height:22px;border-radius:7px;background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;overflow:hidden}
+.logo .dot img{width:100%;height:100%;object-fit:cover}
+nav.main{margin-left:auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+nav.main::-webkit-scrollbar{display:none}
+nav.main button{border:0;background:transparent;color:var(--sub);font-size:14px;padding:8px 12px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap}
+nav.main button:hover{color:var(--text);background:var(--brand-bg)}
+nav.main button.active{color:var(--brand-deep);background:var(--brand-bg);font-weight:600}
+.me{flex:0 0 auto;margin-left:8px;font-size:12.5px;color:var(--sub);display:flex;align-items:center;gap:8px}
+.me span{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{border:1px solid var(--line2);background:#fff;color:var(--text);padding:9px 16px;border-radius:var(--radius-sm);font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--brand-deep)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:5px 11px;font-size:12px}
+.btn.link{border:0;background:transparent;color:var(--brand);padding:4px 6px}
+main{padding:28px 0 70px}
+.hero{background:linear-gradient(135deg,var(--brand-bg),#fff);border:1px solid var(--line);border-radius:var(--radius);padding:44px 34px;margin-bottom:26px}
+.hero h1{font-size:27px;font-weight:700;letter-spacing:.2px}
+.hero p{color:var(--sub);margin-top:8px;max-width:600px}
+.hero .cta{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 16px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s,border-color .15s}
+.card:hover{box-shadow:0 6px 22px rgba(30,35,40,.07);border-color:var(--line2)}
+.card h3{font-size:15px;font-weight:650}
+.card .price{font-size:21px;font-weight:700;color:var(--brand-deep)}
+.card .price small{font-size:12px;color:var(--sub);font-weight:400}
+.card .foot{margin-top:auto;display:flex;align-items:center;gap:8px}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.pill.ok{background:#dcfce7;color:#166534}
+.pill.gray{background:#ECEBE6;color:var(--sub)}
+.pill.red{background:var(--red-bg);color:var(--red)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:16px}
+.panel h2{font-size:16px;font-weight:650;margin-bottom:12px}
+.kv{display:flex;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.kv:last-child{border-bottom:0}
+.kv .k{width:120px;color:var(--sub);flex:0 0 120px}
+.kv .v{flex:1}
+table.kc{width:100%;border-collapse:collapse;font-size:13px}
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.kc th,table.kc td{white-space:nowrap}
+table.kc th{text-align:left;padding:9px 10px;background:#F6F5F1;color:var(--sub);font-weight:500;font-size:12px;border-bottom:1px solid var(--line)}
+table.kc td{padding:9px 10px;border-bottom:1px solid var(--line)}
+.cdk{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#F6F5F1;border:1px solid var(--line);border-radius:6px;padding:2px 7px;display:inline-block;word-break:break-all}
+.empty{color:var(--dim);text-align:center;padding:36px 0;font-size:13px}
+.wallet-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:4px 0 16px;border-bottom:1px dashed var(--line);margin-bottom:14px}
+.wallet-bal .k{color:var(--sub);font-size:12.5px}
+.wallet-bal .bal{font-size:30px;font-weight:700;color:var(--brand-deep);line-height:1.3}
+.wallet-acts{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+.presets{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.preset{border:1px solid var(--line2);background:#fff;border-radius:var(--radius-sm);padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--text)}
+.preset:hover{border-color:var(--brand)}
+.preset.on{border-color:var(--brand);background:var(--brand-bg);color:var(--brand-deep);font-weight:600}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field input,.field select,.field textarea{width:100%;border:1px solid var(--line2);border-radius:var(--radius-sm);padding:10px 12px;font-size:13.5px;font-family:inherit}
+.field textarea{resize:vertical;min-height:96px;font-size:13px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,110,86,.12)}
+.qty{display:inline-flex;align-items:center;gap:0;border:1px solid var(--line2);border-radius:var(--radius-sm);overflow:hidden}
+.qty button{border:0;background:#fff;width:34px;height:36px;font-size:16px;cursor:pointer;color:var(--sub)}
+.qty button:hover{background:var(--brand-bg);color:var(--brand-deep)}
+.qty input{width:50px;text-align:center;border:0;border-left:1px solid var(--line2);border-right:1px solid var(--line2);height:36px;font-family:inherit;font-size:14px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal.show{display:flex}
+.modal .box{background:#fff;border-radius:var(--radius);padding:26px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto}
+.modal .box h3{font-size:17px;font-weight:650;margin-bottom:4px}
+.modal .box .sub{color:var(--sub);font-size:12.5px;margin-bottom:18px}
+.msg{font-size:12.5px;min-height:18px;margin-top:10px}
+.msg.err{color:var(--red)}
+.msg.ok{color:#166534}
+.rd-hint{color:var(--sub);font-size:13px;margin-bottom:12px}
+.rd-verified{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;background:var(--brand-bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px}
+.rd-verified .k{color:var(--sub)}
+.rd-track{height:5px;background:#ECEBE6;border-radius:3px;overflow:hidden;margin-top:16px}
+.rd-bar{height:100%;width:0;background:var(--brand);transition:width .4s ease}
+.rd-bar.err{background:var(--red)}
+.rd-status{font-size:13px;color:var(--sub);margin-top:8px}
+.rd-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:200}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+footer.site{border-top:1px solid var(--line);padding:22px 0;color:var(--dim);font-size:12px;text-align:center}
+.foot-links{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:8px}
+.foot-links .btn.link{font-size:12.5px}
+.dp{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dp .ent{font-size:21px;font-weight:700;color:var(--brand-deep);line-height:1.3}
+.dp .was{font-size:12px;color:var(--dim);text-decoration:line-through}
+.dp .off{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--brand-bg);color:var(--brand-deep);font-weight:600}
+.save{font-size:12px;color:var(--brand-deep);font-weight:500}
+.faq{display:flex;flex-direction:column;gap:0;margin-top:6px}
+.faq .qa{padding:11px 0;border-bottom:1px dashed var(--line)}
+.faq .qa:last-child{border-bottom:0}
+.faq .q{font-size:13.5px;font-weight:600}
+.faq .a{color:var(--sub);font-size:12.5px;margin-top:3px}
+/* 订单筛选 tab（Stage 3.6） */
+.otabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.otab{border:1px solid var(--line2);background:#fff;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--sub)}
+.otab:hover{border-color:var(--brand)}
+.otab.on{border-color:var(--brand);background:var(--brand-bg);color:var(--brand-deep);font-weight:600}
+.otab .n{display:inline-block;margin-left:6px;font-size:11px;padding:0 6px;border-radius:999px;background:var(--line);color:var(--sub)}
+.otab.on .n{background:var(--brand);color:#fff}
+tr.orow{cursor:pointer}
+tr.orow:hover{background:var(--brand-bg)}
+/* 待支付倒计时（Stage 3.6） */
+.countdown{font-size:11px;color:var(--amber);margin-left:6px}
+.countdown.dead{color:var(--red)}
+/* 订单进度时间线（Stage 3.6） */
+.tl{display:flex;flex-direction:column}
+.tl .item{display:flex;gap:10px;padding:9px 0;align-items:flex-start}
+.tl .dot{width:10px;height:10px;border-radius:50%;background:var(--line2);flex:0 0 10px;margin-top:5px}
+.tl .item.done .dot{background:var(--brand)}
+.tl .item.doing .dot{background:var(--amber)}
+.tl .item.fail .dot{background:var(--red)}
+.tl .main{flex:1}
+.tl .main .k{font-size:13.5px;font-weight:600}
+.tl .main small{display:block;color:var(--sub);font-size:12px}
+.tl .time{color:var(--dim);font-size:12px;flex:0 0 auto}
+.as-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+/* 充值页改造（Stage 3.10）：网络徽标 / 精确金额 / 小数位强提醒 */
+.net-badge{display:inline-block;font-size:11px;font-weight:700;background:var(--brand-bg);color:var(--brand-deep);border:1px solid var(--brand);border-radius:999px;padding:1px 9px;vertical-align:middle}
+.rc-net-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.rc-net-warn{font-size:11.5px;color:var(--red)}
+.rc-exact{background:var(--red-bg);border:1px solid #F0C9C9;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:12px}
+.rc-exact-k{font-size:12px;color:var(--red);font-weight:600}
+.rc-exact-v{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:5px}
+.rc-exact-v b{font-size:25px;font-weight:800;color:var(--red);letter-spacing:.4px;font-family:ui-monospace,Consolas,monospace}
+.rc-exact-v .unit{font-size:12px;color:var(--sub)}
+.rc-exact-warn{font-size:12px;color:var(--red);margin-top:7px;font-weight:700}
+.rc-fee{font-size:12px;color:var(--sub);background:#F6F5F1;border:1px dashed var(--line);border-radius:var(--radius-sm);padding:9px 11px;margin:10px 0}
+.rc-note{font-size:12px;color:var(--sub);margin:6px 0 10px}
+.rc-ack{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;font-weight:600;margin:10px 0;cursor:pointer}
+.rc-ack input{margin-top:3px;flex:0 0 auto}
+.rc-copy{font-size:11px}
+.hidden{display:none!important}
+@media (max-width:640px){
+  .wrap{padding:0 14px}
+  nav.main{gap:2px}
+  nav.main button{padding:7px 8px;font-size:12.5px}
+  .logo{font-size:14px}
+  .hero{padding:28px 20px}
+  .hero h1{font-size:21px}
+}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap inner">
+    <div class="logo" onclick="go('home')"><span class="dot" id="logoDot"></span><span id="brandName">…</span></div>
+    <nav class="main">
+      <button data-nav="recharge" onclick="openCategory('recharge')">代充</button>
+      <button data-nav="account" onclick="openCategory('account')">成品号</button>
+      <button data-nav="website" onclick="openCategory('website')">建站服务</button>
+      <button data-nav="pack" onclick="go('pack')">权益包</button>
+      <button data-nav="orders" onclick="go('orders')">我的订单</button>
+    </nav>
+    <div class="me" id="meBox"></div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section id="view-home" class="view">
+      <div class="hero">
+        <h1 id="heroTitle">欢迎</h1>
+        <p id="heroSub"></p>
+        <div class="cta">
+          <button class="btn primary" onclick="openCategory('recharge')">浏览商品</button>
+          <button class="btn" onclick="go('pack')">查看权益包</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>为什么更省</h2>
+        <div class="grid" style="margin-top:6px">
+          <div class="card"><h3>市面常见做法</h3><div style="color:var(--sub);font-size:12.5px">先充值数百至数千美元起，才够格享受低价长期套餐</div></div>
+          <div class="card"><h3>KC 的做法</h3><div style="color:var(--sub);font-size:12.5px">开通权益包，按「权益价」单次下单，用多少花多少，不用先压资金</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>三步完成</h2>
+        <div class="grid" style="margin-top:6px">
+          <div class="card"><h3>① 选商品</h3><div style="color:var(--sub);font-size:12.5px">代充 / 成品号 / 建站服务，明码标价</div></div>
+          <div class="card"><h3>② 余额下单</h3><div style="color:var(--sub);font-size:12.5px">钱包余额支付，有权益包时自动按权益价结算</div></div>
+          <div class="card"><h3>③ 即时发卡</h3><div style="color:var(--sub);font-size:12.5px">支付成功立即发放卡密，兑换即完成开通</div></div>
+        </div>
+      </div>
+
+      <div class="panel"><h2>热门商品</h2><div class="grid" id="homeGrid" style="margin-top:6px"></div></div>
+
+      <div class="panel"><h2>权益包推介</h2><div class="grid" id="homePackGrid" style="margin-top:6px"></div></div>
+
+      <div class="panel">
+        <h2>常见问题</h2>
+        <div class="faq">
+          <div class="qa"><div class="q">下单后多久到货？</div><div class="a">支付成功后立即发放卡密；在「我的订单」查看卡密，兑换即完成开通。</div></div>
+          <div class="qa"><div class="q">权益包有什么用？</div><div class="a">开通权益包后，后续下单可享「权益价」，每次下单抵扣 1 次权益，用多少花多少。</div></div>
+          <div class="qa"><div class="q">怎么充值？</div><div class="a">在右上角「钱包」发起充值，支持 USDT（TRC20）；到账后余额即可用于下单。</div></div>
+          <div class="qa"><div class="q">权益包和代充是什么关系？</div><div class="a">买权益包不等于代充，它只是「更便宜下单」的资格；真正开通仍需按正常流程下单并兑换卡密。</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-catalog" class="view hidden">
+      <div class="panel"><h2 id="catTitle">全部商品</h2><div class="grid" id="catalogGrid" style="margin-top:6px"></div></div>
+    </section>
+
+    <section id="view-detail" class="view hidden">
+      <div class="panel">
+        <button class="btn link" onclick="backToCatalog()">← 返回商品列表</button>
+        <h2 id="d-name" style="margin-top:12px">商品</h2>
+        <div class="kv"><span class="k">单价</span><span class="v" id="d-price">-</span></div>
+        <div class="kv"><span class="k">库存状态</span><span class="v" id="d-avail">-</span></div>
+        <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button onclick="stepQty(-1)">−</button><input id="d-qty" value="1" readonly><button onclick="stepQty(1)">+</button></span></span></div>
+        <div class="kv" style="border-bottom:0;padding-top:14px">
+          <span class="k"></span>
+          <span class="v" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn primary" id="d-buy" onclick="buy()">立即购买</button>
+            <span class="msg" id="d-msg"></span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-pack" class="view hidden">
+      <div class="panel">
+        <h2>权益包</h2>
+        <div id="packBox"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+    <section id="view-orders" class="view hidden">
+      <div class="panel">
+        <h2>我的订单</h2>
+        <div id="ordersBox"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+    <section id="view-wallet" class="view hidden">
+      <div class="panel">
+        <h2>我的钱包</h2>
+        <div class="wallet-top">
+          <div class="wallet-bal"><span class="k">可用余额</span><div class="bal" id="w-bal">—</div></div>
+          <div class="wallet-acts">
+            <button class="btn primary" onclick="openRecharge()">充值</button>
+            <button class="btn" onclick="go('orders')">我的订单</button>
+          </div>
+        </div>
+        <div class="presets" id="w-presets"></div>
+        <h3 style="font-size:14px;font-weight:650;margin:6px 0 10px">流水明细</h3>
+        <div id="w-ledgerBox"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+    <section id="view-redeem" class="view hidden">
+      <div class="panel">
+        <h2>兑换卡密 · 完成开通</h2>
+        <div id="rd-step1">
+          <p class="rd-hint">输入或粘贴你的代充卡密，验证通过后进入开通。</p>
+          <div class="field"><label>卡密 / CDK</label><input id="rd-cdk" placeholder="请输入卡密" maxlength="64" autocomplete="off"></div>
+          <button class="btn primary" id="rd-verify" onclick="verifyCdk()">验证卡密</button>
+          <div class="msg" id="rd-msg1"></div>
+        </div>
+        <div id="rd-step2" class="hidden">
+          <div class="rd-verified">
+            <span class="k">卡密</span><span class="cdk" id="rd-cdk-show"></span>
+            <span id="rd-plan" style="color:var(--brand-deep)"></span>
+          </div>
+          <div class="field" style="margin-top:14px">
+            <label>会话凭证（Session JSON）</label>
+            <textarea id="rd-session" placeholder="粘贴完整 Session JSON（含 accessToken 等字段）"></textarea>
+          </div>
+          <div class="rd-actions">
+            <button class="btn primary" id="rd-start" onclick="startActivation()">开始开通</button>
+            <button class="btn" onclick="resetRedeem()">重新输入卡密</button>
+            <span class="msg" id="rd-msg2"></span>
+          </div>
+          <div id="rd-progress" class="hidden">
+            <div class="rd-track"><div class="rd-bar" id="rd-bar"></div></div>
+            <div class="rd-status" id="rd-status"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">
+  <div class="foot-links">
+    <button class="btn link" onclick="openHelp('ticket')">工单支持</button>
+    <button class="btn link" onclick="openHelp('kb')">使用文档</button>
+    <button class="btn link" onclick="openHelp('invite')">邀请好友</button>
+  </div>
+  <div id="footText">—</div>
+</div></footer>
+
+<!-- 帮助与支持（Stage 3.7 · G11：工单/知识库/邀请 保留面去向） -->
+<div class="modal" id="helpModal">
+  <div class="box" style="max-width:420px">
+    <h3 id="help-title">帮助</h3>
+    <div class="sub" id="help-body" style="white-space:pre-line"></div>
+    <div style="margin-top:16px;text-align:right"><button class="btn link" onclick="closeHelp()">关闭</button></div>
+  </div>
+</div>
+
+<!-- 登录 / 注册 -->
+<div class="modal" id="authModal">
+  <div class="box">
+    <h3 id="authTitle">登录</h3>
+    <div class="sub" id="authSub">登录后可下单并查看订单</div>
+    <div class="field"><label>邮箱</label><input id="au-email" type="email" autocomplete="username" placeholder="you@example.com"></div>
+    <div class="field"><label>密码</label><input id="au-pass" type="password" autocomplete="current-password" placeholder="至少 6 位"></div>
+    <div class="field hidden" id="au-name-field"><label>昵称（可选）</label><input id="au-name" placeholder="如何称呼您"></div>
+    <button class="btn primary" id="au-submit" style="width:100%" onclick="submitAuth()">登 录</button>
+    <div class="msg" id="au-msg"></div>
+    <div style="margin-top:12px;font-size:12.5px;color:var(--sub);text-align:center">
+      <span id="authSwitch"></span>
+    </div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeAuth()">取消</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 充值（Stage 3.10 改造：精确金额 + 小数位强提醒 + 网络标识 + 二次确认；BEpusdt 收款模拟） -->
+<div class="modal" id="rcModal">
+  <div class="box" style="max-width:440px">
+    <h3>充值 <span class="net-badge">USDT · TRC20</span></h3>
+    <div class="sub" id="rc-sub">选择充值金额，按下单后给出的<b>精确金额</b>转入 USDT（TRC20）</div>
+    <div id="rc-pick">
+      <div class="presets" id="rc-presets"></div>
+      <div class="field"><label>自定义金额（$，整数）</label><input id="rc-custom" type="number" min="1" step="1" placeholder="如 200"></div>
+      <p class="rc-note">单笔限额 <b id="rc-limits">$1 ~ $10,000</b>；到账金额 = 你填写的金额。</p>
+      <button class="btn primary" id="rc-gen" style="width:100%" onclick="startRecharge()">生成收款地址</button>
+    </div>
+    <div id="rc-pay" class="hidden">
+      <div class="rc-net-bar"><span class="net-badge">USDT · TRC20</span><span class="rc-net-warn">仅限 TRC20 网络，选错链资金将无法找回</span></div>
+      <div class="rc-exact">
+        <div class="rc-exact-k">请转入下面这个「精确金额」（连小数点后全部位数一起输入）</div>
+        <div class="rc-exact-v"><b id="rc-exact-amount">—</b><span class="unit">USDT</span>
+          <button class="btn sm" onclick="copyRcExact()">复制精确金额</button></div>
+        <div class="rc-exact-warn">⚠ 少一位、多一分、或四舍五入成整数，系统都无法自动识别，将转人工处理</div>
+      </div>
+      <div class="kv"><span class="k">到账金额</span><span class="v"><b id="rc-amount"></b><br><span style="color:var(--sub);font-size:12px">精确金额中的小数尾数为「认单标识」，不额外入账</span></span></div>
+      <div class="kv"><span class="k">收款地址</span><span class="v"><span class="cdk" id="rc-addr"></span><br><button class="btn sm rc-copy" style="margin-top:6px" onclick="copyRcAddr()">复制地址</button></span></div>
+      <div class="kv"><span class="k">充值单号</span><span class="v" id="rc-no"></span></div>
+      <div class="kv"><span class="k">支付时限</span><span class="v" id="rc-count"><span class="countdown"></span></span></div>
+      <div class="rc-fee">手续费由你的钱包/交易所收取。<b>请确保对方「实际收到」的金额 = 上方精确金额</b>（若用交易所提币，点「到账数量 ⇆」把到账数量填成精确金额）。</div>
+      <label class="rc-ack"><input type="checkbox" id="rc-ack" onchange="rcSyncConfirm()"> 我已确认：网络为 TRC20，转账金额与上方精确金额完全一致</label>
+      <button class="btn primary" id="rc-confirm" style="width:100%" disabled onclick="confirmRecharge()">我已支付（模拟到账）</button>
+      <p class="rc-note">未到账请勿重复转账；凭充值单号与 TxID 联系客服核对。当前为<b>模拟收款</b>环境。</p>
+      <div class="msg" id="rc-copy-msg"></div>
+    </div>
+    <div class="msg" id="rc-msg"></div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeRecharge()">关闭</button></div>
+  </div>
+</div>
+
+<!-- 订单详情（Stage 3.6 · G6：进度时间线 + 售后/客服入口） -->
+<div class="modal" id="orderModal">
+  <div class="box" style="max-width:440px">
+    <h3>订单详情</h3>
+    <div class="sub" id="od-sub">—</div>
+    <div class="kv"><span class="k">订单号</span><span class="v"><span class="cdk" id="od-no"></span></span></div>
+    <div class="kv"><span class="k">商品</span><span class="v" id="od-sku"></span></div>
+    <div class="kv"><span class="k">金额</span><span class="v" id="od-amount"></span></div>
+    <div class="kv"><span class="k">卡密</span><span class="v" id="od-cdk"></span></div>
+    <h3 style="font-size:14px;font-weight:650;margin:16px 0 4px">订单进度</h3>
+    <div class="tl" id="od-tl"></div>
+    <div class="as-btns">
+      <button class="btn" onclick="openSupport()">联系客服</button>
+      <button class="btn primary" onclick="openAfterSales()">申请售后</button>
+    </div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeOrder()">关闭</button></div>
+  </div>
+</div>
+
+<!-- 申请售后（Stage 3.6 · G6） -->
+<div class="modal" id="asModal">
+  <div class="box">
+    <h3>申请售后</h3>
+    <div class="sub" id="as-sub">请描述遇到的问题，客服会尽快处理</div>
+    <div class="field"><label>问题类型</label>
+      <select id="as-type">
+        <option value="failed">开通失败</option>
+        <option value="timeout">超时未到账</option>
+        <option value="refund">申请退款</option>
+        <option value="other">其他问题</option>
+      </select>
+    </div>
+    <div class="field"><label>问题描述</label><textarea id="as-msg" placeholder="请说明遇到的问题"></textarea></div>
+    <button class="btn primary" id="as-submit" style="width:100%" onclick="submitAfterSales()">提交</button>
+    <div class="msg" id="as-feedback"></div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeAfterSales()">取消</button></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // KC 原生主站前台（Stage 3.1）：platform 租户复用 kc_customers，会话令牌不落库。
+  var CATEGORIES = [
+    { key: 'recharge', name: '代充' },
+    { key: 'account', name: '成品号' },
+    { key: 'website', name: '建站服务' }
+  ];
+  var state = {
+    brand: { brand_name: '', primary_color: '', accent_color: '', hero_title: '', hero_subtitle: '', footer_text: '', support_contact: '' },
+    token: localStorage.getItem('kc_site_customer_token') || '',
+    customer: null,
+    catalog: [],
+    detail: null,
+    mode: 'recharge',
+    authMode: 'login'
+  };
+
+  function el(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  function toast(text) {
+    var t = el('toast'); t.textContent = text; t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+  function money(v) { return '$' + Number(v || 0).toFixed(2); }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { 'Content-Type': 'application/json' };
+    if (state.token) headers['X-Customer-Token'] = state.token;
+    return fetch(path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j.__status = r.status; return j; }); });
+  }
+
+  function applyBrand(b) {
+    if (b.primary_color && /^#?[0-9a-fA-F]{3,8}$/.test(b.primary_color)) {
+      var c = b.primary_color.charAt(0) === '#' ? b.primary_color : '#' + b.primary_color;
+      document.documentElement.style.setProperty('--brand', c);
+    }
+    var name = b.brand_name || 'KC 直供';
+    el('brandName').textContent = name;
+    document.title = name;
+    el('heroTitle').textContent = b.hero_title || name;
+    el('heroSub').textContent = b.hero_subtitle || '多上游直供，下单即得，简单可靠。';
+    if (b.logo_url) el('logoDot').innerHTML = '<img src="' + esc(b.logo_url) + '" alt="">';
+    el('footText').textContent = b.footer_text || (name + (b.support_contact ? ' · 客服 ' + b.support_contact : ''));
+  }
+
+  function setMe() {
+    var box = el('meBox');
+    if (state.customer) {
+      box.innerHTML = '<span>' + esc(state.customer.display_name || state.customer.email) + '</span>' +
+        '<button class="btn sm" onclick="go(\'wallet\')">钱包</button>' +
+        '<button class="btn sm" onclick="logout()">退出</button>';
+    } else {
+      box.innerHTML = '<button class="btn sm" onclick="openAuth(\'login\')">登录</button><button class="btn sm primary" onclick="openAuth(\'register\')">注册</button>';
+    }
+  }
+
+  function navActive(v) {
+    document.querySelectorAll('nav.main button').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-nav') === v);
+    });
+  }
+
+  function go(view) {
+    ['home', 'catalog', 'detail', 'pack', 'orders', 'wallet', 'redeem'].forEach(function (v) {
+      el('view-' + v).classList.toggle('hidden', v !== view);
+    });
+    window.scrollTo(0, 0);
+    if (view === 'orders') { navActive('orders'); loadOrders(); }
+    if (view === 'pack') { navActive('pack'); loadPack(); }
+    if (view === 'wallet') { navActive(''); loadWallet(); }
+    if (view === 'home') { navActive('home'); }
+  }
+
+  function openCategory(key) {
+    state.mode = key;
+    go('catalog');
+    navActive(key);
+    renderCatalog();
+  }
+  function backToCatalog() { go('catalog'); navActive(state.mode); renderCatalog(); }
+
+  function priceHtml(item) {
+    if (!item.available || item.price == null) return '<div class="price" style="color:var(--dim);font-size:15px">暂时缺货</div>';
+    if (item.entitlement_price != null) {
+      var base = item.base_price != null ? item.base_price : item.price;
+      return '<div class="dp"><span class="ent">' + money(item.entitlement_price) + '</span>' +
+        '<span class="was">' + money(base) + '</span>' +
+        '<span class="off">权益价</span></div>' +
+        '<div class="save">用 1 次权益 · 省 ' + money(item.entitlement_discount) + '</div>';
+    }
+    return '<div class="price">' + money(item.price) + ' <small>/份</small></div>';
+  }
+
+  function cardHtml(item) {
+    var pill = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    return '<div class="card"><h3>' + esc(item.name) + '</h3>' + priceHtml(item) + '<div class="foot">' + pill +
+      '<button class="btn sm primary" style="margin-left:auto" onclick="openDetail(\'' + esc(item.sku) + '\')">查看</button></div></div>';
+  }
+
+  function byCategory(key) { return state.catalog.filter(function (i) { return (i.category || 'recharge') === key; }); }
+
+  function renderCatalog() {
+    var catName = (CATEGORIES.filter(function (c) { return c.key === state.mode; })[0] || {}).name || '全部商品';
+    el('catTitle').textContent = catName;
+    var items = byCategory(state.mode);
+    el('catalogGrid').innerHTML = items.length ? items.map(cardHtml).join('') : '<div class="empty">该分类暂无可售商品</div>';
+  }
+
+  function renderHome() {
+    var featured = state.catalog.filter(function (i) { return i.available; }).slice(0, 4);
+    el('homeGrid').innerHTML = featured.length ? featured.map(cardHtml).join('') : '<div class="empty">暂无可售商品</div>';
+  }
+
+  function loadCatalog() {
+    return api('/api/tenant/catalog').then(function (r) {
+      state.catalog = (r.success && Array.isArray(r.data)) ? r.data : [];
+      renderHome();
+    });
+  }
+
+  function loadHomePacks() {
+    var box = el('homePackGrid');
+    if (!box) return;
+    api('/api/tenant/packs').then(function (r) {
+      var packs = (r.success && Array.isArray(r.data)) ? r.data : [];
+      box.innerHTML = packs.length ? packs.map(function (p) {
+        return '<div class="card"><h3>' + esc(p.name) + '</h3>' +
+          '<div class="price">' + money(p.price) + ' <small>/份</small></div>' +
+          '<div style="color:var(--sub);font-size:12px">含 ' + (Number(p.uses) || 0) + ' 次权益' + (Number(p.period_days) > 0 ? ' · 有效期 ' + p.period_days + ' 天' : '') + '</div>' +
+          '<div class="foot"><button class="btn sm primary" style="margin-left:auto" onclick="go(\'pack\')">去开通</button></div></div>';
+      }).join('') : '<div class="empty">暂无可开通权益包</div>';
+    });
+  }
+
+  function openDetail(sku) {
+    var item = state.catalog.filter(function (i) { return i.sku === sku; })[0];
+    if (!item) return;
+    state.detail = item;
+    el('d-name').textContent = item.name;
+    el('d-price').innerHTML = (!item.available || item.price == null) ? '—' : (item.entitlement_price != null
+      ? '<span class="ent">' + money(item.entitlement_price) + '</span> <span class="was">' + money(item.base_price != null ? item.base_price : item.price) + '</span> '
+        + '<span class="save">用 1 次权益 · 省 ' + money(item.entitlement_discount) + '</span>'
+      : money(item.price));
+    el('d-avail').innerHTML = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    el('d-qty').value = '1';
+    el('d-msg').textContent = '';
+    el('d-buy').disabled = !item.available;
+    go('detail');
+  }
+  function stepQty(d) {
+    var v = Math.max(1, Math.min(100, (parseInt(el('d-qty').value, 10) || 1) + d));
+    el('d-qty').value = String(v);
+  }
+
+  function buy() {
+    if (!state.detail) return;
+    if (!state.customer) { openAuth('login'); return; }
+    var qty = parseInt(el('d-qty').value, 10) || 1;
+    var sku = state.detail.sku;
+    var msg = el('d-msg'); msg.className = 'msg'; msg.textContent = '正在下单…';
+    el('d-buy').disabled = true;
+    api('/api/tenant/quote', { method: 'POST', body: { sku: sku, qty: qty } }).then(function (q) {
+      if (!q.success) throw new Error(q.message || '报价失败');
+      var orderNo = 'site_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      return api('/api/tenant/orders', { method: 'POST', body: { quote_id: q.data.quote_id, client_order_no: orderNo } });
+    }).then(function (o) {
+      if (!o.success) {
+        if (o.__status === 401) { clearSession(); openAuth('login'); }
+        if (o.code === 'INSUFFICIENT_BALANCE') {
+          msg.className = 'msg err';
+          msg.innerHTML = esc(o.message || '余额不足') + ' <button class="btn link" onclick="openRecharge()">去充值</button>';
+          el('d-buy').disabled = false;
+          return;
+        }
+        throw new Error(o.message || '下单失败');
+      }
+      msg.className = 'msg ok';
+      msg.innerHTML = '下单成功，订单号 ' + esc(o.data.order_id) + (o.data.cdk ? '<br>交付卡密：<span class="cdk">' + esc(o.data.cdk) + '</span>' : '');
+      toast('已下单');
+      el('d-buy').disabled = false;
+    }).catch(function (e) {
+      msg.className = 'msg err'; msg.textContent = e.message || '下单失败';
+      el('d-buy').disabled = false;
+    });
+  }
+
+  // ── 订单中心（Stage 3.6 · G6）：状态筛选 / 详情时间线 / 售后 / 客服 ──
+  // 说明：KC 原生订单在下单时即从顾客钱包扣款（无「待支付」态），故筛选口径为 全部/处理中/已完成/失败；
+  //       「倒计时」落在确有 30 分钟支付时限的充值单上（见 rcSetCountdown），与 30 分钟支付时限同源。
+  var orderState = { list: [], filter: 'all', current: null };
+
+  function orderBucket(st) { return st === 'delivered' ? 'done' : (st === 'failed' ? 'failed' : 'processing'); }
+  function statusPill(st) {
+    if (st === 'delivered') return '<span class="pill ok">已完成</span>';
+    if (st === 'failed') return '<span class="pill red">失败</span>';
+    return '<span class="pill gray">处理中</span>';
+  }
+
+  function loadOrders() {
+    if (!state.customer) {
+      el('ordersBox').innerHTML = '<div class="empty">请先登录后查看订单<br><br><button class="btn primary" onclick="openAuth(\'login\')">登录 / 注册</button></div>';
+      return;
+    }
+    el('ordersBox').innerHTML = '<div class="empty">加载中…</div>';
+    api('/api/tenant/orders').then(function (r) {
+      if (!r.success) {
+        if (r.__status === 401) clearSession();
+        el('ordersBox').innerHTML = '<div class="empty">' + esc(r.message || '加载失败') + '</div>';
+        return;
+      }
+      orderState.list = r.data || [];
+      renderOrders();
+    });
+  }
+
+  function renderOrders() {
+    var list = orderState.list;
+    var n = { all: list.length, processing: 0, done: 0, failed: 0 };
+    list.forEach(function (o) { n[orderBucket(o.status)]++; });
+    var TABS = [['all', '全部'], ['processing', '处理中'], ['done', '已完成'], ['failed', '失败']];
+    var tabs = '<div class="otabs">' + TABS.map(function (t) {
+      return '<button class="otab' + (orderState.filter === t[0] ? ' on' : '') + '" onclick="filterOrders(\'' + t[0] + '\')">' +
+        t[1] + '<span class="n">' + (n[t[0]] || 0) + '</span></button>';
+    }).join('') + '</div>';
+
+    var rows = list.filter(function (o) { return orderState.filter === 'all' || orderBucket(o.status) === orderState.filter; });
+    var body;
+    if (!list.length) {
+      tabs = '';
+      body = '<div class="empty">还没有订单</div>';
+    } else if (!rows.length) {
+      body = '<div class="empty">该状态下暂无订单</div>';
+    } else {
+      body = '<div class="tbl-wrap"><table class="kc"><thead><tr><th>订单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>时间</th></tr></thead><tbody>' +
+        rows.map(function (o) {
+          return '<tr class="orow" onclick="openOrder(\'' + esc(o.order_id) + '\')">' +
+            '<td><span class="cdk">' + esc(o.order_id) + '</span></td>' +
+            '<td>' + esc(o.sku) + '</td><td>' + o.qty + '</td><td>' + money(o.amount) + '</td>' +
+            '<td>' + statusPill(o.status) + '</td>' +
+            '<td>' + esc(o.created_at || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    el('ordersBox').innerHTML = tabs + body;
+  }
+
+  function filterOrders(k) { orderState.filter = k; renderOrders(); }
+
+  function openOrder(orderNo) {
+    var o = orderState.list.filter(function (x) { return x.order_id === orderNo; })[0];
+    if (!o) return;
+    orderState.current = o;
+    el('od-sub').textContent = o.status === 'delivered' ? '订单已完成' : (o.status === 'failed' ? '订单未成功' : '订单处理中');
+    el('od-no').textContent = o.order_id;
+    el('od-sku').textContent = o.sku + ' × ' + o.qty;
+    el('od-amount').textContent = money(o.amount);
+    el('od-cdk').innerHTML = o.cdk ? '<span class="cdk">' + esc(o.cdk) + '</span>' : '—';
+    el('od-tl').innerHTML = timelineHtml(o);
+    el('orderModal').classList.add('show');
+  }
+  function closeOrder() { el('orderModal').classList.remove('show'); }
+
+  function timelineHtml(o) {
+    var delivered = o.status === 'delivered', failed = o.status === 'failed';
+    var t0 = esc(o.created_at || '—');
+    var t1 = o.updated_at ? esc(o.updated_at) : '—';
+    var n3 = failed
+      ? { k: '交付失败', d: '订单未成功，可申请售后处理', st: 'fail', t: t1 }
+      : (delivered
+        ? { k: '卡密已发放', d: '卡密已交付，可前往兑卡页完成开通', st: 'done', t: t1 }
+        : { k: '处理中', d: '系统正在为你处理，请稍候', st: 'doing', t: '—' });
+    var n4 = failed
+      ? { k: '已退款', d: '款项已退回你的钱包余额', st: 'done', t: t1 }
+      : (delivered
+        ? { k: '交付完成', d: '如未开通，请到「兑卡」完成激活', st: 'done', t: t1 }
+        : { k: '待完成', d: '处理完成后卡密将自动发放', st: '', t: '—' });
+    var nodes = [
+      { k: '已下单', d: '订单已创建', st: 'done', t: t0 },
+      { k: '已支付', d: '支付方式：账户余额', st: 'done', t: t0 },
+      n3, n4
+    ];
+    return nodes.map(function (x) {
+      return '<div class="item ' + (x.st || '') + '"><span class="dot"></span>' +
+        '<div class="main"><span class="k">' + esc(x.k) + '</span><small>' + esc(x.d) + '</small></div>' +
+        '<span class="time">' + x.t + '</span></div>';
+    }).join('');
+  }
+
+  function openAfterSales() {
+    if (!orderState.current) return;
+    el('as-sub').textContent = '订单号：' + orderState.current.order_id;
+    el('as-msg').value = '';
+    el('as-feedback').textContent = ''; el('as-feedback').className = 'msg';
+    el('as-submit').disabled = false;
+    el('asModal').classList.add('show');
+  }
+  function closeAfterSales() { el('asModal').classList.remove('show'); }
+
+  function submitAfterSales() {
+    if (!orderState.current) return;
+    var msg = el('as-msg').value.trim();
+    if (!msg) { el('as-feedback').className = 'msg err'; el('as-feedback').textContent = '请填写问题描述'; return; }
+    el('as-submit').disabled = true;
+    el('as-feedback').className = 'msg'; el('as-feedback').textContent = '提交中…';
+    api('/api/tenant/after-sales', { method: 'POST', body: { order_no: orderState.current.order_id, request_type: el('as-type').value, message: msg } }).then(function (r) {
+      el('as-submit').disabled = false;
+      if (!r.success) { el('as-feedback').className = 'msg err'; el('as-feedback').textContent = r.message || '提交失败'; return; }
+      el('as-feedback').className = 'msg ok'; el('as-feedback').textContent = '已提交，客服会尽快处理。';
+      toast('售后申请已提交');
+      setTimeout(closeAfterSales, 1100);
+    }).catch(function () { el('as-submit').disabled = false; el('as-feedback').className = 'msg err'; el('as-feedback').textContent = '网络异常，请重试'; });
+  }
+
+  // 联系客服：优先跳转客服链接，否则提示联系方式（品牌配置）
+  function openSupport() {
+    var c = (state.brand && state.brand.support_contact) || '';
+    var u = (state.brand && state.brand.support_url) || '';
+    if (u) { try { window.open(u, '_blank'); return; } catch (e) {} }
+    toast(c ? '客服联系方式：' + c : '客服会在售后受理后尽快与你联系');
+  }
+
+  // 帮助与支持（Stage 3.7 · G11）：工单 / 知识库 / 邀请 的保留去向。
+  // 运营可在「租户品牌 extra_json」配 ticket_url / kb_url / invite_url 走外链；
+  // 未配时回落原生入口（工单→售后/客服，文档→首页 FAQ，邀请→保留说明，佣金不出圈）。
+  var HELP = {
+    ticket: { title: '工单支持', urlKey: 'ticket_url', tip: '如需人工处理，请在「我的订单」打开对应订单，点击「申请售后」提交工单。' },
+    kb: { title: '使用文档', urlKey: 'kb_url', tip: '查看首页「常见问题」，了解下单、支付、兑卡与权益包的常见用法。' },
+    invite: { title: '邀请好友', urlKey: 'invite_url', tip: '邀请入口保留；邀请佣金在平台内结算，不对外开放提现。如需邀请链接，请联系客服。' }
+  };
+  function openHelp(kind) {
+    var h = HELP[kind]; if (!h) return;
+    var extra = (state.brand && state.brand.extra) || {};
+    var url = extra[h.urlKey];
+    if (url) { try { window.open(url, '_blank'); return; } catch (e) {} }
+    if (kind === 'kb') { closeHelp(); go('home'); setTimeout(function () { var f = document.querySelector('.faq'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }, 200); return; }
+    var c = (state.brand && state.brand.support_contact) || '';
+    el('help-title').textContent = h.title;
+    el('help-body').textContent = h.tip + (c ? ('\n客服：' + c) : '');
+    el('helpModal').classList.add('show');
+  }
+  function closeHelp() { el('helpModal').classList.remove('show'); }
+
+  // ── 权益包 / 我的权益（Stage 3.4 · G4）──
+  var packState = { packs: [], owned: [] };
+
+  function loadPack() {
+    if (!state.customer) {
+      el('packBox').innerHTML = '<div class="empty">请先登录后查看与开通权益包<br><br><button class="btn primary" onclick="openAuth(\'login\')">登录 / 注册</button></div>';
+      return;
+    }
+    el('packBox').innerHTML = '<div class="empty">加载中…</div>';
+    Promise.all([api('/api/tenant/packs'), api('/api/tenant/entitlements')]).then(function (rs) {
+      var pr = rs[0] || {}, er = rs[1] || {};
+      if (pr.__status === 401 || er.__status === 401) clearSession();
+      packState.packs = pr.success ? (pr.data || []) : [];
+      packState.owned = er.success ? (er.data || []) : [];
+      renderPack();
+    });
+  }
+
+  function renderPack() {
+    var ownedCodes = {};
+    packState.owned.forEach(function (o) { ownedCodes[o.rule_code] = o; });
+    var html = '';
+
+    // 我的权益
+    html += '<h3 style="font-size:14px;font-weight:650;margin:2px 0 12px">我的权益</h3>';
+    if (!packState.owned.length) {
+      html += '<div class="empty" style="padding:16px 0">还没有已开通的权益包</div>';
+    } else {
+      var rows = packState.owned.map(function (o) {
+        return '<tr><td>' + esc(o.name) + '</td><td>' + Number(o.remaining_uses) + ' / ' + Number(o.total_uses) +
+          '</td><td>' + (o.expires_at ? esc(String(o.expires_at).slice(0, 10)) : '长期有效') + '</td><td><span class="pill ok">生效中</span></td></tr>';
+      }).join('');
+      html += '<div class="tbl-wrap"><table class="kc"><thead><tr><th>权益包</th><th>剩余次数</th><th>有效期至</th><th>状态</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    // 可开通权益包
+    html += '<h3 style="font-size:14px;font-weight:650;margin:22px 0 12px">可开通权益包</h3>';
+    if (!packState.packs.length) {
+      html += '<div class="empty" style="padding:16px 0">暂无可开通的权益包</div>';
+    } else {
+      html += '<div class="grid">' + packState.packs.map(function (p) {
+        var owned = !!ownedCodes[p.code];
+        var uses = Number(p.uses) || 0, days = Number(p.period_days) || 0;
+        var meta = '含 ' + uses + ' 次权益' + (days > 0 ? ' · 有效期 ' + days + ' 天' : '');
+        return '<div class="card"><h3>' + esc(p.name) + '</h3>' +
+          '<div class="price">' + money(p.price) + ' <small>/份</small></div>' +
+          '<div style="color:var(--sub);font-size:12px">' + esc(meta) + '</div>' +
+          (p.note ? '<div style="color:var(--dim);font-size:12px">' + esc(p.note) + '</div>' : '') +
+          '<div class="foot">' + (owned ? '<span class="pill ok">已开通</span>' :
+            '<button class="btn sm primary" style="margin-left:auto" onclick="buyPack(\'' + esc(p.code) + '\')">用余额开通</button>') +
+          '<span class="msg" id="pk-msg-' + esc(p.code) + '"></span></div></div>';
+      }).join('') + '</div>';
+    }
+    el('packBox').innerHTML = html;
+  }
+
+  function buyPack(code) {
+    var msg = function (t) { var m = el('pk-msg-' + code); if (m) m.textContent = t; };
+    msg('开通中…');
+    api('/api/tenant/packs/purchase', { method: 'POST', body: { pack_code: code } }).then(function (r) {
+      if (!r.success) {
+        if (r.__status === 401) { clearSession(); return; }
+        msg(r.code === 'INSUFFICIENT_BALANCE' ? '余额不足，请先到「钱包」充值' : (r.message || '开通失败'));
+        return;
+      }
+      toast('开通成功');
+      loadPack();
+    });
+  }
+
+  // ── 钱包 / 充值（Stage 3.3 · G2；BEpusdt 收款模拟）──
+  var rcCurrent = null;
+  var rcTick = null;
+
+  // 充值单 30 分钟支付时限倒计时（Stage 3.6：30 分钟时限，超时禁用确认）
+  function rcSetCountdown(expiresIn) {
+    var box = el('rc-count').querySelector('.countdown');
+    if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    var end = Date.now() + Number(expiresIn || 0) * 1000;
+    function paint() {
+      var left = end - Date.now();
+      if (left <= 0) {
+        box.className = 'countdown dead'; box.textContent = '已超时，请重新发起';
+        el('rc-confirm').disabled = true;
+        clearInterval(rcTick); rcTick = null;
+        return;
+      }
+      var m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+      box.className = 'countdown'; box.textContent = '剩 ' + m + ':' + (s < 10 ? '0' + s : s);
+    }
+    paint();
+    rcTick = setInterval(paint, 1000);
+  }
+
+  function loadWallet() {
+    if (!state.customer) {
+      el('w-bal').textContent = '—';
+      el('w-presets').innerHTML = '';
+      el('w-ledgerBox').innerHTML = '<div class="empty">请先登录后查看钱包<br><br><button class="btn primary" onclick="openAuth(\'login\')">登录 / 注册</button></div>';
+      return;
+    }
+    el('w-ledgerBox').innerHTML = '<div class="empty">加载中…</div>';
+    api('/api/tenant/wallet').then(function (r) {
+      if (!r.success) {
+        if (r.__status === 401) clearSession();
+        el('w-ledgerBox').innerHTML = '<div class="empty">' + esc(r.message || '加载失败') + '</div>';
+        return;
+      }
+      var d = r.data || {};
+      state.walletMeta = { min: Number(d.min || 1), max: Number(d.max || 10000) };
+      el('w-bal').textContent = money(d.balance);
+      el('w-presets').innerHTML = (d.presets || []).map(function (p) {
+        return '<button class="preset" onclick="openRecharge(' + Math.round(Number(p) * 100) + ')">' + money(p) + '</button>';
+      }).join('');
+      var rows = (d.ledger || []).map(function (x) {
+        var t = ({ recharge: '充值', consume: '消费', refund: '退回' })[x.type] || x.type;
+        var pos = Number(x.change) > 0;
+        return '<tr><td>' + esc(t) + '</td><td style="color:' + (pos ? '#166534' : 'var(--red)') + '">' + (pos ? '+' : '') + money(x.change) +
+          '</td><td>' + money(x.balance) + '</td><td><span class="cdk">' + esc(x.ref || '—') + '</span></td><td>' + esc(x.note || '') + '</td><td>' + esc(x.created_at || '') + '</td></tr>';
+      }).join('');
+      el('w-ledgerBox').innerHTML = rows
+        ? '<div class="tbl-wrap"><table class="kc"><thead><tr><th>类型</th><th>变动</th><th>余额</th><th>关联单号</th><th>备注</th><th>时间</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<div class="empty">暂无流水</div>';
+    });
+  }
+
+  function renderRcPresets() {
+    el('rc-presets').innerHTML = [100, 300, 500].map(function (v) {
+      return '<button class="preset" data-amt="' + v + '" onclick="pickRecharge(' + v + ')">' + money(v) + '</button>';
+    }).join('');
+  }
+  function pickRecharge(usd) {
+    el('rc-custom').value = usd;
+    document.querySelectorAll('#rc-presets .preset').forEach(function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-amt')) === Number(usd));
+    });
+  }
+  function openRecharge(preCents) {
+    if (!state.customer) { openAuth('login'); return; }
+    rcCurrent = null;
+    if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    el('rc-confirm').disabled = true;
+    el('rc-ack').checked = false;
+    el('rc-pick').classList.remove('hidden');
+    el('rc-pay').classList.add('hidden');
+    el('rc-msg').textContent = ''; el('rc-msg').className = 'msg';
+    el('rc-copy-msg').textContent = ''; el('rc-copy-msg').className = 'msg';
+    el('rc-custom').value = '';
+    el('rc-limits').textContent = state.walletMeta
+      ? (money(state.walletMeta.min) + ' ~ ' + money(state.walletMeta.max))
+      : '$1.00 ~ $10,000.00';
+    renderRcPresets();
+    if (preCents) pickRecharge(Math.round(Number(preCents) / 100));
+    el('rcModal').classList.add('show');
+  }
+  function closeRecharge() {
+    if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    el('rcModal').classList.remove('show');
+  }
+
+  // 复制到剪贴板（navigator.clipboard 优先，失败/不可用时降级 execCommand）
+  function copyText(text, msgId) {
+    var t = String(text == null ? '' : text).trim();
+    var m = msgId ? el(msgId) : null;
+    function done(ok) { if (m) { m.className = 'msg ' + (ok ? 'ok' : 'err'); m.textContent = ok ? '已复制 ✓' : '复制失败，请手动选中复制'; } }
+    function legacy() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        done(!!ok && t.length > 0);
+      } catch (e) { done(false); }
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(function () { done(true); }, legacy);
+        return;
+      }
+    } catch (e) { /* 降级 */ }
+    legacy();
+  }
+  function copyRcExact() { copyText(el('rc-exact-amount').textContent, 'rc-copy-msg'); }
+  function copyRcAddr() { copyText(el('rc-addr').textContent, 'rc-copy-msg'); }
+  // 二次确认闸门：勾选后才允许点「我已支付」
+  function rcSyncConfirm() { el('rc-confirm').disabled = !el('rc-ack').checked; }
+
+  function startRecharge() {
+    var amount = Number(el('rc-custom').value);
+    if (!amount || amount < 1) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '请选择或输入充值金额（≥ $1）'; return; }
+    if (amount % 1 !== 0) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '充值金额请填整数美元（如 200），小数尾数由系统生成'; return; }
+    el('rc-gen').disabled = true;
+    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '正在生成收款地址…';
+    api('/api/tenant/wallet/recharge', { method: 'POST', body: { amount: amount } }).then(function (r) {
+      el('rc-gen').disabled = false;
+      if (!r.success) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = r.message || '发起充值失败'; return; }
+      rcCurrent = r.data;
+      el('rc-exact-amount').textContent = r.data.exact_amount || money(r.data.amount);
+      el('rc-amount').textContent = money(r.data.amount);
+      el('rc-addr').textContent = r.data.pay_address;
+      el('rc-no').textContent = r.data.recharge_no;
+      el('rc-ack').checked = false;
+      el('rc-confirm').disabled = true;
+      el('rc-copy-msg').textContent = ''; el('rc-copy-msg').className = 'msg';
+      el('rc-pick').classList.add('hidden');
+      el('rc-pay').classList.remove('hidden');
+      el('rc-msg').className = 'msg'; el('rc-msg').textContent = '';
+      rcSetCountdown(r.data.expires_in);
+    }).catch(function () { el('rc-gen').disabled = false; el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '网络异常，请重试'; });
+  }
+
+  function confirmRecharge() {
+    if (!rcCurrent || !rcCurrent.recharge_no) return;
+    if (!el('rc-ack').checked) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '请先勾选「已确认网络与金额一致」'; return; }
+    el('rc-confirm').disabled = true;
+    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '正在确认到账…';
+    api('/api/tenant/wallet/recharge/confirm', { method: 'POST', body: { recharge_no: rcCurrent.recharge_no } }).then(function (r) {
+      el('rc-confirm').disabled = false;
+      if (!r.success) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = r.message || '确认失败'; return; }
+      el('rc-msg').className = 'msg ok';
+      el('rc-msg').textContent = '已到账，当前余额 ' + money(r.data.balance);
+      toast('充值到账 ' + money(r.data.amount));
+      loadWallet();
+      setTimeout(closeRecharge, 900);
+    }).catch(function () { el('rc-confirm').disabled = false; el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '网络异常，请重试'; });
+  }
+
+  function openAuth(mode) {
+    state.authMode = mode;
+    el('authTitle').textContent = mode === 'login' ? '登录' : '注册';
+    el('authSub').textContent = mode === 'login' ? '登录后可下单并查看订单' : '创建账号，随时下单取卡密';
+    el('au-submit').textContent = mode === 'login' ? '登 录' : '注 册';
+    el('au-name-field').classList.toggle('hidden', mode === 'login');
+    el('authSwitch').innerHTML = mode === 'login'
+      ? '还没有账号？<button class="btn link" onclick="openAuth(\'register\')">立即注册</button>'
+      : '已有账号？<button class="btn link" onclick="openAuth(\'login\')">去登录</button>';
+    el('au-msg').textContent = '';
+    el('au-msg').className = 'msg';
+    el('au-email').value = '';
+    el('au-pass').value = '';
+    el('au-name').value = '';
+    el('authModal').classList.add('show');
+    setTimeout(function () { el('au-email').focus(); }, 50);
+  }
+  function closeAuth() { el('authModal').classList.remove('show'); }
+
+  function clearSession() {
+    state.token = ''; state.customer = null;
+    localStorage.removeItem('kc_site_customer_token');
+    setMe();
+  }
+
+  function submitAuth() {
+    var email = el('au-email').value.trim();
+    var pass = el('au-pass').value;
+    var name = el('au-name').value.trim();
+    var msg = el('au-msg'); msg.className = 'msg'; msg.textContent = '请稍候…';
+    var path = state.authMode === 'login' ? '/api/tenant/auth/login' : '/api/tenant/auth/register';
+    var body = state.authMode === 'login' ? { email: email, password: pass } : { email: email, password: pass, display_name: name };
+    api(path, { method: 'POST', body: body }).then(function (r) {
+      if (!r.success) { msg.className = 'msg err'; msg.textContent = r.message || '操作失败'; return; }
+      state.token = r.data.token; state.customer = r.data.customer;
+      localStorage.setItem('kc_site_customer_token', state.token);
+      setMe(); closeAuth(); toast(state.authMode === 'login' ? '登录成功' : '注册成功');
+      if (state.detail) go('detail'); else openCategory(state.mode);
+    }).catch(function () { msg.className = 'msg err'; msg.textContent = '网络异常，请重试'; });
+  }
+
+  function logout() { clearSession(); toast('已退出'); go('home'); }
+
+  // ── 兑卡 / 开通（Stage 3.2）──
+  var rdSocket = null, rdReconnect = null, rdActiveJob = '', rdDone = false;
+
+  function rdMsg1(text, cls) { var m = el('rd-msg1'); m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
+  function rdMsg2(text, cls) { var m = el('rd-msg2'); m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
+  function rdShowProgress() { el('rd-progress').classList.remove('hidden'); }
+  function rdSetProgress(pct, text, isErr) {
+    var bar = el('rd-bar');
+    bar.classList.toggle('err', !!isErr);
+    var max = isErr ? 100 : 99;
+    bar.style.width = Math.max(2, Math.min(max, Number(pct) || 0)) + '%';
+    el('rd-status').textContent = text || '';
+  }
+
+  function rdDecode(part) {
+    var n = String(part || '').replace(/-/g, '+').replace(/_/g, '/');
+    var p = n + '='.repeat((4 - n.length % 4) % 4);
+    return JSON.parse(atob(p));
+  }
+  function rdValidateToken(token) {
+    var v = String(token || '').trim();
+    if (!v) return { valid: false, message: '请输入 AccessToken' };
+    var parts = v.split('.');
+    if (parts.length !== 3 || parts.some(function (x) { return !x; })) return { valid: false, message: '会话凭证不合法：格式错误' };
+    var h, pl;
+    try { h = rdDecode(parts[0]); pl = rdDecode(parts[1]); } catch (e) { return { valid: false, message: '会话凭证不合法：无法解析' }; }
+    if (h.typ !== 'JWT') return { valid: false, message: '会话凭证不合法：类型错误' };
+    if (h.alg !== 'RS256') return { valid: false, message: '会话凭证不合法：算法错误' };
+    if (pl.iss !== 'https://auth.openai.com') return { valid: false, message: '会话凭证不合法：签发方错误' };
+    var aud = Array.isArray(pl.aud) ? pl.aud : [pl.aud].filter(Boolean);
+    if (aud.indexOf('https://api.openai.com/v1') < 0) return { valid: false, message: '会话凭证不合法：aud 不匹配' };
+    var auth = pl['https://api.openai.com/auth'];
+    if (!auth || !auth.chatgpt_account_id || !auth.chatgpt_user_id) return { valid: false, message: '会话凭证不合法：缺少账户信息' };
+    var scp = Array.isArray(pl.scp) ? pl.scp : [];
+    if (scp.indexOf('model.request') < 0) return { valid: false, message: '会话凭证不合法：缺少 model.request 权限' };
+    var exp = Number(pl.exp || 0), now = Math.floor(Date.now() / 1000);
+    if (!exp || !isFinite(exp)) return { valid: false, message: '会话凭证不合法：缺少过期时间' };
+    if (exp <= now) return { valid: false, message: '会话凭证已过期' };
+    return { valid: true, email: (pl['https://api.openai.com/profile'] || {}).email || '' };
+  }
+  function rdParseSession(raw) {
+    var c = String(raw || '').trim();
+    if (!c || c.charAt(0) !== '{') return null;
+    try { var d = JSON.parse(c); if (d && (d.accessToken || d.access_token || d.user)) return d; } catch (e) {}
+    return null;
+  }
+  function rdCheckSession(raw) {
+    var c = String(raw || '').trim();
+    if (!c) return { valid: false, session: '', message: '请粘贴完整 Session JSON' };
+    var s = rdParseSession(c);
+    if (!s) return { valid: false, session: '', message: '请粘贴完整 Session JSON（从 chatgpt.com/api/auth/session 复制，不要只粘贴 accessToken）' };
+    var token = String(s.accessToken || s.access_token || '').trim();
+    if (!token) return { valid: false, session: c, message: 'Session JSON 中缺少 accessToken 字段' };
+    var tr = rdValidateToken(token);
+    if (!tr.valid) return { valid: false, session: c, message: tr.message };
+    return { valid: true, session: c, email: (s.user && s.user.email) ? s.user.email : tr.email };
+  }
+
+  function verifyCdk() {
+    var cdk = (el('rd-cdk').value || '').trim();
+    rdMsg1('');
+    if (!cdk) { rdMsg1('请输入卡密', 'err'); return; }
+    el('rd-verify').disabled = true; rdMsg1('验证中…');
+    api('/api/verify-cdk', { method: 'POST', body: { cdk: cdk } }).then(function (r) {
+      el('rd-verify').disabled = false;
+      if (!r.success) { rdMsg1(r.message || '卡密无效或已使用', 'err'); return; }
+      rdMsg1('');
+      var d = r.data || {};
+      el('rd-cdk-show').textContent = cdk;
+      el('rd-plan').textContent = '开通套餐：' + (d.plan_label || 'ChatGPT Plus');
+      el('rd-step1').classList.add('hidden');
+      el('rd-step2').classList.remove('hidden');
+      el('rd-start').disabled = false;
+      rdMsg2('');
+      if (d.status === 'processing' && d.jobKey) {
+        rdShowProgress(); rdSetProgress(3, '正在恢复开通进度…');
+        rdSubscribe(d.jobKey);
+      }
+    }).catch(function () { el('rd-verify').disabled = false; rdMsg1('网络异常，请重试', 'err'); });
+  }
+
+  function startActivation() {
+    var cdk = (el('rd-cdk').value || '').trim();
+    var chk = rdCheckSession(el('rd-session').value);
+    if (!cdk) { rdMsg2('请先验证卡密', 'err'); return; }
+    if (!chk.session) { rdMsg2(chk.message || '请粘贴完整 Session JSON', 'err'); return; }
+    if (!chk.valid) { rdMsg2(chk.message, 'err'); return; }
+    el('rd-start').disabled = true;
+    rdMsg2(chk.email ? ('会话校验通过：' + chk.email) : '会话校验通过', 'ok');
+    rdShowProgress(); rdSetProgress(5, '正在启动开通…');
+    api('/api/run-process', { method: 'POST', body: { session: chk.session, cdk: cdk } }).then(function (r) {
+      if (r.success && r.jobKey) { rdSetProgress(8, '任务已启动，正在开通中…'); rdSubscribe(r.jobKey); }
+      else { el('rd-start').disabled = false; rdDone = true; rdSetProgress(1, r.message || '启动失败，请稍后重试', true); rdMsg2(r.message || '启动失败', 'err'); }
+    }).catch(function () { el('rd-start').disabled = false; rdMsg2('网络异常，请重试', 'err'); });
+  }
+
+  function rdApply(data) {
+    var status = String(data.status || 'running');
+    var msg = String(data.message || '');
+    var prog = Number(data.progress);
+    if (status === 'success') {
+      rdDone = true; rdClose(); rdSetProgress(100, msg || '开通成功！');
+      rdMsg2(msg || '开通成功！', 'ok'); el('rd-start').disabled = true; toast('开通成功');
+      return;
+    }
+    if (status === 'failed' || status === 'maintenance' || status === 'manual') {
+      rdDone = true; rdClose();
+      var pct = isFinite(prog) && prog > 0 ? prog : 1;
+      rdSetProgress(pct, msg || (status === 'maintenance' ? '系统维护中' : status === 'manual' ? '需要人工处理，请联系客服' : '开通失败，请更换账号重试'), true);
+      rdMsg2(msg || '开通失败', 'err'); el('rd-start').disabled = false;
+      return;
+    }
+    rdSetProgress(isFinite(prog) ? prog : 10, msg || '正在开通中…');
+  }
+
+  function rdSubscribe(jobKey) {
+    if (!jobKey) return;
+    rdActiveJob = jobKey; rdDone = false;
+    if (rdSocket && (rdSocket.readyState === WebSocket.OPEN || rdSocket.readyState === WebSocket.CONNECTING)) {
+      try { rdSocket.send(JSON.stringify({ type: 'subscribe', jobKey: jobKey })); } catch (e) {}
+      return;
+    }
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    rdSocket = new WebSocket(proto + '//' + location.host);
+    rdSocket.onopen = function () { clearTimeout(rdReconnect); try { rdSocket.send(JSON.stringify({ type: 'subscribe', jobKey: jobKey })); } catch (e) {} };
+    rdSocket.onmessage = function (ev) {
+      var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+      if (!data || data.type === 'pong') return;
+      if (data.jobKey && rdActiveJob && data.jobKey !== rdActiveJob) return;
+      rdApply(data);
+    };
+    rdSocket.onclose = function () {
+      rdSocket = null;
+      if (rdActiveJob && !rdDone) { clearTimeout(rdReconnect); rdReconnect = setTimeout(function () { rdSubscribe(rdActiveJob); }, 3000); }
+    };
+  }
+
+  function rdClose() { clearTimeout(rdReconnect); if (rdSocket) { try { rdSocket.close(); } catch (e) {} rdSocket = null; } }
+
+  function resetRedeem() {
+    rdClose(); rdDone = false; rdActiveJob = '';
+    el('rd-step2').classList.add('hidden'); el('rd-step1').classList.remove('hidden');
+    el('rd-session').value = ''; el('rd-msg1').textContent = ''; el('rd-msg2').textContent = '';
+    el('rd-progress').classList.add('hidden'); el('rd-bar').style.width = '0';
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  }
+
+  window.go = go;
+  window.openCategory = openCategory;
+  window.backToCatalog = backToCatalog;
+  window.openDetail = openDetail;
+  window.stepQty = stepQty;
+  window.buy = buy;
+  window.openAuth = openAuth;
+  window.closeAuth = closeAuth;
+  window.submitAuth = submitAuth;
+  window.logout = logout;
+  window.verifyCdk = verifyCdk;
+  window.startActivation = startActivation;
+  window.resetRedeem = resetRedeem;
+  window.openRecharge = openRecharge;
+  window.closeRecharge = closeRecharge;
+  window.pickRecharge = pickRecharge;
+  window.startRecharge = startRecharge;
+  window.confirmRecharge = confirmRecharge;
+  window.copyRcExact = copyRcExact;
+  window.copyRcAddr = copyRcAddr;
+  window.rcSyncConfirm = rcSyncConfirm;
+  window.buyPack = buyPack;
+  window.filterOrders = filterOrders;
+  window.openOrder = openOrder;
+  window.closeOrder = closeOrder;
+  window.openAfterSales = openAfterSales;
+  window.closeAfterSales = closeAfterSales;
+  window.submitAfterSales = submitAfterSales;
+  window.openSupport = openSupport;
+  window.openHelp = openHelp;
+  window.closeHelp = closeHelp;
+
+  function boot() {
+    var host = location.host || '';
+    api('/api/tenant/brand?host=' + encodeURIComponent(host)).then(function (r) {
+      if (r.success && r.brand) { state.brand = r.brand; applyBrand(r.brand); }
+    });
+    if (state.token) {
+      api('/api/tenant/auth/me').then(function (r) {
+        if (r.success && r.data) { state.customer = r.data.customer; }
+        else { clearSession(); }
+        setMe();
+        loadCatalog(); // 登录后重载目录，附权益价（双价卡）
+      });
+    } else {
+      setMe();
+      loadCatalog();
+    }
+    loadHomePacks();
+    // Stage 3.2：/ 或 /redeem 带 ?cdk= 时，自动进入兑卡视图并预填校验；/redeem 无参时直接打开兑卡视图
+    try {
+      var cdkParam = new URLSearchParams(location.search).get('cdk');
+      if (cdkParam && cdkParam.trim()) {
+        el('rd-cdk').value = cdkParam.trim();
+        go('redeem');
+        verifyCdk();
+      } else if (/\/redeem\/?$/.test(location.pathname)) {
+        go('redeem');
+      }
+    } catch (e) {}
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

@@ -50,7 +50,6 @@ services:
       DB_POOL_LIMIT: 60
       BUSINESS_DB_POOL_LIMIT: 8
       BUSINESS_ACCOUNT_HASH_SECRET: ${BUSINESS_ACCOUNT_HASH_SECRET:-}
-      XBOARD_API_ORIGIN: ${XBOARD_API_ORIGIN:-http://host.docker.internal:7001}
       REQUIRE_ZOVOCARD_MOCK: "1"
       ZOVOCARD_MOCK: "1"
       ZOVOCARD_BASE_URL: ${ZOVOCARD_BASE_URL:-https://zovocard.com/openapi/v1}
@@ -114,6 +113,11 @@ services:
           memory: 6G
 
   web:
+    # v1.37.0（Stage 0）：独立 Mock 前台已冻结，仅从部署清单摘除、磁盘目录保留可回滚；
+    # 默认不再随 `docker compose up` 启动（如需回滚可显式 `--profile legacy-web`）。
+    # ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本服务源自 Xboard 时代（其 build arg STOREFRONT_XBOARD_ORIGIN
+    #    指向已退场的 Xboard :7001），仅作历史/回滚参考，不参与 start/deploy/verify。
+    profiles: ["legacy-web"]
     build:
       context: ./web
       dockerfile: Dockerfile

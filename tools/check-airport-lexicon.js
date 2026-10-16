@@ -9,6 +9,13 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
+// ⚠️ 已退役（v2.0.0 · Stage 3.9，不再执行）：本检查的目标是 Xboard 前台（:7001），该容器已退场。
+//    主站改由 KC 原生前台承载（:3100，GET /）；机场词典口径由前台文案静态评审覆盖，
+//    币种口径保留在 tools/check-currency.js（不依赖 Xboard）。
+console.log('[retired] tools/check-airport-lexicon.js 已停用：Xboard(:7001) 已退场（Stage 3.9 / v2.0.0）。');
+console.log('          主站为 KC 原生前台 :3100；币种口径见 tools/check-currency.js。');
+process.exit(0);
+
 const BASE = ((process.argv.find(a => a.indexOf('--url=') === 0) || '').split('=')[1]) || 'http://localhost:7001';
 const EMAIL = process.env.KC_CHECK_EMAIL || 'kcbugtest@example.com';
 const PASS = process.env.KC_CHECK_PASS || 'KcBug@2026';

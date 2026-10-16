@@ -8,6 +8,8 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 图标库兜底：CDN 不可达时（离线/内网）让 lucide.createIcons 降为空操作，避免裸调用抛 ReferenceError 打断页面渲染 -->
+    <script>window.lucide = window.lucide || { createIcons: function () {}, icons: {} };</script>
     <style>
         /* ============================================================
          * Enterprise Blue SaaS Theme — 后台控制台
@@ -1870,6 +1872,10 @@
                 <i data-lucide="plug"></i>
                 <span>API 客户</span>
             </div>
+            <div class="nav-item" onclick="switchPage('tenants', this)" data-page="tenants">
+                <i data-lucide="building-2"></i>
+                <span>租户</span>
+            </div>
         </nav>
 
         <div class="sidebar-footer">
@@ -2096,11 +2102,11 @@
                 </div>
             </div>
 
-            <!-- 对外集成（Xboard 商城对接） -->
+            <!-- 对外集成（外部系统对接） -->
             <div class="panel">
-                <h2 class="panel-title">对外集成（前台商城对接）</h2>
+                <h2 class="panel-title">对外集成（外部系统对接）</h2>
                 <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
-                    開啟後，前台商城（如 Xboard）可透過本機對外接口，依訂單冪等鍵自動領取 CDK。
+                    開啟後，外部系統可透過本機對外接口，依訂單冪等鍵自動領取 CDK。
                     接口：<code>POST /api/integration/cdk/issue</code>（請求頭需帶 <code>X-Integration-Key</code>）。
                 </p>
                 <div class="toggle-field" style="margin-top: 18px;">
@@ -2116,7 +2122,7 @@
                     <p id="integration_key_hint" style="font-size: 12px; color: var(--text-dim); margin-top: 6px;"></p>
                 </div>
                 <p style="font-size: 12px; color: var(--text-dim); margin-top: 12px;">
-                    冪等鍵 <code>ref</code> 建議直接傳商城訂單號（如 Xboard 的 <code>trade_no</code>），
+                    冪等鍵 <code>ref</code> 建議直接傳外部系統的訂單號（如 <code>trade_no</code>），
                     同一 <code>ref</code> 重複請求只會發放同一張 CDK，不會重複發卡。
                 </p>
                 <div id="integration_recent" style="margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary);">
@@ -3368,6 +3374,44 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             </div>
         </div>
 
+        <!-- 租户（v1.38.0 Stage 1.3）-->
+        <div id="tenants" class="page-view">
+            <div class="page-header">
+                <h1>租户</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">多租户（白标独立站 / 代理商）：一套 KC 内核按 <code>Host</code> 识别租户。此处维护租户主档、品牌、域名、商品目录与员工账号。<strong>上游路由不对租户开放</strong>（平台级能力，见「上游管理」「商品管理」）。</p>
+            </div>
+            <div class="panel">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">租户列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadTenants()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openTenantCreateDialog()">+ 新建租户</button>
+                </div>
+                <div id="tenants-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div></div>
+            </div>
+
+            <div id="tenant-create-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:560px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 style="margin:0 0 14px; font-size:18px;">新建租户</h3>
+                    <div id="tenant-create-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeTenantCreateDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="confirmCreateTenant()">创建并生成密钥</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tenant-detail-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:flex-start; justify-content:center; overflow:auto;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:780px; width:94%; margin:40px 0; box-shadow:var(--shadow-lg);">
+                    <h3 id="tenant-detail-title" style="margin:0 0 14px; font-size:18px;">租户详情</h3>
+                    <div id="tenant-detail-body"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeTenantDetailDialog()">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="upstreams" class="page-view">
             <div class="page-header">
                 <h1>上游管理</h1>
@@ -3438,7 +3482,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <label>宣传定位句</label>
                     <input id="sc-brand-slogan" style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-color,#2a2a30); background:transparent; color:inherit;">
                 </div>
-                <p style="color:var(--text-dim); font-size:12.5px; margin-top:12px;">保存品牌名时会同步写入商城站点名（浏览器标题）。若前台标题未变，执行一次 Xboard 缓存清理。</p>
+                <p style="color:var(--text-dim); font-size:12.5px; margin-top:12px;">保存品牌名后前台浏览器标题与页头品牌即时生效。</p>
             </div>
 
             <div class="panel" style="margin-bottom:16px;">
@@ -3513,7 +3557,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         <div id="plans" class="page-view">
             <div class="page-header">
                 <h1>商品与资费</h1>
-                <p>KC 视图的 SKU 配置面（v1.16.0；SP-2026-10-11-v1.0.1 §R2）。每个 SKU 引用上游套餐键，规则化定价，与 v2_plan.prices 解耦。
+                <p>KC 视图的 SKU 配置面（v1.16.0；SP-2026-10-11-v1.0.1 §R2）。每个 SKU 引用上游套餐键、规则化定价；商品原价现由 KC 侧 <code>kc_plans.prices_json</code> 承载。
                   <span style="color:var(--text-dim); font-size:12px; margin-left:8px;">
                     R3 起由前台商品页/插件统一切换读法；R2 与 R1 同步在 KC 后台可视，<strong>未改</strong>前台。
                   </span>
@@ -3571,7 +3615,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         <div id="listing_cards" class="page-view">
             <div class="page-header">
                 <h1>商品卡片</h1>
-                <p>v1.17.0 展示层配置（SP-2026-10-11-v1.0.1 §R3）。卡片内容存 KC 侧 <code>kc_listing_cards</code>，与 v2_plan.kc_card 解耦；可通过「同步到 v2」双写让插件立即读到新配置。
+                <p>v1.17.0 展示层配置（SP-2026-10-11-v1.0.1 §R3）。卡片内容存 KC 侧 <code>kc_listing_cards.card_json</code>；保存后对 KC 前台即时生效。
                   <span style="color:var(--text-dim); font-size:12px; margin-left:8px;">
                     ⚠ 终极方案是改插件读法（本版本未做，留给 R3 续作）；当前双轨兜底。
                   </span>
@@ -3584,9 +3628,6 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     <div style="display:flex; gap:8px;">
                         <button type="button" class="btn btn-secondary" onclick="loadListingCards()">
                             <i data-lucide="refresh-cw"></i> 刷新
-                        </button>
-                        <button type="button" class="btn btn-primary" onclick="syncListingCardsToV2()">
-                            <i data-lucide="upload-cloud"></i> 全部同步到 v2
                         </button>
                     </div>
                 </div>
@@ -3666,7 +3707,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             <div class="card" style="margin-top:16px;">
                 <h3 style="margin:0 0 12px 0; font-size:16px;">用户持有权益查询</h3>
                 <div style="display:flex; gap:8px; margin-bottom:12px;">
-                    <input type="text" id="ent_lookup_user_id" placeholder="用户邮箱或 Xboard user_id" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; width:260px;">
+                    <input type="text" id="ent_lookup_user_id" placeholder="顾客邮箱" style="padding:6px 10px; background:var(--bg-card); color:var(--text); border:1px solid var(--border); border-radius:6px; width:260px;">
                     <button class="btn" onclick="loadEntitlementGrants()"><i data-lucide="search"></i> 查询</button>
                 </div>
                 <div id="ent_grants_list"><p style="color:var(--text-dim);">输入用户邮箱或 user_id，查询该用户持有的权益与历史使用记录。</p></div>
@@ -5354,6 +5395,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (pId === 'upstreams') {
                 loadUpstreamsList().catch((error) => {
                     console.error('Failed to load upstreams list', error);
+                });
+            }
+
+            if (pId === 'tenants') {
+                loadTenants().catch((error) => {
+                    console.error('Failed to load tenants', error);
                 });
             }
 
@@ -9734,15 +9781,6 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 loadListingCards();
             } catch (e) { showMessage(e.message || '保存失败', 'error'); }
         }
-        async function syncListingCardsToV2() {
-            if (!confirm('将 KC 侧所有 kc_listing_cards 同步到 xboard.v2_plan.kc_card（双轨兜底）？')) return;
-            try {
-                const r = await authFetch('/api/admin/listing-cards/sync-to-v2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-                const data = await r.json();
-                if (!r.ok || !data.success) throw new Error(data.message || '同步失败');
-                showMessage('已同步 ' + (data.synced || 0) + ' 张（跳过 ' + (data.skipped || 0) + '）', 'success');
-            } catch (e) { showMessage(e.message || '同步失败', 'error'); }
-        }
 
         // ===================== v1.25.0 · API 客户管理（UX-6，下游分销入口） =====================
         async function loadApiPortalSwitch() {
@@ -9896,6 +9934,277 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         // ===================== v1.24.0 · 商品管理 MVP（一个页面配商品，保存即同步商城） =====================
         let _productsCache = [];
 
+        // ===== v1.38.0 租户管理（Stage 1.3）=====
+        let _tenantsCache = [];
+        let _tenantDetail = null;
+
+        async function loadTenants() {
+            const box = document.getElementById('tenants-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            try {
+                const res = await authFetch('/api/admin/tenants');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '加载失败');
+                _tenantsCache = data.data || [];
+                renderTenantsList();
+            } catch (e) {
+                box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+
+        function renderTenantsList() {
+            const box = document.getElementById('tenants-list');
+            if (!box) return;
+            if (!_tenantsCache.length) { box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无租户</div>'; return; }
+            const rows = _tenantsCache.map(function (t) {
+                const kindPill = t.tenant_kind === 'platform'
+                    ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:11px;">平台主站</span>'
+                    : '<span style="background:#e0f2fe;color:#075985;padding:2px 8px;border-radius:10px;font-size:11px;">代理商</span>';
+                const statusPill = t.status === 'active'
+                    ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;">启用</span>'
+                    : '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;">停用</span>';
+                const domains = (t.domains || []).map(function (d) { return escapeHtml(d.host); }).join('<br>') || '<span style="color:var(--text-dim);">未绑定</span>';
+                const brand = (t.brand && t.brand.brand_name) ? escapeHtml(t.brand.brand_name) : '<span style="color:var(--text-dim);">—</span>';
+                const settle = (t.settlement_mode === 'postpaid' ? '后结算' : '预充值') + ' · ' + escapeHtml(t.settle_period);
+                return '<tr>' +
+                    '<td><b>' + escapeHtml(t.name) + '</b><div style="color:var(--text-dim);font-size:11px;">' + escapeHtml(t.code) + '</div></td>' +
+                    '<td>' + kindPill + '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">' + settle + '</div></td>' +
+                    '<td style="font-size:12px;">' + domains + '</td>' +
+                    '<td style="font-size:12px;">' + brand + '</td>' +
+                    '<td style="font-size:12px;">' + (t.staff_count || 0) + '</td>' +
+                    '<td>' + statusPill + '</td>' +
+                    '<td><button type="button" class="btn" style="padding:4px 12px; font-size:12px;" onclick="openTenantDetail(' + t.id + ')">管理</button></td>' +
+                    '</tr>';
+            }).join('');
+            box.innerHTML = '<table class="kc-table"><thead><tr><th>租户</th><th>类型 / 结算</th><th>域名</th><th>品牌名</th><th>员工</th><th>状态</th><th>操作</th></tr></thead><tbody>' + rows + '</tbody></table>';
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+
+        function openTenantCreateDialog() {
+            const st = 'width:100%; margin-top:4px;';
+            document.getElementById('tenant-create-body').innerHTML =
+                '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 16px;">' +
+                '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">租户名称 *<input id="tn-name" class="asset-input" style="' + st + '" placeholder="如：Agent A 白标站"></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">租户编号（留空自动生成）<input id="tn-code" class="asset-input" style="' + st + '" placeholder="cli_xxx"></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">类型<select id="tn-kind" class="asset-input" style="' + st + '"><option value="agent">代理商（白标站）</option><option value="platform">平台主站</option></select></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">结算方式<select id="tn-settle" class="asset-input" style="' + st + '"><option value="prepaid">预充值（默认）</option><option value="postpaid">后结算</option></select></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">结算周期<select id="tn-period" class="asset-input" style="' + st + '"><option value="monthly">按月</option><option value="weekly">按周</option><option value="biweekly">双周</option></select></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">并发上限<input id="tn-conc" class="asset-input" style="' + st + '" type="number" value="3" min="1"></label>' +
+                '<label style="font-size:12px; color:var(--text-dim);">速率上限（次/分）<input id="tn-rate" class="asset-input" style="' + st + '" type="number" value="120" min="1"></label>' +
+                '</div>';
+            document.getElementById('tenant-create-backdrop').style.display = 'flex';
+        }
+        function closeTenantCreateDialog() { document.getElementById('tenant-create-backdrop').style.display = 'none'; }
+
+        async function confirmCreateTenant() {
+            const name = (document.getElementById('tn-name').value || '').trim();
+            if (!name) { alert('请填写租户名称'); return; }
+            const payload = {
+                name: name,
+                code: (document.getElementById('tn-code').value || '').trim() || undefined,
+                tenant_kind: document.getElementById('tn-kind').value,
+                settlement_mode: document.getElementById('tn-settle').value,
+                settle_period: document.getElementById('tn-period').value,
+                max_concurrent: Number(document.getElementById('tn-conc').value) || 3,
+                rate_limit: Number(document.getElementById('tn-rate').value) || 120
+            };
+            try {
+                const res = await authFetch('/api/admin/tenants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '创建失败');
+                alert('创建成功！\n租户编号：' + data.data.code + '\nAPI Key：' + data.data.api_key + '\nAPI Secret：' + data.data.api_secret + '\n（Secret 仅此一次显示，请立即保存）');
+                closeTenantCreateDialog();
+                loadTenants();
+            } catch (e) { alert(e.message || '创建失败'); }
+        }
+
+        async function openTenantDetail(id) {
+            document.getElementById('tenant-detail-body').innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中...</div>';
+            document.getElementById('tenant-detail-backdrop').style.display = 'flex';
+            try {
+                const res = await authFetch('/api/admin/tenants/' + id);
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '加载失败');
+                const catRes = await authFetch('/api/admin/tenants/' + id + '/catalog');
+                const catData = await catRes.json();
+                _tenantDetail = { id: id, detail: data.data, catalog: (catData && catData.data) || [] };
+                renderTenantDetail();
+            } catch (e) {
+                document.getElementById('tenant-detail-body').innerHTML = '<div style="color:#e05252;">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+        function closeTenantDetailDialog() { document.getElementById('tenant-detail-backdrop').style.display = 'none'; _tenantDetail = null; }
+
+        function renderTenantDetail() {
+            if (!_tenantDetail) return;
+            const d = _tenantDetail.detail;
+            const t = d.tenant || {};
+            const b = d.brand || {};
+            const st = 'width:100%; margin-top:4px;';
+            document.getElementById('tenant-detail-title').textContent = '租户详情 · ' + (t.name || t.code || '');
+
+            const domainRows = (d.domains || []).map(function (dm) {
+                return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">' +
+                    '<code style="background:var(--surface-soft);padding:2px 6px;border-radius:4px;font-size:12px;">' + escapeHtml(dm.host) + '</code>' +
+                    (Number(dm.is_primary) === 1 ? '<span style="font-size:11px;color:#075985;">主域名</span>' : '') +
+                    '<span style="flex:1;"></span>' +
+                    '<button type="button" class="btn" style="padding:2px 10px; font-size:12px;" onclick="removeTenantDomain(\'' + escapeHtml(dm.host) + '\')">解绑</button>' +
+                    '</div>';
+            }).join('') || '<div style="color:var(--text-dim); font-size:12px;">未绑定域名（回落主站品牌）</div>';
+
+            const staffRows = (d.staff || []).map(function (s) {
+                return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">' +
+                    '<span style="font-size:12px;">' + escapeHtml(s.email) + '</span>' +
+                    '<span style="font-size:11px;color:var(--text-dim);">' + escapeHtml(s.role || 'staff') + ' / ' + escapeHtml(s.status || '') + '</span>' +
+                    '<span style="flex:1;"></span>' +
+                    '<button type="button" class="btn" style="padding:2px 10px; font-size:12px;" onclick="disableTenantStaff(\'' + escapeHtml(s.email) + '\')">停用</button>' +
+                    '</div>';
+            }).join('') || '<div style="color:var(--text-dim); font-size:12px;">暂无员工账号</div>';
+
+            const catRows = (_tenantDetail.catalog || []).map(function (it) {
+                const priceVal = (it.retail_price_cents === null || it.retail_price_cents === undefined) ? '' : (Number(it.retail_price_cents) / 100).toFixed(2);
+                return '<tr data-plan="' + escapeHtml(it.plan_code) + '">' +
+                    '<td><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" class="tn-cat-vis"' + (it.visible ? ' checked' : '') + '>' + escapeHtml(it.name) + '</label></td>' +
+                    '<td><input class="asset-input tn-cat-price" style="width:110px;" type="number" step="0.01" min="0" value="' + priceVal + '" placeholder="原价"></td>' +
+                    '</tr>';
+            }).join('');
+
+            document.getElementById('tenant-detail-body').innerHTML =
+                '<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">编号 <code>' + escapeHtml(t.code) + '</code> · ' +
+                (t.tenant_kind === 'platform' ? '平台主站' : '代理商') + ' · ' + (t.settlement_mode === 'postpaid' ? '后结算' : '预充值') + ' · 并发上限 ' + (t.max_concurrent || 0) + ' · 速率 ' + (t.rate_limit || 0) + ' 次/分</div>' +
+
+                '<div style="display:flex;align-items:center;gap:10px;margin:6px 0 10px;">' +
+                '<span style="font-size:13px;font-weight:600;">状态</span>' +
+                '<select id="tn-status" class="asset-input" style="width:160px;"><option value="active"' + (t.status === 'active' ? ' selected' : '') + '>启用</option><option value="disabled"' + (t.status !== 'active' ? ' selected' : '') + '>停用</option></select>' +
+                '<button type="button" class="btn" onclick="saveTenantStatus()">保存状态</button>' +
+                '</div>' +
+
+                '<h4 style="margin:16px 0 8px;font-size:14px;">品牌配置</h4>' +
+                '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;">' +
+                '<label style="grid-column:1 / -1; font-size:12px;color:var(--text-dim);">品牌名<input id="tb-brand_name" class="asset-input" style="' + st + '" value="' + escapeHtml(b.brand_name || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">主色<input id="tb-primary_color" class="asset-input" style="' + st + '" value="' + escapeHtml(b.primary_color || '') + '" placeholder="#00A862"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">点缀色<input id="tb-accent_color" class="asset-input" style="' + st + '" value="' + escapeHtml(b.accent_color || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">Logo URL<input id="tb-logo_url" class="asset-input" style="' + st + '" value="' + escapeHtml(b.logo_url || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">客服联系方式<input id="tb-support_contact" class="asset-input" style="' + st + '" value="' + escapeHtml(b.support_contact || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">客服链接<input id="tb-support_url" class="asset-input" style="' + st + '" value="' + escapeHtml(b.support_url || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">页脚文案<input id="tb-footer_text" class="asset-input" style="' + st + '" value="' + escapeHtml(b.footer_text || '') + '"></label>' +
+                '</div>' +
+                '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" onclick="saveTenantBrand()">保存品牌</button></div>' +
+
+                '<h4 style="margin:18px 0 8px;font-size:14px;">域名绑定</h4>' +
+                '<div style="display:flex;gap:8px;align-items:center;">' +
+                '<input id="tn-new-domain" class="asset-input" style="flex:1;" placeholder="如 agent-a.com">' +
+                '<button type="button" class="btn" onclick="addTenantDomain()">绑定</button>' +
+                '</div><div style="margin-top:6px;">' + domainRows + '</div>' +
+
+                '<h4 style="margin:18px 0 8px;font-size:14px;">商品目录（可见 + 零售价；留空 = 用平台原价）</h4>' +
+                '<table class="kc-table"><thead><tr><th>商品</th><th>零售价（$）</th></tr></thead><tbody>' + (catRows || '<tr><td colspan="2" style="color:var(--text-dim);">平台暂无商品</td></tr>') + '</tbody></table>' +
+                '<div style="margin-top:10px;"><button type="button" class="btn btn-primary" onclick="saveTenantCatalog()">保存目录</button></div>' +
+
+                '<h4 style="margin:18px 0 8px;font-size:14px;">员工账号（租户后台登录用）</h4>' +
+                '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+                '<input id="tn-staff-email" class="asset-input" style="flex:1;min-width:180px;" placeholder="邮箱">' +
+                '<input id="tn-staff-pwd" class="asset-input" style="width:150px;" type="password" placeholder="密码（≥6位）">' +
+                '<select id="tn-staff-role" class="asset-input" style="width:120px;"><option value="staff">操作员</option><option value="owner">负责人</option></select>' +
+                '<button type="button" class="btn" onclick="addTenantStaff()">新增/重置</button>' +
+                '</div><div style="margin-top:6px;">' + staffRows + '</div>';
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+
+        async function saveTenantStatus() {
+            const t = _tenantDetail && _tenantDetail.detail && _tenantDetail.detail.tenant;
+            if (!t) return;
+            await tenantPatch(t.id, { status: document.getElementById('tn-status').value }, '状态已保存');
+        }
+        async function saveTenantBrand() {
+            if (!_tenantDetail) return;
+            const ids = ['brand_name', 'primary_color', 'accent_color', 'logo_url', 'support_contact', 'support_url', 'footer_text'];
+            const payload = {};
+            ids.forEach(function (k) { payload[k] = document.getElementById('tb-' + k).value || ''; });
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/brand', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                _tenantDetail.detail.brand = data.data;
+                alert('品牌已保存');
+                loadTenants();
+            } catch (e) { alert(e.message || '保存失败'); }
+        }
+        async function addTenantDomain() {
+            if (!_tenantDetail) return;
+            const host = (document.getElementById('tn-new-domain').value || '').trim();
+            if (!host) { alert('请填写域名'); return; }
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host: host, is_primary: true }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '绑定失败');
+                await openTenantDetail(_tenantDetail.id);
+                loadTenants();
+            } catch (e) { alert(e.message || '绑定失败'); }
+        }
+        async function removeTenantDomain(host) {
+            if (!_tenantDetail) return;
+            if (!confirm('解绑域名 ' + host + '？')) return;
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/domains/' + encodeURIComponent(host), { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '解绑失败');
+                await openTenantDetail(_tenantDetail.id);
+                loadTenants();
+            } catch (e) { alert(e.message || '解绑失败'); }
+        }
+        async function saveTenantCatalog() {
+            if (!_tenantDetail) return;
+            const items = [];
+            document.querySelectorAll('#tenant-detail-body tr[data-plan]').forEach(function (tr) {
+                const code = tr.getAttribute('data-plan');
+                const vis = tr.querySelector('.tn-cat-vis').checked;
+                const pv = tr.querySelector('.tn-cat-price').value;
+                items.push({ plan_code: code, visible: vis, retail_price_cents: pv === '' ? null : Math.round(Number(pv) * 100) });
+            });
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/catalog', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: items }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                alert('目录已保存');
+            } catch (e) { alert(e.message || '保存失败'); }
+        }
+        async function addTenantStaff() {
+            if (!_tenantDetail) return;
+            const email = (document.getElementById('tn-staff-email').value || '').trim();
+            const password = document.getElementById('tn-staff-pwd').value || '';
+            const role = document.getElementById('tn-staff-role').value;
+            if (!email || !password) { alert('请填写邮箱与密码'); return; }
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/staff', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email, password: password, role: role }) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                await openTenantDetail(_tenantDetail.id);
+                loadTenants();
+            } catch (e) { alert(e.message || '保存失败'); }
+        }
+        async function disableTenantStaff(email) {
+            if (!_tenantDetail) return;
+            if (!confirm('停用员工 ' + email + '？')) return;
+            try {
+                const res = await authFetch('/api/admin/tenants/' + _tenantDetail.id + '/staff/' + encodeURIComponent(email), { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '操作失败');
+                await openTenantDetail(_tenantDetail.id);
+                loadTenants();
+            } catch (e) { alert(e.message || '操作失败'); }
+        }
+        async function tenantPatch(id, payload, okMsg) {
+            try {
+                const res = await authFetch('/api/admin/tenants/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                if (okMsg) alert(okMsg);
+                loadTenants();
+            } catch (e) { alert(e.message || '保存失败'); }
+        }
+
         async function loadProductsList() {
             const box = document.getElementById('products-list');
             if (!box) return;
@@ -9921,18 +10230,30 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     const srcText = p.upstream_plan_key
                         ? (escapeHtml(p.upstream_code || 'mock_zovo') + ' / ' + escapeHtml(p.upstream_plan_key))
                         : (p.is_topup ? '余额充值（不绑货源）' : '<span style="color:#b45309;">未绑货源</span>');
+                    const healthMap = { healthy: ['#dcfce7', '#166534', '健康'], degraded: ['#fef3c7', '#92400e', '降级'], down: ['#fee2e2', '#991b1b', '不可用'] };
+                    let healthText = '<span style="color:var(--text-dim);">—</span>';
+                    if (p.upstream_code && p.upstream_health_state && healthMap[p.upstream_health_state]) {
+                        const hm = healthMap[p.upstream_health_state];
+                        healthText = '<span style="background:' + hm[0] + ';color:' + hm[1] + ';padding:2px 8px;border-radius:10px;font-size:11px;">' + hm[2] + '</span>';
+                    } else if (p.upstream_code) {
+                        healthText = '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:10px;font-size:11px;">未探测</span>';
+                    }
+                    const upText = p.upstream_code
+                        ? (escapeHtml(p.upstream_display_name || p.upstream_code) + (p.upstream_status === 'disabled' ? ' <span style="color:#b45309;font-size:11px;">(已暂停)</span>' : ''))
+                        : '<span style="color:var(--text-dim);">—</span>';
                     const apiText = p.api_enabled ? ('API 加价 ' + p.api_markup_percent + '%') : '—';
                     return '<tr>' +
                         '<td><b>' + escapeHtml(p.name) + '</b><div style="color:var(--text-dim);font-size:11px;">ID ' + p.plan_id + '</div></td>' +
                         '<td>' + priceText + '<div style="color:var(--text-dim);font-size:11px;">' + periodText + '</div></td>' +
                         '<td style="font-size:12px;">' + srcText + '</td>' +
+                        '<td style="font-size:12px;">' + upText + '<div style="margin-top:4px;">' + healthText + '</div></td>' +
                         '<td>' + statusPill + ' ' + showPill + '</td>' +
                         '<td style="font-size:12px;">' + apiText + '</td>' +
                         '<td><button type="button" class="btn" style="padding:4px 12px; font-size:12px;" onclick="openProductDialog(' + p.plan_id + ')">编辑</button></td>' +
                         '</tr>';
                 }).join('');
                 box.innerHTML = '<table class="kc-table"><thead><tr>' +
-                    '<th>商品</th><th>售价</th><th>货源</th><th>状态</th><th>API 分销</th><th>操作</th>' +
+                    '<th>商品</th><th>售价</th><th>货源</th><th>上游健康</th><th>状态</th><th>API 分销</th><th>操作</th>' +
                     '</tr></thead><tbody>' + rows + '</tbody></table>';
                 if (window.lucide && lucide.createIcons) lucide.createIcons();
             } catch (e) {
@@ -10599,7 +10920,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 '<div class="dialog-backdrop" id="ent_issue_dialog">' +
                     '<div class="dialog-card" style="max-width:420px;">' +
                         '<h3>发权益 · <code>' + escapeHtml(code) + '</code></h3>' +
-                        '<label style="display:block; margin-top:8px;">Xboard user_id<input id="ent_i_uid" type="number" style="width:100%;"></label>' +
+                        '<label style="display:block; margin-top:8px;">顾客 ID<input id="ent_i_uid" type="number" style="width:100%;"></label>' +
                         '<label style="display:block; margin-top:8px;">来源参考（可选）<input id="ent_i_ref" placeholder="如 order_id 或 manual" style="width:100%;"></label>' +
                         '<label style="display:block; margin-top:8px;">备注（可选）<input id="ent_i_note" style="width:100%;"></label>' +
                         '<div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">' +

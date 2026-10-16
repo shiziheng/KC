@@ -1,4 +1,5 @@
 <?php
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // FEAT-006 段1：为 xboard.v2_plan 增加商品卡片配置字段（幂等）
 require '/www/vendor/autoload.php';
 $app = require '/www/bootstrap/app.php';

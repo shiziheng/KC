@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>加载中…</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F6F7F5;--card:#FFFFFF;--line:#E4E5DF;--line2:#D3D5CC;
+  --text:#1F2328;--sub:#6B6F76;--dim:#9AA0A6;
+  --brand:#0F6E56;--brand-deep:#0B5341;--brand-bg:#E6F4EF;
+  --amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB;
+  --radius:14px;--radius-sm:9px;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+a{color:var(--brand)}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+header.site{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+header.site .inner{display:flex;align-items:center;gap:10px;height:60px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;cursor:pointer}
+.logo .dot{width:22px;height:22px;border-radius:7px;background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;overflow:hidden}
+.logo .dot img{width:100%;height:100%;object-fit:cover}
+nav.main{margin-left:auto;display:flex;gap:4px}
+nav.main button{border:0;background:transparent;color:var(--sub);font-size:14px;padding:8px 14px;border-radius:9px;cursor:pointer;font-family:inherit}
+nav.main button:hover{color:var(--text);background:var(--brand-bg)}
+nav.main button.active{color:var(--brand-deep);background:var(--brand-bg);font-weight:600}
+.me{margin-left:8px;font-size:12.5px;color:var(--sub);display:flex;align-items:center;gap:8px}
+.btn{border:1px solid var(--line2);background:#fff;color:var(--text);padding:9px 16px;border-radius:var(--radius-sm);font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--brand-deep)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:5px 11px;font-size:12px}
+.btn.link{border:0;background:transparent;color:var(--brand);padding:4px 6px}
+main{padding:28px 0 70px}
+.hero{background:linear-gradient(135deg,var(--brand-bg),#fff);border:1px solid var(--line);border-radius:var(--radius);padding:40px 34px;margin-bottom:26px}
+.hero h1{font-size:26px;font-weight:700;letter-spacing:.2px}
+.hero p{color:var(--sub);margin-top:8px;max-width:560px}
+.hero .cta{margin-top:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 16px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s,border-color .15s}
+.card:hover{box-shadow:0 6px 22px rgba(30,35,40,.07);border-color:var(--line2)}
+.card h3{font-size:15px;font-weight:650}
+.card .price{font-size:21px;font-weight:700;color:var(--brand-deep)}
+.card .price small{font-size:12px;color:var(--sub);font-weight:400}
+.card .foot{margin-top:auto;display:flex;align-items:center;gap:8px}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.pill.ok{background:#dcfce7;color:#166534}
+.pill.gray{background:#ECEBE6;color:var(--sub)}
+.pill.red{background:var(--red-bg);color:var(--red)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;margin-bottom:16px}
+.panel h2{font-size:16px;font-weight:650;margin-bottom:12px}
+.kv{display:flex;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.kv:last-child{border-bottom:0}
+.kv .k{width:120px;color:var(--sub);flex:0 0 120px}
+.kv .v{flex:1}
+table.kc{width:100%;border-collapse:collapse;font-size:13px}
+table.kc th{text-align:left;padding:9px 10px;background:#F6F5F1;color:var(--sub);font-weight:500;font-size:12px;border-bottom:1px solid var(--line)}
+table.kc td{padding:9px 10px;border-bottom:1px solid var(--line)}
+.cdk{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:#F6F5F1;border:1px solid var(--line);border-radius:6px;padding:2px 7px;display:inline-block;word-break:break-all}
+.empty{color:var(--dim);text-align:center;padding:36px 0;font-size:13px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field input,.field select{width:100%;border:1px solid var(--line2);border-radius:var(--radius-sm);padding:10px 12px;font-size:13.5px;font-family:inherit}
+.field input:focus,.field select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,110,86,.12)}
+.qty{display:inline-flex;align-items:center;gap:0;border:1px solid var(--line2);border-radius:var(--radius-sm);overflow:hidden}
+.qty button{border:0;background:#fff;width:34px;height:36px;font-size:16px;cursor:pointer;color:var(--sub)}
+.qty button:hover{background:var(--brand-bg);color:var(--brand-deep)}
+.qty input{width:50px;text-align:center;border:0;border-left:1px solid var(--line2);border-right:1px solid var(--line2);height:36px;font-family:inherit;font-size:14px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal.show{display:flex}
+.modal .box{background:#fff;border-radius:var(--radius);padding:26px;width:100%;max-width:400px}
+.modal .box h3{font-size:17px;font-weight:650;margin-bottom:4px}
+.modal .box .sub{color:var(--sub);font-size:12.5px;margin-bottom:18px}
+.msg{font-size:12.5px;min-height:18px;margin-top:10px}
+.msg.err{color:var(--red)}
+.msg.ok{color:#166534}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:200}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+footer.site{border-top:1px solid var(--line);padding:22px 0;color:var(--dim);font-size:12px;text-align:center}
+.hidden{display:none!important}
+@media (max-width:640px){nav.main button{padding:8px 9px;font-size:13px}.hero{padding:28px 20px}.hero h1{font-size:21px}}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap inner">
+    <div class="logo" onclick="go('home')"><span class="dot" id="logoDot"></span><span id="brandName">…</span></div>
+    <nav class="main">
+      <button data-nav="home" onclick="go('home')">首页</button>
+      <button data-nav="catalog" onclick="go('catalog')">商品</button>
+      <button data-nav="orders" onclick="go('orders')">我的订单</button>
+    </nav>
+    <div class="me" id="meBox"></div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section id="view-home" class="view">
+      <div class="hero">
+        <h1 id="heroTitle">欢迎</h1>
+        <p id="heroSub"></p>
+        <div class="cta"><button class="btn primary" onclick="go('catalog')">浏览商品</button></div>
+      </div>
+      <div class="grid" id="homeGrid"></div>
+    </section>
+
+    <section id="view-catalog" class="view hidden">
+      <div class="panel"><h2>全部商品</h2><div class="grid" id="catalogGrid" style="margin-top:6px"></div></div>
+    </section>
+
+    <section id="view-detail" class="view hidden">
+      <div class="panel">
+        <button class="btn link" onclick="go('catalog')">← 返回商品列表</button>
+        <h2 id="d-name" style="margin-top:12px">商品</h2>
+        <div class="kv"><span class="k">单价</span><span class="v" id="d-price">-</span></div>
+        <div class="kv"><span class="k">库存状态</span><span class="v" id="d-avail">-</span></div>
+        <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button onclick="stepQty(-1)">−</button><input id="d-qty" value="1" readonly><button onclick="stepQty(1)">+</button></span></span></div>
+        <div style="margin-top:20px;display:flex;align-items:center;gap:12px">
+          <button class="btn primary" id="d-buy" onclick="buy()">立即购买</button>
+          <span class="msg" id="d-msg"></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-orders" class="view hidden">
+      <div class="panel">
+        <h2>我的订单</h2>
+        <div id="ordersBox"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site"><div class="wrap" id="footText">—</div></footer>
+
+<!-- 登录 / 注册 -->
+<div class="modal" id="authModal">
+  <div class="box">
+    <h3 id="authTitle">登录</h3>
+    <div class="sub" id="authSub">登录后可下单并查看订单</div>
+    <div class="field"><label>邮箱</label><input id="au-email" type="email" autocomplete="username" placeholder="you@example.com"></div>
+    <div class="field"><label>密码</label><input id="au-pass" type="password" autocomplete="current-password" placeholder="至少 6 位"></div>
+    <div class="field hidden" id="au-name-field"><label>昵称（可选）</label><input id="au-name" placeholder="如何称呼您"></div>
+    <button class="btn primary" id="au-submit" style="width:100%" onclick="submitAuth()">登 录</button>
+    <div class="msg" id="au-msg"></div>
+    <div style="margin-top:12px;font-size:12.5px;color:var(--sub);text-align:center">
+      <span id="authSwitch"></span>
+    </div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeAuth()">取消</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var state = {
+    tenant: null,
+    brand: { brand_name: '', primary_color: '', accent_color: '', hero_title: '', hero_subtitle: '', footer_text: '', support_contact: '' },
+    token: localStorage.getItem('kc_tenant_customer_token') || '',
+    customer: null,
+    catalog: [],
+    detail: null,
+    authMode: 'login'
+  };
+
+  function el(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
+  function toast(text) {
+    var t = el('toast'); t.textContent = text; t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+  function money(v) { return '$' + Number(v || 0).toFixed(2); }
+
+  function applyBrand(b) {
+    if (b.primary_color && /^#?[0-9a-fA-F]{3,8}$/.test(b.primary_color)) {
+      var c = b.primary_color.charAt(0) === '#' ? b.primary_color : '#' + b.primary_color;
+      document.documentElement.style.setProperty('--brand', c);
+    }
+    var name = b.brand_name || '在线商店';
+    el('brandName').textContent = name;
+    document.title = name;
+    el('heroTitle').textContent = b.hero_title || name;
+    el('heroSub').textContent = b.hero_subtitle || '精选商品，下单即得，简单可靠。';
+    if (b.logo_url) el('logoDot').innerHTML = '<img src="' + esc(b.logo_url) + '" alt="">';
+    el('footText').textContent = b.footer_text || (name + (b.support_contact ? ' · 客服 ' + b.support_contact : ''));
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { 'Content-Type': 'application/json' };
+    if (state.token) headers['X-Customer-Token'] = state.token;
+    return fetch(path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j.__status = r.status; return j; }); });
+  }
+
+  function setMe() {
+    var box = el('meBox');
+    if (state.customer) {
+      box.innerHTML = '<span>' + esc(state.customer.display_name || state.customer.email) + '</span><button class="btn sm" onclick="logout()">退出</button>';
+    } else {
+      box.innerHTML = '<button class="btn sm" onclick="openAuth(\'login\')">登录</button><button class="btn sm primary" onclick="openAuth(\'register\')">注册</button>';
+    }
+  }
+
+  function go(view) {
+    ['home', 'catalog', 'detail', 'orders'].forEach(function (v) {
+      el('view-' + v).classList.toggle('hidden', v !== view);
+    });
+    navActive(view === 'detail' ? 'catalog' : view);
+    window.scrollTo(0, 0);
+    if (view === 'orders') loadOrders();
+    if (view === 'home' || view === 'catalog') renderCatalog();
+  }
+  function navActive(v) {
+    document.querySelectorAll('nav.main button').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-nav') === v);
+    });
+  }
+
+  function cardHtml(item) {
+    var price = item.available && item.price != null ? '<div class="price">' + money(item.price) + ' <small>/份</small></div>' : '<div class="price" style="color:var(--dim);font-size:15px">暂时缺货</div>';
+    var pill = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    return '<div class="card"><h3>' + esc(item.name) + '</h3>' + price + '<div class="foot">' + pill +
+      '<button class="btn sm primary" style="margin-left:auto" onclick="openDetail(\'' + esc(item.sku) + '\')">查看</button></div></div>';
+  }
+
+  function renderCatalog() {
+    var items = state.catalog;
+    el('catalogGrid').innerHTML = items.length ? items.map(cardHtml).join('') : '<div class="empty">暂无可售商品</div>';
+    var featured = items.filter(function (i) { return i.available; }).slice(0, 4);
+    el('homeGrid').innerHTML = featured.length ? featured.map(cardHtml).join('') : '<div class="empty">暂无可售商品</div>';
+  }
+
+  function openDetail(sku) {
+    var item = state.catalog.filter(function (i) { return i.sku === sku; })[0];
+    if (!item) return;
+    state.detail = item;
+    el('d-name').textContent = item.name;
+    el('d-price').textContent = item.available && item.price != null ? money(item.price) : '—';
+    el('d-avail').innerHTML = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    el('d-qty').value = '1';
+    el('d-msg').textContent = '';
+    el('d-buy').disabled = !item.available;
+    go('detail');
+  }
+  function stepQty(d) {
+    var v = Math.max(1, Math.min(100, (parseInt(el('d-qty').value, 10) || 1) + d));
+    el('d-qty').value = String(v);
+  }
+
+  function buy() {
+    if (!state.detail) return;
+    if (!state.customer) { openAuth('login'); return; }
+    var qty = parseInt(el('d-qty').value, 10) || 1;
+    var sku = state.detail.sku;
+    var msg = el('d-msg'); msg.className = 'msg'; msg.textContent = '正在下单…';
+    el('d-buy').disabled = true;
+    api('/api/tenant/quote', { method: 'POST', body: { sku: sku, qty: qty } }).then(function (q) {
+      if (!q.success) throw new Error(q.message || '报价失败');
+      var orderNo = 'web_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      return api('/api/tenant/orders', { method: 'POST', body: { quote_id: q.data.quote_id, client_order_no: orderNo } });
+    }).then(function (o) {
+      if (!o.success) {
+        if (o.__status === 401) { state.token = ''; state.customer = null; localStorage.removeItem('kc_tenant_customer_token'); setMe(); openAuth('login'); }
+        throw new Error(o.message || '下单失败');
+      }
+      msg.className = 'msg ok';
+      msg.innerHTML = '下单成功，订单号 ' + esc(o.data.order_id) + (o.data.cdk ? '<br>交付卡密：<span class="cdk">' + esc(o.data.cdk) + '</span>' : '');
+      toast('已下单');
+      el('d-buy').disabled = false;
+    }).catch(function (e) {
+      msg.className = 'msg err'; msg.textContent = e.message || '下单失败';
+      el('d-buy').disabled = false;
+    });
+  }
+
+  function loadOrders() {
+    if (!state.customer) {
+      el('ordersBox').innerHTML = '<div class="empty">请先登录后查看订单<br><br><button class="btn primary" onclick="openAuth(\'login\')">登录 / 注册</button></div>';
+      return;
+    }
+    el('ordersBox').innerHTML = '<div class="empty">加载中…</div>';
+    api('/api/tenant/orders').then(function (r) {
+      if (!r.success) {
+        if (r.__status === 401) { state.token = ''; state.customer = null; localStorage.removeItem('kc_tenant_customer_token'); setMe(); }
+        el('ordersBox').innerHTML = '<div class="empty">' + esc(r.message || '加载失败') + '</div>';
+        return;
+      }
+      if (!r.data.length) { el('ordersBox').innerHTML = '<div class="empty">还没有订单</div>'; return; }
+      var rows = r.data.map(function (o) {
+        var st = o.status === 'delivered' ? '<span class="pill ok">已完成</span>' : (o.status === 'failed' ? '<span class="pill red">失败</span>' : '<span class="pill gray">处理中</span>');
+        return '<tr><td><span class="cdk">' + esc(o.order_id) + '</span></td><td>' + esc(o.sku) + '</td><td>' + o.qty +
+          '</td><td>' + money(o.amount) + '</td><td>' + st + '</td><td>' + (o.cdk ? '<span class="cdk">' + esc(o.cdk) + '</span>' : '—') +
+          '</td><td>' + esc(o.created_at || '') + '</td></tr>';
+      }).join('');
+      el('ordersBox').innerHTML = '<table class="kc"><thead><tr><th>订单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>卡密</th><th>时间</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    });
+  }
+
+  function openAuth(mode) {
+    state.authMode = mode;
+    el('authTitle').textContent = mode === 'login' ? '登录' : '注册';
+    el('authSub').textContent = mode === 'login' ? '登录后可下单并查看订单' : '创建账号，随时下单取卡密';
+    el('au-submit').textContent = mode === 'login' ? '登 录' : '注 册';
+    el('au-name-field').classList.toggle('hidden', mode === 'login');
+    el('authSwitch').innerHTML = mode === 'login'
+      ? '还没有账号？<button class="btn link" onclick="openAuth(\'register\')">立即注册</button>'
+      : '已有账号？<button class="btn link" onclick="openAuth(\'login\')">去登录</button>';
+    el('au-msg').textContent = '';
+    el('au-msg').className = 'msg';
+    el('au-email').value = '';
+    el('au-pass').value = '';
+    el('au-name').value = '';
+    el('authModal').classList.add('show');
+    setTimeout(function () { el('au-email').focus(); }, 50);
+  }
+  function closeAuth() { el('authModal').classList.remove('show'); }
+
+  function submitAuth() {
+    var email = el('au-email').value.trim();
+    var pass = el('au-pass').value;
+    var name = el('au-name').value.trim();
+    var msg = el('au-msg'); msg.className = 'msg'; msg.textContent = '请稍候…';
+    var path = state.authMode === 'login' ? '/api/tenant/auth/login' : '/api/tenant/auth/register';
+    var body = state.authMode === 'login' ? { email: email, password: pass } : { email: email, password: pass, display_name: name };
+    api(path, { method: 'POST', body: body }).then(function (r) {
+      if (!r.success) { msg.className = 'msg err'; msg.textContent = r.message || '操作失败'; return; }
+      state.token = r.data.token; state.customer = r.data.customer;
+      localStorage.setItem('kc_tenant_customer_token', state.token);
+      setMe(); closeAuth(); toast(state.authMode === 'login' ? '登录成功' : '注册成功');
+      if (state.detail) go('detail'); else go('catalog');
+    }).catch(function () { msg.className = 'msg err'; msg.textContent = '网络异常，请重试'; });
+  }
+
+  function logout() {
+    state.token = ''; state.customer = null;
+    localStorage.removeItem('kc_tenant_customer_token');
+    setMe(); go('home'); toast('已退出');
+  }
+
+  window.go = go; window.openDetail = openDetail; window.stepQty = stepQty; window.buy = buy;
+  window.openAuth = openAuth; window.closeAuth = closeAuth; window.submitAuth = submitAuth; window.logout = logout;
+
+  // 启动
+  api('/api/tenant/brand').then(function (b) {
+    if (b && b.success) { applyBrand(b.brand || {}); }
+    else { applyBrand({}); }
+  }).catch(function () { applyBrand({}); });
+
+  api('/api/tenant/catalog').then(function (r) {
+    state.catalog = (r && r.success) ? r.data : [];
+    renderCatalog();
+    go('home');
+  }).catch(function () { state.catalog = []; renderCatalog(); go('home'); });
+
+  if (state.token) {
+    api('/api/tenant/auth/me').then(function (r) {
+      if (r && r.success) { state.customer = r.data.customer; setMe(); }
+      else { state.token = ''; localStorage.removeItem('kc_tenant_customer_token'); setMe(); }
+    }).catch(function () { setMe(); });
+  } else {
+    setMe();
+  }
+})();
+</script>
+</body>
+</html>

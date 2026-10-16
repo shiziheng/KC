@@ -90,12 +90,12 @@
       else if (currentPage === 'topups') await renderTopups();
       else if (currentPage === 'wallets') await renderWallets();
       else await renderReconciliation();
-    } catch (error) { content.innerHTML = `<div class="panel"><div class="notice">${escapeHtml(error.message)}<br><span class="subtle">未修改 KC/Xboard 数据。若业务库状态异常，请先检查 kc_business 与迁移记录。</span></div><button class="btn secondary" onclick="location.reload()">重试</button></div>`; }
+    } catch (error) { content.innerHTML = `<div class="panel"><div class="notice">${escapeHtml(error.message)}<br><span class="subtle">未修改 KC 数据。若业务库状态异常，请先检查 kc_business 与迁移记录。</span></div><button class="btn secondary" onclick="location.reload()">重试</button></div>`; }
   }
 
   async function renderHome() {
     const [data, exceptions] = await Promise.all([api('/summary'), api('/exceptions')]);
-    content.innerHTML = `${pageHeading('运营首页。这里的数字来自独立业务库，Mock 流水不会影响 KC/Xboard 的真实余额。')}
+    content.innerHTML = `${pageHeading('运营首页。这里的数字来自独立业务库，Mock 流水不会影响 KC 的真实余额。')}
       <div class="cards">
         <div class="card"><div class="label">销售中商品</div><div class="value">${Number(data.onSaleProducts)}</div></div>
         <div class="card"><div class="label">待处理订单</div><div class="value">${Number(data.ordersNeedAttention)}</div></div>
@@ -304,7 +304,7 @@
       api(`/wallets?q=${encodeURIComponent(search)}`),
       api(`/ledger?q=${encodeURIComponent(search)}`)
     ]);
-    content.innerHTML = `${pageHeading('余额从独立钱包流水汇总。模拟充值只写 kc_business，不会同步修改 KC/Xboard 余额。')}
+    content.innerHTML = `${pageHeading('余额从独立钱包流水汇总。模拟充值只写 kc_business，不会同步修改 KC 余额。')}
       <section class="panel"><div class="toolbar"><h2>用户余额账户</h2><div class="toolbar-actions"><input class="search" id="walletSearch" placeholder="钱包号 / 用户引用 / 脱敏邮箱" value="${escapeHtml(search)}"><button class="btn secondary" id="searchWallets">查询</button></div></div>
       <div class="table-wrap"><table><thead><tr><th>钱包号</th><th>账号</th><th>币种</th><th>可用余额</th><th>冻结余额</th><th>状态</th><th>更新时间</th></tr></thead><tbody>
       ${rows.length ? rows.map((r) => `<tr><td class="mono">${escapeHtml(r.walletRef)}</td><td>${escapeHtml(r.account)}</td><td>${escapeHtml(r.currency)}</td><td>${escapeHtml(r.available)}</td><td>${escapeHtml(r.reserved)}</td><td>${cellStatus(r.status)}</td><td>${escapeHtml(r.updatedAt || '')}</td></tr>`).join('') : '<tr><td colspan="7" class="empty">暂无余额账户</td></tr>'}
@@ -333,12 +333,12 @@
     const from = requestedRange.from || defaultFrom;
     const to = requestedRange.to || today;
     const report = await api(`/reconciliation?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-    content.innerHTML = `${pageHeading('只读核对新旧系统的订单和余额映射，不修改任一系统。订单只按明确引用匹配；无法匹配不直接判为丢单。')}
+    content.innerHTML = `${pageHeading('只读核对业务库的订单与钱包映射。旧系统已退场，不再直连旧库比对。')}
       <section class="panel"><div class="toolbar"><h2>查询范围</h2><div class="toolbar-actions"><label class="inline">开始 <input type="date" id="reconFrom" value="${escapeHtml(report.period.from)}"></label><label class="inline">结束 <input type="date" id="reconTo" value="${escapeHtml(report.period.to)}"></label><button class="btn" id="runReconciliation">生成只读报告</button></div></div>
       <div class="subtle">订单按所选日期查询（最多 31 天）；余额为当前时点快照。报告只返回汇总，不导出邮箱、用户编号或订单明细。</div></section>
       <section class="panel"><div class="toolbar"><h2>订单核对（USD）</h2><button class="btn secondary" id="exportReconciliation">导出汇总 CSV</button></div>
       <div class="cards">
-        <div class="card"><div class="label">Xboard 旧订单总数（背景值）</div><div class="value">${Number(report.orders.legacyCount)}</div><div class="subtle">合计 USD ${formatUsdMinor(report.orders.legacyUsdMinorTotal)}</div></div>
+        <div class="card"><div class="label">旧系统订单（已退场）</div><div class="value">—</div><div class="subtle">旧库不再直连读取</div></div>
         <div class="card"><div class="label">新前台订单总数</div><div class="value">${Number(report.orders.storefrontCount)}</div><div class="subtle">USD ${formatUsdMinor(report.orders.storefrontUsdMinorTotal)}；USDT ${formatUsdMinor(report.orders.storefrontUsdtMinorTotal)}</div></div>
         <div class="card"><div class="label">明确编号匹配</div><div class="value">${Number(report.orders.explicitLinkedCount)}</div><div class="subtle">无引用新订单 ${Number(report.orders.storefrontWithoutLegacyRef)}</div></div>
         <div class="card"><div class="label">金额不一致 / 重复引用</div><div class="value">${Number(report.orders.amountMismatchCount)} / ${Number(report.orders.ambiguousLinkCount)}</div><div class="subtle">明确匹配差额 USD ${formatUsdMinor(report.orders.absoluteAmountDifferenceUsdMinor)}</div></div>
@@ -348,15 +348,15 @@
         <div class="card"><div class="label">可比较的唯一钱包</div><div class="value">${Number(report.balances.comparableWalletCount)}</div></div>
         <div class="card"><div class="label">缺失钱包 / 重复映射</div><div class="value">${Number(report.balances.missingWalletCount)} / ${Number(report.balances.ambiguousMappingCount + report.balances.ambiguousWalletCount)}</div></div>
         <div class="card"><div class="label">余额不一致</div><div class="value">${Number(report.balances.mismatchCount)}</div><div class="subtle">绝对差额 USD ${formatUsdMinor(report.balances.absoluteDifferenceUsdMinor)}</div></div>
-      </div><div class="subtle">旧系统映射账号合计 USD ${formatUsdMinor(report.balances.xboardUsdMinorTotal)}；新业务唯一钱包合计 USD ${formatUsdMinor(report.balances.businessUsdMinorTotal)}。</div></section>
+      </div><div class="subtle">新业务唯一钱包合计 USD ${formatUsdMinor(report.balances.businessUsdMinorTotal)}；旧系统余额（已退场）不再读取。</div></section>
       <section class="panel"><h2>匹配规则与边界</h2><ul><li>${escapeHtml(report.matchingRules.order)}</li><li>${escapeHtml(report.matchingRules.balance)}</li><li>${escapeHtml(report.matchingRules.scope)}</li><li>${escapeHtml(report.matchingRules.action)}</li></ul></section>`;
     $('#runReconciliation').onclick = () => renderReconciliation({ from: $('#reconFrom').value, to: $('#reconTo').value }).catch(showError);
     $('#exportReconciliation').onclick = () => {
       const rows = [
         ['类别', '指标', '数值'],
         ['期间', '开始', report.period.from], ['期间', '结束', report.period.to],
-        ['订单', 'Xboard旧订单数（背景值）', report.orders.legacyCount],
-        ['订单', 'Xboard旧订单金额（USD minor）', report.orders.legacyUsdMinorTotal],
+        ['订单', '旧系统订单数（已退场）', '—'],
+        ['订单', '旧系统订单金额（已退场）', '—'],
         ['订单', '新前台订单数', report.orders.storefrontCount],
         ['订单', '新前台USD金额（minor）', report.orders.storefrontUsdMinorTotal],
         ['订单', '新前台USDT金额（minor）', report.orders.storefrontUsdtMinorTotal],
@@ -368,7 +368,7 @@
         ['余额', '缺失钱包数', report.balances.missingWalletCount],
         ['余额', '重复映射/钱包数', Number(report.balances.ambiguousMappingCount + report.balances.ambiguousWalletCount)],
         ['余额', '不一致账号数', report.balances.mismatchCount],
-        ['余额', '旧系统合计（USD minor）', report.balances.xboardUsdMinorTotal],
+        ['余额', '旧系统合计（已退场）', '—'],
         ['余额', '新业务合计（USD minor）', report.balances.businessUsdMinorTotal],
         ['余额', '绝对差额（USD minor）', report.balances.absoluteDifferenceUsdMinor],
         ['说明', '自动同步', '关闭；只读汇总']

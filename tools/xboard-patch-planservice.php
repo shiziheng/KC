@@ -1,4 +1,5 @@
 <?php
+// ⚠️ 已退役（v2.1.0 · Xboard 代码摘除）：本文件属 Xboard 时代工具链，仅作历史/回滚参考，日常开发与部署不再使用。
 // KC 补丁：充值套餐（kc_is_topup=1）隐藏自商品页（show=0），但面板建单需放行。
 // 位置：PlanService::validatePlanAvailability —— show=0 && renew=0 会被「已售罄」拒绝。
 $f = '/www/app/Services/PlanService.php';

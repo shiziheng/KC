@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>代理商后台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F2;--card:#FFFFFF;--line:#E4E3DC;--line2:#D3D1C7;
+  --text:#1F2328;--sub:#6B6F76;--dim:#9A9EA5;
+  --brand:#0F6E56;--brand-deep:#085041;--brand-bg:#E1F5EE;
+  --amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB;--radius:12px;--radius-sm:8px;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
+a{color:var(--brand)}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:36px;width:100%;max-width:430px;box-shadow:0 4px 24px rgba(30,35,40,.06)}
+.login-card .dot{width:12px;height:12px;border-radius:4px;background:var(--brand);display:inline-block;margin-right:8px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px}
+.field input,.field select{width:100%;border:1px solid var(--line2);border-radius:var(--radius-sm);padding:10px 12px;font-size:13.5px;font-family:inherit}
+.field input:focus,.field select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,110,86,.12)}
+.btn{border:1px solid var(--line2);background:#fff;color:var(--text);padding:9px 16px;border-radius:9px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.primary:hover{background:var(--brand-deep)}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:5px 11px;font-size:12px;border-radius:7px}
+.app{display:flex;min-height:100vh}
+.sidebar{width:200px;flex:0 0 200px;background:#FBFBF9;border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{font-size:14px;font-weight:600;padding:6px 10px 6px;display:flex;align-items:center;gap:8px}
+.brand .dot{width:10px;height:10px;border-radius:3px;background:var(--brand);display:inline-block}
+.nav-item{padding:9px 12px;border-radius:var(--radius-sm);color:var(--sub);cursor:pointer;font-size:13.5px}
+.nav-item:hover{color:var(--text);background:#F0EFEA}
+.nav-item.active{background:var(--brand-bg);color:var(--brand-deep);font-weight:600}
+.side-foot{margin-top:auto;font-size:11px;color:var(--dim);padding:10px 12px;border-top:1px dashed var(--line2)}
+.main{flex:1;max-width:1080px;padding:22px 30px 60px}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.topbar h1{font-size:19px;font-weight:650}
+.badge-env{margin-left:auto;font-size:11.5px;color:var(--brand-deep);background:var(--brand-bg);padding:3px 10px;border-radius:999px}
+.view{display:none}.view.active{display:block}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin-bottom:14px}
+.panel h2{font-size:15px;font-weight:650;margin-bottom:12px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.stat .lb{font-size:12px;color:var(--sub)}
+.stat .v{font-size:20px;font-weight:650;margin-top:4px}
+.balance-card{background:var(--brand-bg);border:1px solid #9FE1CB;border-radius:var(--radius);padding:22px 24px;margin-bottom:14px}
+.balance-card .lb{font-size:13px;color:var(--brand-deep)}
+.balance-card .v{font-size:32px;font-weight:700;color:var(--brand-deep)}
+table.kc-table{width:100%;border-collapse:collapse;font-size:13px}
+table.kc-table th{text-align:left;padding:9px 10px;background:#F6F5F1;color:var(--sub);font-weight:500;font-size:12px;border-bottom:1px solid var(--line)}
+table.kc-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.kc-table tr:hover td{background:#FAFAF7}
+.pill{font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.pill.ok{background:#dcfce7;color:#166534}
+.pill.fail{background:var(--red-bg);color:var(--red)}
+.pill.gray{background:#ECEBE6;color:var(--sub)}
+.cdk{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:#F6F5F1;border:1px solid var(--line);border-radius:5px;padding:1px 6px;display:inline-block;word-break:break-all}
+.empty{color:var(--dim);padding:24px 0;text-align:center;font-size:13px}
+.toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.login-msg{color:var(--red);font-size:12.5px;margin-top:12px;min-height:18px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.muted{color:var(--sub);font-size:12.5px}
+@media (max-width:900px){.grid4{grid-template-columns:repeat(2,1fr)}.sidebar{width:64px;flex-basis:64px}.sidebar .nav-item,.brand span{display:none}.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div id="view-login" class="login-wrap">
+  <div class="login-card">
+    <div style="font-size:16px;font-weight:650;margin-bottom:6px"><span class="dot"></span>代理商后台</div>
+    <div class="muted" style="margin-bottom:22px">使用平台分配的租户账号登录，管理商品、品牌、订单与账本。</div>
+    <div class="field"><label>邮箱</label><input id="lg-email" type="email" autocomplete="username" placeholder="you@example.com"></div>
+    <div class="field"><label>密码</label><input id="lg-pass" type="password" autocomplete="current-password" placeholder="登录密码"></div>
+    <div class="field"><label>站点标识（自建域名可留空）</label><input id="lg-code" placeholder="如 cli_xxxx（本地调试用）"></div>
+    <button class="btn primary" id="lg-btn" style="width:100%" onclick="doLogin()">登 录</button>
+    <div class="login-msg" id="lg-msg"></div>
+  </div>
+</div>
+
+<div id="view-app" class="app" style="display:none">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span id="side-brand">代理商后台</span></div>
+    <div class="nav-item active" data-nav="overview" onclick="go('overview')">概览</div>
+    <div class="nav-item" data-nav="orders" onclick="go('orders')">订单</div>
+    <div class="nav-item" data-nav="products" onclick="go('products')">商品</div>
+    <div class="nav-item" data-nav="brand" onclick="go('brand')">品牌</div>
+    <div class="nav-item" data-nav="domains" onclick="go('domains')">域名</div>
+    <div class="nav-item" data-nav="ledger" onclick="go('ledger')">账本</div>
+    <div class="nav-item" data-nav="staff" id="nav-staff" onclick="go('staff')">员工</div>
+    <div class="side-foot"><b id="side-me">—</b><br><span id="side-role"></span></div>
+  </aside>
+  <div class="main">
+    <div class="topbar"><h1 id="page-title">概览</h1><span class="badge-env" id="tenant-code">—</span>
+      <button class="btn sm" onclick="logout()" style="margin-left:8px">退出</button></div>
+
+    <div class="view active" id="v-overview">
+      <div class="balance-card"><div class="lb">账户余额（预充值）</div><div class="v" id="ov-balance">$0.00</div></div>
+      <div class="grid4">
+        <div class="stat"><div class="lb">今日订单</div><div class="v" id="ov-today-orders">0</div></div>
+        <div class="stat"><div class="lb">今日收款</div><div class="v" id="ov-today-gmv">$0.00</div></div>
+        <div class="stat"><div class="lb">累计订单</div><div class="v" id="ov-orders">0</div></div>
+        <div class="stat"><div class="lb">累计收款</div><div class="v" id="ov-gmv">$0.00</div></div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h2>站点情况</h2>
+        <div class="row2">
+          <div class="stat"><div class="lb">注册顾客</div><div class="v" id="ov-customers">0</div></div>
+          <div class="stat"><div class="lb">结算模式</div><div class="v" id="ov-settle" style="font-size:15px">预充值</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="v-orders"><div class="panel"><h2>订单</h2><div id="orders-box" class="empty">加载中…</div></div></div>
+
+    <div class="view" id="v-products"><div class="panel"><h2>商品</h2>
+      <div class="muted" style="margin-bottom:12px">勾选「上架」并设定零售价（留空则按平台建议价）。零售价为 0 时回落平台加价规则。</div>
+      <div id="products-box" class="empty">加载中…</div></div></div>
+
+    <div class="view" id="v-brand"><div class="panel"><h2>品牌</h2>
+      <div class="row2">
+        <div class="field"><label>品牌名称</label><input id="b-brand_name"></div>
+        <div class="field"><label>Logo 图片地址</label><input id="b-logo_url" placeholder="https://..."></div>
+        <div class="field"><label>主色（十六进制）</label><input id="b-primary_color" placeholder="#1F6FEB"></div>
+        <div class="field"><label>辅助色</label><input id="b-accent_color" placeholder="#F59E0B"></div>
+        <div class="field"><label>客服联系方式</label><input id="b-support_contact"></div>
+        <div class="field"><label>客服链接</label><input id="b-support_url" placeholder="https://..."></div>
+        <div class="field"><label>首屏标题</label><input id="b-hero_title"></div>
+        <div class="field"><label>首屏副标题</label><input id="b-hero_subtitle"></div>
+      </div>
+      <div class="field"><label>页脚文案</label><input id="b-footer_text"></div>
+      <button class="btn primary" onclick="saveBrand()">保存品牌</button>
+      <span class="login-msg" id="brand-msg" style="color:#166534;display:inline-block;margin-left:10px"></span>
+    </div></div>
+
+    <div class="view" id="v-domains"><div class="panel"><h2>域名</h2>
+      <div id="domains-box" class="empty">加载中…</div>
+      <div id="domain-add" style="margin-top:14px;display:none">
+        <div class="row2"><div class="field"><label>新增域名</label><input id="d-host" placeholder="shop.example.com"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn" onclick="addDomain()">提交绑定</button></div></div>
+      </div>
+    </div></div>
+
+    <div class="view" id="v-ledger"><div class="panel"><h2>账本</h2><div id="ledger-box" class="empty">加载中…</div></div></div>
+
+    <div class="view" id="v-staff"><div class="panel"><h2>员工</h2>
+      <div id="staff-box" class="empty">加载中…</div>
+      <div id="staff-add" style="margin-top:14px;display:none">
+        <div class="row2"><div class="field"><label>员工邮箱</label><input id="s-email" placeholder="staff@example.com"></div>
+        <div class="field"><label>初始密码</label><input id="s-pass" placeholder="至少 6 位"></div></div>
+        <button class="btn" onclick="addStaff()">新增员工</button>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var S={token:localStorage.getItem('kc_ta_token')||'',code:localStorage.getItem('kc_ta_code')||'',role:localStorage.getItem('kc_ta_role')||'',email:localStorage.getItem('kc_ta_email')||''};
+  function el(id){return document.getElementById(id);}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});}
+  function money(v){return '$'+Number(v||0).toFixed(2);}
+  function toast(t){var e=el('toast');e.textContent=t;e.classList.add('show');setTimeout(function(){e.classList.remove('show');},2000);}
+  function applyBrandColor(c){if(c&&/^#?[0-9a-fA-F]{3,8}$/.test(c)){var h=c[0]==='#'?c:'#'+c;document.documentElement.style.setProperty('--brand',h);}}
+  function api(path,opts){opts=opts||{};var h={'Content-Type':'application/json','Authorization':'Bearer '+S.token};if(S.code)h['X-KC-Tenant']=S.code;
+    return fetch(path,{method:opts.method||'GET',headers:h,body:opts.body?JSON.stringify(opts.body):undefined})
+      .then(function(r){return r.json().catch(function(){return {};}).then(function(j){j.__s=r.status;return j;});});}
+
+  function doLogin(){
+    var email=el('lg-email').value.trim(),pass=el('lg-pass').value,code=el('lg-code').value.trim(),m=el('lg-msg');
+    if(!email||!pass){m.textContent='请填写邮箱与密码';return;}
+    m.textContent='登录中…';
+    fetch('/api/tenant-admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,password:pass})})
+      .then(function(r){return r.json();}).then(function(r){
+        if(!r.success){m.textContent=r.message||'登录失败';return;}
+        S.token=r.data.token;S.code=code||r.data.code||'';S.role=r.data.role;S.email=r.data.email;
+        localStorage.setItem('kc_ta_token',S.token);localStorage.setItem('kc_ta_code',S.code);
+        localStorage.setItem('kc_ta_role',S.role);localStorage.setItem('kc_ta_email',S.email);
+        boot();
+      }).catch(function(){m.textContent='网络异常，请重试';});
+  }
+  function logout(){localStorage.removeItem('kc_ta_token');localStorage.removeItem('kc_ta_code');localStorage.removeItem('kc_ta_role');localStorage.removeItem('kc_ta_email');location.reload();}
+
+  function boot(){
+    el('view-login').style.display='none';el('view-app').style.display='flex';
+    el('side-me').textContent=S.email;el('side-role').textContent=(S.role==='owner'?'负责人':'员工');
+    el('tenant-code').textContent=S.code||'—';
+    el('nav-staff').style.display=S.role==='owner'?'':'none';
+    api('/api/tenant-admin/brand').then(function(r){if(r.success){el('side-brand').textContent=r.data.brand_name||'代理商后台';applyBrandColor(r.data.primary_color);}});
+    go('overview');
+  }
+
+  function go(v){
+    document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.getAttribute('data-nav')===v);});
+    document.querySelectorAll('.view').forEach(function(x){x.classList.remove('active');});
+    el('v-'+v).classList.add('active');
+    var titles={overview:'概览',orders:'订单',products:'商品',brand:'品牌',domains:'域名',ledger:'账本',staff:'员工'};
+    el('page-title').textContent=titles[v]||v;
+    if(v==='overview')loadOverview();if(v==='orders')loadOrders();if(v==='products')loadProducts();
+    if(v==='brand')loadBrand();if(v==='domains')loadDomains();if(v==='ledger')loadLedger();if(v==='staff')loadStaff();
+  }
+
+  function loadOverview(){api('/api/tenant-admin/overview').then(function(r){if(!r.success){toast(r.message||'加载失败');return;}
+    var d=r.data;el('ov-balance').textContent=money(d.balance);el('ov-today-orders').textContent=d.today_orders;el('ov-today-gmv').textContent=money(d.today_gmv);
+    el('ov-orders').textContent=d.orders_total;el('ov-gmv').textContent=money(d.gmv);el('ov-customers').textContent=d.customers;
+    el('ov-settle').textContent=d.settlement_mode==='postpaid'?'后结算':'预充值';});}
+
+  function loadOrders(){api('/api/tenant-admin/orders').then(function(r){if(!r.success){el('orders-box').innerHTML='<div class="empty">'+esc(r.message||'加载失败')+'</div>';return;}
+    if(!r.data.length){el('orders-box').innerHTML='<div class="empty">暂无订单</div>';return;}
+    var rows=r.data.map(function(o){var st=o.status==='delivered'?'<span class="pill ok">已完成</span>':(o.status==='failed'?'<span class="pill fail">失败</span>':'<span class="pill gray">处理中</span>');
+      return '<tr><td><span class="cdk">'+esc(o.order_id)+'</span></td><td>'+esc(o.sku)+'</td><td>'+o.qty+'</td><td>'+money(o.amount)+'</td><td>'+st+'</td><td>'+(o.cdk?'<span class="cdk">'+esc(o.cdk)+'</span>':'—')+'</td><td>'+esc(o.customer_ref||'—')+'</td><td>'+esc(o.created_at||'')+'</td></tr>';}).join('');
+    el('orders-box').innerHTML='<table class="kc-table"><thead><tr><th>订单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>卡密</th><th>顾客</th><th>时间</th></tr></thead><tbody>'+rows+'</tbody></table>';});}
+
+  function loadProducts(){api('/api/tenant-admin/products').then(function(r){if(!r.success){el('products-box').innerHTML='<div class="empty">'+esc(r.message||'加载失败')+'</div>';return;}
+    if(!r.data.length){el('products-box').innerHTML='<div class="empty">暂无可分销商品</div>';return;}
+    var rows=r.data.map(function(p){
+      return '<tr><td>'+esc(p.name)+'<br><span class="muted">'+esc(p.sku)+'</span></td>'+
+        '<td>'+(p.available?'<span class="pill ok">可售</span>':'<span class="pill gray">缺货</span>')+'</td>'+
+        '<td><input type="checkbox" data-sku="'+esc(p.sku)+'" '+(p.visible?'checked':'')+'></td>'+
+        '<td><input type="number" step="0.01" min="0" style="width:110px;padding:6px 8px;border:1px solid var(--line2);border-radius:6px" data-price="'+esc(p.sku)+'" value="'+(p.retail_price!=null?p.retail_price:'')+'" placeholder="平台建议"></td>'+
+        '<td><button class="btn sm primary" onclick="saveProduct(\''+esc(p.sku)+'\')">保存</button></td></tr>';}).join('');
+    el('products-box').innerHTML='<table class="kc-table"><thead><tr><th>商品</th><th>供货</th><th>上架</th><th>零售价（$）</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';});}
+  function saveProduct(sku){var vis=document.querySelector('input[data-sku="'+sku+'"]').checked;var price=document.querySelector('input[data-price="'+sku+'"]').value;
+    api('/api/tenant-admin/products',{method:'POST',body:{plan_code:sku,visible:vis,retail_price:price===''?0:Number(price)}}).then(function(r){toast(r.success?'已保存':'保存失败');});}
+
+  function loadBrand(){api('/api/tenant-admin/brand').then(function(r){if(!r.success)return;var d=r.data;
+    ['brand_name','logo_url','primary_color','accent_color','support_contact','support_url','hero_title','hero_subtitle','footer_text'].forEach(function(k){el('b-'+k).value=d[k]||'';});});}
+  function saveBrand(){var body={};['brand_name','logo_url','primary_color','accent_color','support_contact','support_url','hero_title','hero_subtitle','footer_text'].forEach(function(k){body[k]=el('b-'+k).value;});
+    api('/api/tenant-admin/brand',{method:'POST',body:body}).then(function(r){el('brand-msg').textContent=r.success?'已保存':'保存失败';toast(r.success?'品牌已保存':'保存失败');
+      if(r.success){el('side-brand').textContent=body.brand_name||'代理商后台';applyBrandColor(body.primary_color);}});}
+
+  function loadDomains(){api('/api/tenant-admin/domains').then(function(r){el('domain-add').style.display=S.role==='owner'?'':'none';
+    if(!r.success){el('domains-box').innerHTML='<div class="empty">'+esc(r.message||'加载失败')+'</div>';return;}
+    if(!r.data.length){el('domains-box').innerHTML='<div class="empty">尚未绑定独立域名</div>';return;}
+    var rows=r.data.map(function(d){return '<tr><td>'+esc(d.host)+'</td><td>'+(d.is_primary?'<span class="pill ok">主域名</span>':'—')+'</td><td>'+esc(d.status)+'</td><td>'+esc(d.ssl_status)+'</td></tr>';}).join('');
+    el('domains-box').innerHTML='<table class="kc-table"><thead><tr><th>域名</th><th>主域名</th><th>状态</th><th>证书</th></tr></thead><tbody>'+rows+'</tbody></table>';});}
+  function addDomain(){var host=el('d-host').value.trim();if(!host){toast('请输入域名');return;}
+    api('/api/tenant-admin/domains',{method:'POST',body:{host:host}}).then(function(r){toast(r.message||(r.success?'已提交':'失败'));if(r.success){el('d-host').value='';loadDomains();}});}
+
+  function loadLedger(){api('/api/tenant-admin/ledger').then(function(r){if(!r.success){el('ledger-box').innerHTML='<div class="empty">'+esc(r.message||'加载失败')+'</div>';return;}
+    if(!r.data.length){el('ledger-box').innerHTML='<div class="empty">暂无流水</div>';return;}
+    var rows=r.data.map(function(x){return '<tr><td>'+esc(x.type)+'</td><td>'+money(x.change)+'</td><td>'+money(x.balance_after)+'</td><td><span class="cdk">'+esc(x.ref||'')+'</span></td><td>'+esc(x.note||'')+'</td><td>'+esc(x.created_at||'')+'</td></tr>';}).join('');
+    el('ledger-box').innerHTML='<table class="kc-table"><thead><tr><th>类型</th><th>变动</th><th>余额</th><th>关联单</th><th>说明</th><th>时间</th></tr></thead><tbody>'+rows+'</tbody></table>';});}
+
+  function loadStaff(){if(S.role!=='owner'){el('staff-box').innerHTML='<div class="empty">仅负责人可管理员工</div>';return;}
+    el('staff-add').style.display='';api('/api/tenant-admin/staff').then(function(r){if(!r.success){el('staff-box').innerHTML='<div class="empty">'+esc(r.message||'加载失败')+'</div>';return;}
+    var rows=r.data.map(function(s){return '<tr><td>'+esc(s.email)+'</td><td>'+(s.role==='owner'?'负责人':'员工')+'</td><td>'+esc(s.status)+'</td><td>'+esc(s.last_login_at||'—')+'</td></tr>';}).join('');
+    el('staff-box').innerHTML='<table class="kc-table"><thead><tr><th>邮箱</th><th>角色</th><th>状态</th><th>最近登录</th></tr></thead><tbody>'+rows+'</tbody></table>';});}
+  function addStaff(){var email=el('s-email').value.trim(),pass=el('s-pass').value;
+    api('/api/tenant-admin/staff',{method:'POST',body:{email:email,password:pass}}).then(function(r){toast(r.message||(r.success?'已创建':'失败'));if(r.success){el('s-email').value='';el('s-pass').value='';loadStaff();}});}
+
+  window.doLogin=doLogin;window.logout=logout;window.go=go;window.saveProduct=saveProduct;
+  window.saveBrand=saveBrand;window.addDomain=addDomain;window.addStaff=addStaff;
+
+  if(S.token){boot();}
+})();
+</script>
+</body>
+</html>

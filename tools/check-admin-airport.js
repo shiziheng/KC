@@ -2,10 +2,17 @@
 // 用法：node tools/check-admin-airport.js
 // 原理：真实登录 → 遍历保留页面 → 采集「可见文本」扫机场词典 → 专项断言 + 视口截图
 // 说明：截图用视口模式（不用 captureBeyondViewport，避免重排触发 React 重建造成假象）
+// 依据：docs/方案/Xboard原生功能处置清单-v1.0.0.md（隐藏项不得加回 / 保留项须代充化）
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+
+// ⚠️ 已退役（v2.0.0 · Stage 3.9，不再执行）：本检查的目标是 Xboard 管理端（:7001），该容器已退场。
+//    主站改由 KC 原生前台承载（:3100，GET /）；余额币种口径保留在 tools/check-currency.js（不依赖 Xboard）。
+console.log('[retired] tools/check-admin-airport.js 已停用：Xboard(:7001) 已退场（Stage 3.9 / v2.0.0）。');
+console.log('          主站为 KC 原生前台 :3100；币种口径见 tools/check-currency.js。');
+process.exit(0);
 
 const env = {};
 for (const l of fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8').split(/\r?\n/)) {
@@ -28,7 +35,7 @@ const LEXICON = /订阅|节点|流量|折抵|倍率|权限组|在线设备|设�
 const ALLOW = []; // 目前无例外；如需临时放行在此追加子串
 
 const PAGES = [
-    { name: 'dashboard', url: '', asserts: ["!¥", "'KC 加速'", "no:月上传", "no:节点流量排行"] },
+    { name: 'dashboard', url: '', asserts: ["!¥", "'KC 直供'", "no:月上传", "no:节点流量排行"] },
     { name: 'plan', url: '/#/finance/plan', asserts: ["'商品套餐'", "'充值包'", "no列:权限组", "no:¥"] },
     { name: 'order', url: '/#/finance/order', asserts: ["'商品名称'", "'服务周期'", "no:¥"] },
     { name: 'user', url: '/#/user/manage', asserts: ["'当前商品'", "no列:到期时间", "no:¥"] },
@@ -158,7 +165,7 @@ const INPUTS_FN = `(function(){
                 else if (a.indexOf('no列:') === 0) asserts[a] = ths.indexOf(a.slice(4)) < 0;
                 else if (a.indexOf('noTab:') === 0) asserts[a] = vt.indexOf(a.slice(6)) < 0;
             }
-            if (p.name === 'system') { asserts["站点名称='KC 加速'"] = inputs.indexOf('KC 加速') >= 0; }
+            if (p.name === 'system') { asserts["站点名称='KC 直供'"] = inputs.indexOf('KC 直供') >= 0; }
             report.pages.push({ name: p.name, url, hits, asserts, thTexts: ths.slice(0, 300) });
 
             const fails = Object.entries(asserts).filter(([k, v]) => !v).map(([k]) => k);
@@ -179,7 +186,14 @@ const INPUTS_FN = `(function(){
             console.log('—— system-tab[' + tab + '] | 命中 ' + hits.length + ' | click=' + clicked);
             hits.slice(0, 6).forEach(h => console.log('    ', h));
         }
-        report.pages.push({ name: 'system-tabs', hits: tabHits, asserts: { '全部保留页签 0 命中': tabHits.length === 0 } });
+        // 已知残留：邀请&佣金设置页存在「提现单申请门槛($)」文本（i18n 覆盖，非 space-y 容器，
+        // 壳层 HIDE_LABELS 的 cleanLabelRows() 对其不生效）。该页签整体随 Stage 3 Xboard 退场消失，
+        // 故此处不作硬断言，仅登记于 docs/方案/Xboard原生功能处置清单-v1.0.0.md「已知残留」。
+        report.pages.push({
+            name: 'system-tabs', hits: tabHits, asserts: {
+                '全部保留页签 0 命中': tabHits.length === 0
+            }
+        });
         await shotViewport('system_tabs_done');
 
         // ===== 交互验证 A：用户行操作菜单 =====

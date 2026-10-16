@@ -4,7 +4,6 @@ const mysql = require('mysql2/promise');
 
 const DB_NAME = process.env.DB_NAME || 'plus_papay';
 const BUSINESS_DB_NAME = process.env.BUSINESS_DB_NAME || 'kc_business';
-const XBOARD_DB_NAME = process.env.XBOARD_DB_NAME || 'xboard';
 
 const EXPECTED_MIGRATIONS = new Map([
     ['0001_business_core.up.sql', '7eb0f2ef2acb9ba6b3249a294ac3bb16ca1ead2d680f87bd66066c0cb5764ffc'],
@@ -15,8 +14,8 @@ let pool;
 let schemaCheck;
 
 function getBusinessPool() {
-    if (BUSINESS_DB_NAME === DB_NAME || BUSINESS_DB_NAME === XBOARD_DB_NAME) {
-        const error = new Error('业务数据库必须与 KC/Xboard 数据库隔离');
+    if (BUSINESS_DB_NAME === DB_NAME) {
+        const error = new Error('业务数据库必须与 KC 数据库隔离');
         error.code = 'BUSINESS_DATABASE_NOT_ISOLATED';
         throw error;
     }

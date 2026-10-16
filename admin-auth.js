@@ -384,6 +384,8 @@ module.exports = {
     ADMIN_TOKEN_TTL_MS,
     ADMIN_REFRESH_AFTER_MS,
     resolveAdminTokenSecret,
+    issueSignedToken,
+    verifySignedToken,
     createPasswordHash,
     verifyPassword,
     issueAdminToken,

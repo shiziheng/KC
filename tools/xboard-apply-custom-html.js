@@ -1,5 +1,8 @@
 // 段C5：写入 custom_html 并清缓存的一条龙脚本
 //
+// ⚠️ 已退役（v2.0.0 · Stage 3.9）：Xboard 退场后不再随部署重放注入（deploy-manifest.json xboard.inject=false）。
+//    本脚本**保留为回滚资产**：若需回退到「Xboard 承载主站」，置回 inject=true 后手动运行本脚本即可恢复注入。
+//
 // ⚠️ 为什么必须清缓存：Xboard 的 ThemeService::getConfig() 走 admin_setting()，
 //    而 admin_setting() 会把配置缓存进 Laravel cache。只写 DB 不改缓存的话，
 //    前台仍渲染旧内容 —— 表现为「写入了 19634 字符但页面里没有新逻辑」。

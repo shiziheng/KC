@@ -2,6 +2,7 @@
 // 段C3：把「去开通」注入脚本写入 Xboard 主题配置 custom_html
 // FEAT-004 D1+D3：拼接「订单页激活卡片」+「全站兑卡/充值面板」两份注入
 // FEAT-005 S1：+第三份「KC 主题注入（顶部导航框架）」
+// ⚠️ 已退役（v2.0.0 · Stage 3.9）：Xboard 退场，注入已清除；本脚本保留为回滚资产（配合 xboard-apply-custom-html.js）。
 // 走 ThemeService::updateConfig()，保留 field_name 白名单校验（不绕过）
 require __DIR__ . '/vendor/autoload.php';
 $app = require_once __DIR__ . '/bootstrap/app.php';
