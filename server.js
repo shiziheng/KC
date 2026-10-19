@@ -28,6 +28,10 @@ const { querySubscriptionBySession, validateSessionTokenForQuery, cancelAutoRene
 // 旧 broker（kc.vpss.eu.cc）实现保留在 gpt-api-client.js，需要时改回 require 即可。
 const gptApi = require('./zovocard-client');
 const supplierHealth = require('./supplier-health');
+// v2.11.0 · BEpusdt（USDT 收款网关）接入层：签名 / 创建交易 / notify 验签
+const bepusdt = require('./bepusdt');
+// v2.20.0 · 实时汇率服务：升级代充「发票币种 → USD」折算（带缓存/超时/降级 + MOCK 夹具）
+const fxRate = require('./fx-rate');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -59,7 +63,8 @@ function cleanupProcesses() {
 
 // WebSocket 客户端映射: jobKey -> Set<WebSocket>
 const taskClients = new Map();
-const TERMINAL_TASK_STATUSES = new Set(['success', 'failed', 'maintenance']);
+// 'manual' = 需要人工确认（上游订单非终态 / 人工对账中），同样视为终态展示，但绝不等于「失败」
+const TERMINAL_TASK_STATUSES = new Set(['success', 'failed', 'maintenance', 'manual']);
 const activeForegroundJobs = new Set();
 
 let systemMetricsCache = {
@@ -432,6 +437,7 @@ async function loadTenantBrand(clientId) {
         logo_url: r.logo_url || '',
         primary_color: r.primary_color || '',
         accent_color: r.accent_color || '',
+        color_scheme: r.color_scheme || '',
         support_contact: r.support_contact || '',
         support_url: r.support_url || '',
         hero_title: r.hero_title || '',
@@ -659,6 +665,8 @@ function getBearerToken(req) {
     return (req.query?.token || '').trim() || null;
 }
 
+// v2.4.0：多管理员 + RBAC。payload 带 auid（kc_admin_users.id）时按账号校验；
+// 不带 auid 的旧令牌（迁移前签发）回落 app_config 单账号校验，权限视为全权 super（兼容红线：旧登录不破坏）。
 async function authenticateAdmin(req, res, next) {
     const token = getBearerToken(req);
     const payload = verifyAdminToken(token);
@@ -668,16 +676,71 @@ async function authenticateAdmin(req, res, next) {
 
     try {
         await ensureStoreReady();
-        const authConfig = await store.getAdminAuthConfig();
-        if (Number(payload.pv || 0) !== authConfig.passwordVersion) {
-            return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+        if (payload.auid) {
+            const row = await store.getAdminUserAuthRowByEmail(payload.email);
+            if (!row || Number(row.id) !== Number(payload.auid)) {
+                return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+            }
+            if (row.status !== 'active') {
+                return res.status(403).json({ success: false, message: '账号已被禁用，请联系超级管理员' });
+            }
+            if (Number(payload.pv || 0) !== Math.max(1, Number(row.password_version || 1))) {
+                return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+            }
+            const role = await store.getAdminRoleByCode(row.role_code);
+            req.admin = Object.assign({}, payload, {
+                id: Number(row.id),
+                role: row.role_code,
+                permissions: role ? role.permissions : ['*'],
+                must_change_password: Number(row.must_change_password) === 1
+            });
+        } else {
+            const authConfig = await store.getAdminAuthConfig();
+            if (Number(payload.pv || 0) !== authConfig.passwordVersion) {
+                return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+            }
+            req.admin = Object.assign({}, payload, { role: 'super', permissions: ['*'], must_change_password: false });
         }
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
     }
 
-    req.admin = payload;
     req.adminToken = token;
+    return next();
+}
+
+// 权限点校验：超级角色 permissions 含 '*' 即全权放行。
+function adminHasPermission(admin, point) {
+    const perms = Array.isArray(admin && admin.permissions) ? admin.permissions : [];
+    return perms.includes('*') || perms.includes('admin') || perms.includes(String(point || ''));
+}
+
+function requirePermission(point) {
+    return function (req, res, next) {
+        if (!adminHasPermission(req.admin, point)) {
+            return res.status(403).json({ success: false, code: 'FORBIDDEN', message: `缺少权限：${point}` });
+        }
+        return next();
+    };
+}
+
+// 强制首改闸门（v2.5.0）：`must_change_password` 的账号只放行读请求与「改密/会话」白名单，其余写操作一律 403。
+// 白名单路径相对挂载点 /api/admin，例如 /change-password、/session。
+const PASSWORD_CHANGE_BYPASS_PATHS = new Set(['/change-password', '/session', '/security/status', '/permissions']);
+function requirePasswordChanged(req, res, next) {
+    if (!req.admin || !req.admin.must_change_password) return next();
+    const method = String(req.method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+    const rel = String(req.originalUrl || '').split('?')[0].replace(/^\/api\/admin/, '');
+    if (PASSWORD_CHANGE_BYPASS_PATHS.has(rel)) return next();
+    return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录须先修改密码，请前往「修改密码」' });
+}
+
+// 仅超级管理员（唯一可增删管理员 / 改角色）。
+function requireSuperAdmin(req, res, next) {
+    if (!req.admin || req.admin.role !== 'super') {
+        return res.status(403).json({ success: false, code: 'FORBIDDEN', message: '仅超级管理员可执行该操作' });
+    }
     return next();
 }
 
@@ -1358,6 +1421,49 @@ app.get(['/admin-login', '/admin-login/', '/admin-login.html'], (req, res) => {
     res.status(404).type('text/plain').send('Not Found');
 });
 
+// 登录身份解析（v2.4.0）：优先 kc_admin_users；无匹配则回落 app_config 单账号（兼容红线）。
+async function resolveAdminLoginIdentity(email, password) {
+    const row = await store.getAdminUserAuthRowByEmail(email);
+    if (row) {
+        if (!verifyPassword(password, row.password_hash)) return { ok: false, reason: 'credentials' };
+        if (row.status !== 'active') return { ok: false, reason: 'disabled' };
+        const role = await store.getAdminRoleByCode(row.role_code);
+        return {
+            ok: true, source: 'table', id: Number(row.id), email: row.email,
+            passwordVersion: Math.max(1, Number(row.password_version || 1)),
+            role: row.role_code, permissions: role ? role.permissions : ['*'],
+            mustChangePassword: Number(row.must_change_password) === 1
+        };
+    }
+    const authConfig = await store.getAdminAuthConfig();
+    const emailOk = email === adminAuth.normalizeEmail(authConfig.email);
+    const passwordOk = verifyPassword(password, authConfig.passwordHash);
+    if (!emailOk || !passwordOk) return { ok: false, reason: 'credentials' };
+    return {
+        ok: true, source: 'legacy', id: null, email: authConfig.email,
+        passwordVersion: authConfig.passwordVersion, role: 'super', permissions: ['*'],
+        mustChangePassword: false
+    };
+}
+
+// 2FA 阶段按 email 复原身份（令牌签发用）。
+async function resolveAdminIdentityByEmail(email) {
+    const row = await store.getAdminUserAuthRowByEmail(email);
+    if (row) {
+        if (row.status !== 'active') return null;
+        const role = await store.getAdminRoleByCode(row.role_code);
+        return {
+            id: Number(row.id), email: row.email,
+            passwordVersion: Math.max(1, Number(row.password_version || 1)),
+            role: row.role_code, permissions: role ? role.permissions : ['*'],
+            mustChangePassword: Number(row.must_change_password) === 1
+        };
+    }
+    const authConfig = await store.getAdminAuthConfig();
+    if (adminAuth.normalizeEmail(authConfig.email) !== adminAuth.normalizeEmail(email)) return null;
+    return { id: null, email: authConfig.email, passwordVersion: authConfig.passwordVersion, role: 'super', permissions: ['*'], mustChangePassword: false };
+}
+
 app.post('/api/admin/login', async (req, res) => {
     const email = adminAuth.normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
@@ -1379,10 +1485,14 @@ app.post('/api/admin/login', async (req, res) => {
         await ensureStoreReady();
         const authConfig = await store.getAdminAuthConfig();
         const telegramSettings = await store.getTelegramConfig();
-        const emailOk = email === adminAuth.normalizeEmail(authConfig.email);
-        const passwordOk = verifyPassword(password, authConfig.passwordHash);
+        const identity = await resolveAdminLoginIdentity(email, password);
 
-        if (!emailOk || !passwordOk) {
+        if (!identity.ok && identity.reason === 'disabled') {
+            await logAdminSecurityEvent('login_failed', { ...clientMeta, email, detail: '账号已被禁用' });
+            return res.status(403).json({ success: false, message: '账号已被禁用，请联系超级管理员' });
+        }
+
+        if (!identity.ok) {
             adminAuth.recordLoginFailure(rate.key, rate.entry);
             await logAdminSecurityEvent('login_failed', {
                 ...clientMeta,
@@ -1403,14 +1513,17 @@ app.post('/api/admin/login', async (req, res) => {
 
         const methods = adminAuth.resolveLogin2faMethods(authConfig, telegramSettings);
         if (!adminAuth.is2faRequired(authConfig, telegramSettings)) {
-            const { token, payload } = issueAdminToken(authConfig.passwordVersion, authConfig.email);
+            const { token, payload } = issueAdminToken(identity.passwordVersion, identity.email, {
+                id: identity.id, role: identity.role, permissions: identity.permissions
+            });
+            if (identity.id) await store.touchAdminUserLastLogin(identity.id);
             await logAdminSecurityEvent('login_success', {
                 ...clientMeta,
-                email: authConfig.email,
+                email: identity.email,
                 detail: '密码登录（未启用二次验证）'
             });
             fireAdminSecurityNotification('admin_login_success', {
-                email: authConfig.email,
+                email: identity.email,
                 ip: clientMeta.ip,
                 fingerprint: clientMeta.fingerprint,
                 userAgent: clientMeta.userAgent,
@@ -1423,15 +1536,17 @@ app.post('/api/admin/login', async (req, res) => {
                 expiresAt: payload.exp,
                 issuedAt: payload.iat,
                 permissions: payload.permissions,
-                email: authConfig.email,
+                role: identity.role,
+                email: identity.email,
+                must_change_password: Boolean(identity.mustChangePassword),
                 requires2fa: false,
                 setupRequired: true
             }));
         }
 
         const challenge = adminAuth.issueLoginChallenge({
-            email: authConfig.email,
-            passwordVersion: authConfig.passwordVersion,
+            email: identity.email,
+            passwordVersion: identity.passwordVersion,
             ip: clientMeta.ip,
             fingerprint: clientMeta.fingerprint
         });
@@ -1443,7 +1558,7 @@ app.post('/api/admin/login', async (req, res) => {
             methods,
             defaultMethod: adminAuth.pickDefaultLogin2faMethod(methods, authConfig.login2faMode === 'either' ? '' : authConfig.login2faMode),
             login2faMode: authConfig.login2faMode,
-            email: authConfig.email,
+            email: identity.email,
             expiresAt: challenge.payload.exp
         });
     } catch (error) {
@@ -1555,14 +1670,21 @@ app.post('/api/admin/login/verify-2fa', async (req, res) => {
         }
 
         adminAuth.clearLoginAttempts(rate.key);
-        const { token, payload } = issueAdminToken(authConfig.passwordVersion, authConfig.email);
+        const identity = await resolveAdminIdentityByEmail(challenge.email);
+        if (!identity || Number(challenge.pv || 0) !== identity.passwordVersion) {
+            return res.status(401).json({ success: false, message: '登录会话已过期，请重新登录' });
+        }
+        const { token, payload } = issueAdminToken(identity.passwordVersion, identity.email, {
+            id: identity.id, role: identity.role, permissions: identity.permissions
+        });
+        if (identity.id) await store.touchAdminUserLastLogin(identity.id);
         await logAdminSecurityEvent('login_success', {
             ...clientMeta,
-            email: authConfig.email,
+            email: identity.email,
             detail: `二次验证成功 (${method})`
         });
         fireAdminSecurityNotification('admin_login_success', {
-            email: authConfig.email,
+            email: identity.email,
             ip: clientMeta.ip,
             fingerprint: clientMeta.fingerprint,
             userAgent: clientMeta.userAgent,
@@ -1576,7 +1698,9 @@ app.post('/api/admin/login/verify-2fa', async (req, res) => {
             expiresAt: payload.exp,
             issuedAt: payload.iat,
             permissions: payload.permissions,
-            email: authConfig.email
+            role: identity.role,
+            email: identity.email,
+            must_change_password: Boolean(identity.mustChangePassword)
         }));
     } catch (error) {
         return res.status(500).json({ success: false, message: error.message });
@@ -1757,7 +1881,7 @@ app.get('/api/tenant/brand', async (req, res) => {
             success: true,
             tenant: { id: tenant.id, code: tenant.code, kind: tenant.tenant_kind },
             brand: brand || {
-                brand_name: tenant.name || '', logo_url: '', primary_color: '', accent_color: '',
+                brand_name: tenant.name || '', logo_url: '', primary_color: '', accent_color: '', color_scheme: 'ink',
                 support_contact: '', support_url: '', hero_title: '', hero_subtitle: '', footer_text: '', extra: null
             }
         });
@@ -1791,7 +1915,7 @@ app.post('/api/tenant-admin/login', async (req, res) => {
         );
         await store.runExecute('UPDATE kc_tenant_staff SET last_login_at=NOW() WHERE id=?', [staff.id]);
         const tRows = await store.runQuery('SELECT code FROM kc_api_clients WHERE id=? LIMIT 1', [staff.client_id]);
-        res.json({ success: true, data: { token: issued.token, client_id: staff.client_id, code: tRows.length ? tRows[0].code : '', role: staff.role, email: email } });
+        res.json({ success: true, data: { token: issued.token, client_id: staff.client_id, code: tRows.length ? tRows[0].code : '', role: staff.role, email: email, must_change_password: Number(staff.must_change_password) === 1 } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
@@ -1814,6 +1938,15 @@ async function authenticateTenantStaff(req, res, next) {
         if (claimed !== undefined && claimed !== null && String(claimed) !== '' && Number(claimed) !== Number(tenant.id)) {
             return res.status(403).json({ success: false, message: '越权访问：client_id 与当前租户不一致' });
         }
+        // v2.5.0 强制首改闸门（租户员工）：只放行读请求与「改密」白名单，其余写操作 403。
+        if (Number(staff.must_change_password) === 1) {
+            const method = String(req.method || 'GET').toUpperCase();
+            const rel = String(req.originalUrl || '').split('?')[0].replace(/^\/api\/tenant-admin/, '');
+            const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+            if (!readOnly && rel !== '/change-password') {
+                return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录须先修改密码' });
+            }
+        }
         req.tenantStaff = staff;
         req.tenant = tenant;
         next();
@@ -1825,7 +1958,11 @@ app.get('/api/tenant-admin/whoami', authenticateTenantStaff, async (req, res) =>
         success: true,
         data: {
             tenant: { id: req.tenant.id, code: req.tenant.code, kind: req.tenant.tenant_kind },
-            staff: { email: req.tenantStaff.email, role: req.tenantStaff.role }
+            staff: {
+                email: req.tenantStaff.email,
+                role: req.tenantStaff.role,
+                must_change_password: Number(req.tenantStaff.must_change_password) === 1
+            }
         }
     });
 });
@@ -1864,6 +2001,15 @@ async function authenticateCustomer(req, res, next) {
         const rows = await store.runQuery('SELECT * FROM kc_customers WHERE id=? LIMIT 1', [payload.cid]);
         if (!rows.length || rows[0].status !== 'active') {
             return res.status(401).json({ success: false, code: 'UNAUTHORIZED', message: '账号已停用' });
+        }
+        // v2.5.0 强制首改闸门（顾客）：只放行读请求与「改密」白名单，其余写操作 403。
+        if (Number(rows[0].must_change_password) === 1) {
+            const method = String(req.method || 'GET').toUpperCase();
+            const rel = String(req.originalUrl || '').split('?')[0].replace(/^\/api\/tenant/, '');
+            const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+            if (!readOnly && rel !== '/auth/change-password') {
+                return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', message: '首次登录须先修改密码' });
+            }
         }
         req.customer = rows[0];
         req.tenant = tenant;
@@ -1954,13 +2100,78 @@ app.post('/api/tenant/auth/login', async (req, res) => {
         }
         const customer = rows[0];
         await store.runExecute('UPDATE kc_customers SET last_login_at=NOW() WHERE id=?', [customer.id]);
-        res.json({ success: true, message: '登录成功', data: { token: issueCustomerToken(customer, tenant.id), customer: publicCustomer(customer) } });
+        res.json({
+            success: true, message: '登录成功',
+            data: {
+                token: issueCustomerToken(customer, tenant.id),
+                customer: publicCustomer(customer),
+                must_change_password: Number(customer.must_change_password) === 1
+            }
+        });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 // 当前登录顾客（无状态令牌，登出由前端丢弃令牌即可）
 app.get('/api/tenant/auth/me', authenticateCustomer, async (req, res) => {
-    res.json({ success: true, data: { customer: publicCustomer(req.customer), tenant: { id: req.tenant.id, code: req.tenant.code } } });
+    res.json({
+        success: true,
+        data: {
+            customer: publicCustomer(req.customer),
+            tenant: { id: req.tenant.id, code: req.tenant.code },
+            must_change_password: Number(req.customer.must_change_password) === 1
+        }
+    });
+});
+
+// 顾客自助改密（强制首改闸门的唯一白名单写操作，v2.5.0）
+app.post('/api/tenant/auth/change-password', authenticateCustomer, async (req, res) => {
+    try {
+        const currentPassword = String((req.body && req.body.currentPassword) || '');
+        const newPassword = String((req.body && req.body.newPassword) || '');
+        if (!currentPassword) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '请输入原密码' });
+        const strength = validatePasswordStrength(newPassword);
+        if (!strength.ok) return res.status(400).json({ success: false, code: 'WEAK_PASSWORD', message: strength.message });
+        const customer = req.customer;
+        if (!adminAuth.verifyPassword(currentPassword, customer.password_hash)) {
+            return res.status(400).json({ success: false, code: 'INVALID_CREDENTIALS', message: '原密码错误' });
+        }
+        if (adminAuth.verifyPassword(newPassword, customer.password_hash)) {
+            return res.status(400).json({ success: false, code: 'SAME_PASSWORD', message: '新密码不能与原密码相同' });
+        }
+        await store.runExecute('UPDATE kc_customers SET password_hash=?, must_change_password=0 WHERE id=?', [adminAuth.createPasswordHash(newPassword), customer.id]);
+        await store.insertAuditLog({
+            actor_type: 'customer', actor_id: customer.id, actor_email: customer.email, ip: adminAuth.getClientMeta(req).ip,
+            action: 'customer.change_own_password', target_type: 'customer', target_id: String(customer.id),
+            before: null, after: { must_change_password: 0 }
+        });
+        res.json({ success: true, message: '密码修改成功，请重新登录' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// 场景 D（v2.5.0）· 顾客自助找回：仅留接口位（令牌表 kc_password_resets 已就绪；邮件/短信通道未接入，故不签发令牌）。
+// 安全口径：一律返回同一句通用文案，不泄露邮箱是否注册；请求落审计（target_id 不带账号，避免枚举）。
+app.post('/api/tenant/auth/forgot-password', async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const tenant = req.tenant || await resolveTenantForRequest(req);
+        if (!tenant) return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: '站点未识别' });
+        if (customerRegisterRateLimited(req)) {
+            return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: '尝试过于频繁，请 1 分钟后再试' });
+        }
+        const email = adminAuth.normalizeEmail((req.body || {}).email);
+        if (email) {
+            await store.insertAuditLog({
+                actor_type: 'tenant_staff', actor_id: null, actor_email: email, ip: adminAuth.getClientMeta(req).ip,
+                action: 'customer.self_reset_requested', target_type: 'customer', target_id: '',
+                before: null, after: { tenant_id: tenant.id, channel: 'pending' }
+            });
+        }
+        res.json({
+            success: true,
+            data: { reserved: true, channel: 'pending' },
+            message: '已记录您的找回请求。自助找回通道尚未接入，请联系站点客服重置密码。'
+        });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 // ===== v1.39.0 · Stage 2.2 租户站前台 API（商品目录 / 报价 / 下单 / 我的订单）=====
@@ -1972,21 +2183,39 @@ async function tenantCatalogMap(tenantId) {
     rows.forEach(function (r) { map.set(String(r.plan_code), r); });
     return map;
 }
+function tenantSkuVisible(tenant, catRow) {
+    if (catRow) return Number(catRow.visible) === 1 && catRow.status === 'active';
+    // 平台主站无目录行 → 平台租户全量；代理商租户必须显式勾选可见
+    return !!tenant && tenant.tenant_kind === 'platform';
+}
 function tenantSkuPrice(catRow, plan) {
     const retail = catRow ? (Number(catRow.retail_price_cents) || 0) : 0;
     if (retail > 0) return retail;
+    // v2.13.0：商城价优先级 = 租户零售价 → 运营售价（商品管理「售价（美元）」写进 prices_json）→ 上游成本×(1+加价幅度)。
+    // 原实现只有「零售价 → 成本×加价」，导致「不绑货源的商品」售价恒为 0 → 前台判定不可售、看起来像没上架；
+    // 也让「绑了货源」的商品无视运营填写的售价。此处让运营售价成为商城价的权威来源。
+    const list = planListPriceCents(plan);
+    if (list > 0) return list;
     return openApiQuotePrice(Number(plan.upstream_price_cents) || 0, plan.api_markup_percent);
 }
-function tenantSkuVisible(tenant, catRow) {
-    if (catRow) return Number(catRow.visible) === 1 && catRow.status === 'active';
-    // 平台主站无目录行 → 回落 api_enabled 全量；代理商租户必须显式勾选可见
-    return !!tenant && tenant.tenant_kind === 'platform';
+// 解析商品「运营售价」（kc_plans.prices_json，主单位美元）→ 分
+function planListPriceCents(plan) {
+    if (!plan) return 0;
+    let obj = plan.prices_json;
+    if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch (e) { obj = null; } }
+    if (!obj || typeof obj !== 'object') return 0;
+    const v = Number(obj.monthly != null ? obj.monthly : obj.onetime);
+    return isFinite(v) && v > 0 ? Math.round(v * 100) : 0;
 }
+// v2.13.0 前台可售判定（商城口径）：
+//   可见（平台主站/租户目录行） + 在售(sell_flag) + 上架状态 active + 有价格。
+// 不再要求「开启 API 分销 / 绑定白名单货源 / 上游成本>0」——那三项是「对外 API 分销」与成本口径，
+// 不应成为商城上架门槛（原实现使新建商品在前台完全看不到，是本次用户反馈的根因）。
 function tenantSkuAvailable(plan, catRow, tenant) {
     if (!plan || !tenantSkuVisible(tenant, catRow)) return false;
-    const cost = Number(plan.upstream_price_cents) || 0;
-    return Number(plan.api_enabled) === 1 && !!plan.upstream_plan_key &&
-        PRODUCT_UPSTREAM_KEY_WHITELIST.indexOf(String(plan.upstream_plan_key)) >= 0 && cost > 0;
+    if (Number(plan.sell_flag) !== 1) return false;
+    if (String(plan.status || 'active') !== 'active') return false;
+    return tenantSkuPrice(catRow, plan) > 0;
 }
 
 // 商品目录（只回本租户可见商品；不含成本/上游字段）。v1.44.0 · Stage 3.5：带有效顾客令牌时附「权益价」（双价卡 G7）
@@ -1996,17 +2225,25 @@ app.get('/api/tenant/catalog', async (req, res) => {
         const tenant = req.tenant || await resolveTenantForRequest(req);
         if (!tenant) return res.status(503).json({ success: false, code: 'NO_TENANT', message: '站点未识别' });
         const customer = await maybeCustomer(req);
-        let grants = [], entIndex = {};
+        let grants = [], entIndex = {}, entSupported = {};
         if (customer) {
             grants = await entitlementActiveGrantsByCustomer(customer.id);
-            if (grants.length) entIndex = await loadEntitlementPrices(grants.map(function (g) { return g.rule_code; }));
+            if (grants.length) {
+                entIndex = await loadEntitlementPrices(grants.map(function (g) { return g.rule_code; }));
+                // v2.19.0：商品是否「落在顾客所持权益包的报价范围内」——供前台标注「支持权益价 / 暂不支持」
+                for (const g of grants) {
+                    const byPlan = entIndex[g.rule_code];
+                    if (byPlan) { for (const pc in byPlan) entSupported[pc] = true; }
+                }
+            }
         }
         const catMap = await tenantCatalogMap(tenant.id);
         const rows = await store.runQuery(
-            'SELECT k.code, k.display_name, k.api_enabled, k.api_markup_percent, k.upstream_plan_key, u.upstream_price_cents, c.card_json ' +
+            'SELECT k.*, u.upstream_price_cents, c.card_json ' +
             'FROM kc_plans k LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
             'LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
-            'WHERE k.api_enabled = 1 ORDER BY k.id'
+            // v2.13.0：商城口径 = 上架(show_flag) + 在售(sell_flag) + 商品状态 active；不再以 api_enabled 过滤（那是对外分销开关）
+            'WHERE k.show_flag = 1 AND k.sell_flag = 1 AND k.status = \'active\' ORDER BY k.id'
         );
         const items = [];
         rows.forEach(function (r) {
@@ -2019,14 +2256,19 @@ app.get('/api/tenant/catalog', async (req, res) => {
             items.push({
                 sku: r.code,
                 name: r.display_name,
-                category: (card && card.category) || 'recharge',
+                // v2.13.0：前台 Tab 分类以「商品类型」为准（cardParse 会做卡片字段归一，可能丢弃 category）
+                category: String(r.kc_type || '') || (card && card.category) || 'recharge',
                 currency: 'USD',
+                // v2.19.x：向「直接代充」向导暴露目标套餐（当前套餐由前端解析 Session token 得到）
+                plan_key: String(r.upstream_plan_key || ''),
+                plan_label: r.display_name,
                 available: avail,
                 price: avail ? openApiUsd(baseCents) : null,
                 base_price: avail ? openApiUsd(baseCents) : null,
                 entitlement_price: (avail && ent) ? openApiUsd(ent.cents) : null,
                 entitlement_rule: (avail && ent) ? ent.rule_code : null,
                 entitlement_discount: (avail && ent) ? openApiUsd(baseCents - ent.cents) : 0,
+                entitlement_supported: !!(avail && entSupported[r.code]),
                 sort: catRow ? (Number(catRow.sort) || 0) : 0
             });
         });
@@ -2035,7 +2277,9 @@ app.get('/api/tenant/catalog', async (req, res) => {
             return {
                 sku: i.sku, name: i.name, category: i.category, currency: i.currency, available: i.available,
                 price: i.price, base_price: i.base_price, entitlement_price: i.entitlement_price,
-                entitlement_rule: i.entitlement_rule, entitlement_discount: i.entitlement_discount
+                entitlement_rule: i.entitlement_rule, entitlement_discount: i.entitlement_discount,
+                entitlement_supported: i.entitlement_supported,
+                plan_key: i.plan_key, plan_label: i.plan_label
             };
         }) });
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
@@ -2060,7 +2304,9 @@ app.post('/api/tenant/quote', async (req, res) => {
         }
         const cost = Number(plan.upstream_price_cents) || 0;
         const baseUnit = tenantSkuPrice(catRow, plan);
-        const ent = customer ? await entitlementPricingForCustomer(customer.id, plan.code, baseUnit) : null;
+        const wantEnt = (req.body || {}).use_entitlement !== false;
+        const entAll = customer ? await entitlementPricingForCustomer(customer.id, plan.code, baseUnit) : null;
+        const ent = wantEnt ? entAll : null;
         const unit = ent ? ent.cents : baseUnit;
         const total = unit * qty;
         const quoteId = 'q_' + crypto.randomBytes(8).toString('hex');
@@ -2075,8 +2321,9 @@ app.post('/api/tenant/quote', async (req, res) => {
             data: {
                 quote_id: quoteId, sku: sku, qty: qty,
                 unit_price: openApiUsd(unit), total: openApiUsd(total), currency: 'USD',
-                base_price: openApiUsd(baseUnit), entitlement_price: ent ? openApiUsd(ent.cents) : null,
-                entitlement_rule: ent ? ent.rule_code : null, entitlement_discount: ent ? openApiUsd((baseUnit - ent.cents) * qty) : 0,
+                base_price: openApiUsd(baseUnit), entitlement_price: entAll ? openApiUsd(entAll.cents) : null,
+                entitlement_rule: entAll ? entAll.rule_code : null, entitlement_discount: entAll ? openApiUsd((baseUnit - entAll.cents) * qty) : 0,
+                entitlement_available: !!entAll, use_entitlement: wantEnt,
                 expires_at: expiresAt.toISOString(), expires_in: 60
             }
         });
@@ -2089,6 +2336,7 @@ app.post('/api/tenant/orders', authenticateCustomer, async (req, res) => {
         const b = req.body || {};
         const tenant = req.tenant;
         let entApplied = null; // { grant_id, rule_code, baseUnit, finalUnit }
+        const wantEnt = b.use_entitlement !== false;   // v2.19.0：顾客可选择本次不使用权益（按原价、不扣次）
         const result = await createApiOrderCore({
             tenantId: tenant.id,
             customerId: req.customer.id,
@@ -2101,7 +2349,7 @@ app.post('/api/tenant/orders', authenticateCustomer, async (req, res) => {
                 const catMap = await tenantCatalogMap(tenant.id);
                 const catRow = catMap.get(String(plan.code)) || null;
                 const base = tenantSkuPrice(catRow, plan);
-                const ent = await entitlementPricingForCustomer(req.customer.id, plan.code, base);
+                const ent = wantEnt ? await entitlementPricingForCustomer(req.customer.id, plan.code, base) : null;
                 const unit = ent ? ent.cents : base;
                 if (ent) entApplied = { grant_id: ent.grant_id, rule_code: ent.rule_code, baseUnit: base, finalUnit: unit };
                 return { available: tenantSkuAvailable(plan, catRow, tenant), unitCents: unit };
@@ -2126,22 +2374,443 @@ app.post('/api/tenant/orders', authenticateCustomer, async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
+// ── v2.16.0：批量代充（同一个流程既收 1 份 Session、也收 N 份，最后按账号数出一张账单）──
+// 铁律：① 1 订单 = 1 内部 CDK = 1 次开通 ⇒ 批量 = 每账号一单（复用 qty 不会多发卡）；
+//       ② 账单展示价与结算价同源：预览与下单都走 tenantBatchPlan（避免「展示价 ≠ 结算价」）；
+//       ③ 不改 KC 原生 CDK 发放/兑换链路，仅复用 createApiOrderCore。
+// 权益分配：按各 grant 的「剩余可用次数」逐个分配（本地预扣），与下单扣次口径一致，避免账单超发抵扣。
+async function tenantBatchPlan(tenant, customer, sku, count, useEntitlement) {
+    const plan = await openApiFindSku(sku);
+    if (!plan) return { ok: false, code: 'SKU_NOT_FOUND', message: '商品不存在：' + sku };
+    const catMap = await tenantCatalogMap(tenant.id);
+    const catRow = catMap.get(String(sku)) || null;
+    if (!tenantSkuAvailable(plan, catRow, tenant)) return { ok: false, code: 'SKU_UNAVAILABLE', message: '该商品当前不可售' };
+    const n = Math.max(1, Math.min(100, Number(count) || 1));
+    const baseUnit = tenantSkuPrice(catRow, plan);
+    // v2.19.0：顾客可选「本次是否使用权益」。useEntitlement===false → 全部按原价、不分配 grant、不扣次。
+    const entOn = useEntitlement !== false;
+    const grants = (customer && entOn) ? (await entitlementActiveGrantsByCustomer(customer.id)).map((g) => Object.assign({}, g)) : [];
+    const priceIndex = grants.length ? await loadEntitlementPrices(grants.map((g) => g.rule_code)) : {};
+    const now = new Date();
+    const items = [];
+    for (let i = 0; i < n; i += 1) {
+        const ent = grants.length ? pickBestEntitlementPrice(grants, priceIndex, baseUnit, plan.code, now) : null;
+        if (!ent) {
+            items.push({ index: i + 1, unit_cents: baseUnit, ent_grant_id: null, ent_rule_code: null });
+            continue;
+        }
+        items.push({ index: i + 1, unit_cents: ent.cents, ent_grant_id: ent.grant_id, ent_rule_code: ent.rule_code });
+        for (const g of grants) {
+            if (Number(g.id) === Number(ent.grant_id)) g.remaining_uses = Math.max(0, Number(g.remaining_uses) - 1);
+        }
+    }
+    const total = items.reduce((s, it) => s + Number(it.unit_cents || 0), 0);
+    const baseTotal = baseUnit * n;
+    return {
+        ok: true, plan, sku, count: n, base_unit_cents: baseUnit, items, total_cents: total, base_total_cents: baseTotal,
+        entitlement_discount_cents: Math.max(0, baseTotal - total),
+        entitlement_uses: items.filter((it) => it.ent_grant_id != null).length
+    };
+}
+
+// 批量下单用：按单条报价写入 kc_api_quote_logs（与 /api/tenant/quote 同表同口径，qty=1）
+async function tenantBatchInsertQuote(tenantId, plan, quoteId, unitCents, qty) {
+    await store.runExecute(
+        'INSERT INTO kc_api_quote_logs (client_id, quote_id, sku_code, cost_cents, markup_percent, unit_price_cents, qty, total_cents, expires_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [tenantId, quoteId, plan.code, Number(plan.upstream_price_cents) || 0, Number(plan.api_markup_percent) || 0, unitCents, qty, unitCents * qty, new Date(Date.now() + OPEN_API_QUOTE_TTL_MS)]
+    );
+}
+
+// 批量账单预览（无副作用：不建单、不扣款、不扣次、不锁价）
+app.post('/api/tenant/batch/preview', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const tenant = req.tenant;
+        const sku = String(b.sku || '').trim();
+        if (!sku) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 sku' });
+        const count = Math.max(1, Math.min(100, parseInt(b.count, 10) || 1));
+        // v2.19.x：升级账号（key=序号 1..count）按 Zovo 升级实际差额计价、不分配权益
+        const upgrades = (b.upgrades && typeof b.upgrades === 'object') ? b.upgrades : {};
+        let upgradeTotal = 0, upgradeCount = 0, upgradeFxStale = false;
+        Object.keys(upgrades).forEach(function (k) {
+            const u = upgrades[k] || {};
+            const c = Number(u.cents) || 0;
+            if (c > 0) {
+                upgradeTotal += c;
+                upgradeCount += 1;
+                if (u.fx_stale) upgradeFxStale = true;   // v2.20.x：本次预估价基于「最近汇率」→ 前端提示
+            }
+        });
+        const upNormal = Math.max(0, count - upgradeCount);
+        // v2.19.0：顾客可选「本次是否使用权益」。pEnt = 权益视角；p = 实际结算口径（仅对「非升级」账号计）
+        const wantEnt = b.use_entitlement !== false;
+        const pEnt = await tenantBatchPlan(tenant, req.customer, sku, Math.max(1, upNormal), true);
+        if (!pEnt.ok) return res.status(pEnt.code === 'SKU_NOT_FOUND' ? 404 : 409).json({ success: false, code: pEnt.code, message: pEnt.message });
+        const p = wantEnt ? pEnt : await tenantBatchPlan(tenant, req.customer, sku, Math.max(1, upNormal), false);
+        const normalTotal = upNormal > 0 ? Number(p.total_cents) : 0;
+        const total = normalTotal + upgradeTotal;
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        const balance = Number(w ? w.balance_cents : 0);
+        const shortfall = Math.max(0, total - balance);
+        const entItem = pEnt.items.find((it) => it.ent_grant_id != null) || null;
+        res.json({
+            success: true,
+            data: {
+                sku: sku, name: p.plan.display_name, count: count,
+                unit_price: openApiUsd(p.base_unit_cents),
+                entitlement_unit_price: entItem ? openApiUsd(entItem.unit_cents) : null,
+                entitlement_uses: upNormal > 0 ? pEnt.entitlement_uses : 0,
+                entitlement_available: !!entItem,
+                entitlement_discount_if_used: openApiUsd(pEnt.entitlement_discount_cents),
+                use_entitlement: wantEnt,
+                upgrade_count: upgradeCount,
+                upgrade_total: openApiUsd(upgradeTotal),
+                upgrade_fx_stale: upgradeFxStale,
+                total: openApiUsd(total),
+                total_base: openApiUsd((upNormal > 0 ? Number(p.base_total_cents) : 0) + upgradeTotal),
+                entitlement_discount: openApiUsd(upNormal > 0 ? Number(p.entitlement_discount_cents) : 0),
+                balance: openApiUsd(balance), balance_cents: balance,
+                shortfall: openApiUsd(shortfall), shortfall_cents: shortfall,
+                currency: 'USD'
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// v2.19.x · 直接代充「当前套餐 / 目标套餐 + 升级报价」查询（无副作用、不落库 Session）
+// 仅对前端判定为「升级候选」的账号调用上游（串行，上限 20，避免触发 60/min 限流）。
+app.post('/api/tenant/topup/plan-check', authenticateCustomer, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const sku = String(b.sku || '').trim();
+        const accounts = Array.isArray(b.accounts) ? b.accounts : [];
+        if (!sku) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 sku' });
+        if (!accounts.length) return res.json({ success: true, data: [], target_plan: '' });
+        const plan = await openApiFindSku(sku);
+        const targetKey = plan ? String(plan.upstream_plan_key || '') : '';
+        // v2.20.0 · 升级加价率（kc_plans.upgrade_markup_percent，独立于 api_markup_percent）
+        const upgradeMarkup = plan ? (Number(plan.upgrade_markup_percent) || 0) : 0;
+        const cfg = await store.getGptApiConfig();
+        const MAX = 20;
+        const out = [];
+        for (let i = 0; i < accounts.length; i += 1) {
+            const a = accounts[i] || {};
+            const row = { index: i + 1, candidate: !!a.candidate, mode: 'new' };
+            if (!a.candidate || i >= MAX) { out.push(row); continue; }
+            let sess = a.session;
+            if (typeof sess === 'string') { try { sess = JSON.parse(sess); } catch (e) { sess = null; } }
+            if (!sess || typeof sess !== 'object') { out.push(row); continue; }
+            let r;
+            try { r = await resolveUpgradeQuote(cfg, { planKey: targetKey, session: sess, markupPercent: upgradeMarkup }); } catch (e) { r = { ok: false, mode: 'error', error: e.message }; }
+            if (r.ok && r.mode === 'upgrade') {
+                row.mode = 'upgrade';
+                row.current_plan = r.currentPlan || '';
+                row.upgrade_cents = r.quote.cents;
+                row.currency = r.quote.currency;
+                row.upgrade_token = r.quote.preflightToken;
+                row.upgrade_expires_at = r.quote.expiresAt;
+                row.upgrade_amount_minor = r.quote.amountMinor;
+                // v2.20.0 · 折算/加价明细（供前台展示与验收核对；不含上游成本口径之外的敏感项）
+                row.upgrade_currency = r.quote.currency;
+                row.upgrade_exponent = r.quote.exponent;
+                row.upgrade_cost_cents = r.quote.costCents;
+                row.upgrade_usd_per_currency = r.quote.usdPerCurrency;
+                row.upgrade_markup_percent = r.quote.markupPercent;
+                row.upgrade_fx_source = r.quote.fxSource;
+                // ★两级新鲜度★：stale=汇率回退最近缓存（带安全垫）→ 前端需提示「基于最近汇率」
+                row.upgrade_fx_stale = r.quote.fxStale === true;
+                row.upgrade_fx_stale_ms = r.quote.fxCacheAgeMs || 0;
+                row.upgrade_fx_buffer_percent = r.quote.fxBufferPercent || 0;
+            } else if (r.ok && r.fxUnavailable) {
+                // v2.20.0 · 汇率取不到（非 USD 且无缓存）→ 禁止升级计价，绝不臆测
+                row.mode = 'invalid';
+                row.message = '汇率服务暂不可用，升级报价失败，请稍后重试';
+            } else if (!r.ok && r.mode === 'invalid') {
+                row.mode = 'invalid'; row.message = r.error || 'session_invalid';
+            } else {
+                row.mode = 'new';
+            }
+            out.push(row);
+        }
+        res.json({ success: true, data: out, target_plan: targetKey });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 批量下单（每账号一单；总额前置校验，不足则整批不建单；逐单复用 createApiOrderCore）
+app.post('/api/tenant/orders/batch', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const tenant = req.tenant;
+        const sku = String(b.sku || '').trim();
+        const prefix = String(b.client_order_no_prefix || '').trim();
+        if (!sku) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 sku' });
+        if (!prefix || prefix.length > 48) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'client_order_no_prefix 必填且 ≤48 字符（幂等键前缀）' });
+        const wantEnt = b.use_entitlement !== false;
+        const count = Math.max(1, Math.min(100, parseInt(b.count, 10) || 1));
+        // v2.19.x：升级账号（key=序号 1..count）按 Zovo 升级实际差额计价、不分配权益
+        const upgrades = (b.upgrades && typeof b.upgrades === 'object') ? b.upgrades : {};
+        const upOf = (i) => upgrades[String(i)] || upgrades[i] || null;
+        let upgradeCount = 0, upgradeTotal = 0;
+        for (let i = 1; i <= count; i += 1) { const c = Number((upOf(i) || {}).cents) || 0; if (c > 0) { upgradeCount += 1; upgradeTotal += c; } }
+        const upNormal = Math.max(0, count - upgradeCount);
+        const normalPlan = await tenantBatchPlan(tenant, req.customer, sku, Math.max(1, upNormal), wantEnt);
+        if (!normalPlan.ok) return res.status(409).json({ success: false, code: normalPlan.code, message: normalPlan.message });
+
+        // 逐序号定价：升级 → 差额（不走权益）；普通 → normalPlan 逐条权益价
+        // v2.20.0 · 升级单在落库前补「升级加价率 + exponent」——供 worker 成功后按实付金额结算时复用
+        const planUpgradeMarkup = Number(normalPlan.plan && normalPlan.plan.upgrade_markup_percent) || 0;
+        let np = 0;
+        const items = [];
+        for (let i = 1; i <= count; i += 1) {
+            const up = upOf(i);
+            if (up && Number(up.cents) > 0) {
+                const upMeta = Object.assign({}, up, {
+                    markup_percent: Number(up.markup_percent != null ? up.markup_percent : planUpgradeMarkup) || 0,
+                    exponent: Number(up.exponent != null ? up.exponent : 2) || 2
+                });
+                items.push({ index: i, unit_cents: Number(up.cents), ent_grant_id: null, upgrade: upMeta });
+            } else {
+                const src = normalPlan.items[np] || { unit_cents: normalPlan.base_unit_cents, ent_grant_id: null };
+                np += 1;
+                items.push({ index: i, unit_cents: Number(src.unit_cents), ent_grant_id: src.ent_grant_id, upgrade: null });
+            }
+        }
+        const totalCost = items.reduce((s, it) => s + Number(it.unit_cents || 0), 0);
+
+        // 幂等：同一批次号重放时，已建过的单不再计入余额需求（也不重复扣款/扣次）
+        const nos = items.map((it) => prefix + '_' + it.index);
+        const existing = await store.runQuery(
+            'SELECT client_order_no FROM kc_api_orders WHERE client_id=? AND client_order_no IN (' + nos.map(() => '?').join(',') + ')',
+            [tenant.id, ...nos]
+        );
+        const existSet = new Set(existing.map((r) => String(r.client_order_no)));
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        const balance = Number(w ? w.balance_cents : 0);
+        const need = items
+            .filter((it) => !existSet.has(prefix + '_' + it.index))
+            .reduce((s, it) => s + Number(it.unit_cents || 0), 0);
+        if (need > balance) {
+            const gap = need - balance;
+            return res.status(402).json({
+                success: false, code: 'INSUFFICIENT_BALANCE',
+                message: '余额不足，还差 ' + openApiUsd(gap),
+                data: { shortfall: openApiUsd(gap), shortfall_cents: gap, total: openApiUsd(totalCost), balance: openApiUsd(balance), count: count }
+            });
+        }
+
+        const results = [];
+        let charged = 0, delivered = 0;
+        for (const it of items) {
+            const clientOrderNo = prefix + '_' + it.index;
+            const row = {
+                index: it.index, client_order_no: clientOrderNo,
+                unit_price: openApiUsd(it.unit_cents), entitlement_applied: it.ent_grant_id != null,
+                upgrade: !!it.upgrade,
+                order_id: null, cdk: '', status: 'failed', error: '', reused: false
+            };
+            try {
+                const quoteId = 'q_' + crypto.randomBytes(8).toString('hex');
+                await tenantBatchInsertQuote(tenant.id, normalPlan.plan, quoteId, it.unit_cents, 1);
+                let entApplied = null;
+                // v2.17.0 · 代充双轨：批量向导 = 「直接代充」路径 → 冻结模型（不是「即扣+发卡」的 createApiOrderCore）
+                const result = await createDirectTopupOrderCore({
+                    tenantId: tenant.id,
+                    customerId: req.customer.id,
+                    clientOrderNo,
+                    quoteId,
+                    source: 'tenant_web',
+                    userRef: 'customer:' + req.customer.id,
+                    upgrade: it.upgrade || null,
+                    resolveCurrent: async (plan) => {
+                        if (!plan) return { available: false, unitCents: 0 };
+                        // 升级账号：冻结额 = 升级差额（与报价同源，drift=0）
+                        if (it.upgrade) return { available: true, unitCents: Number(it.unit_cents) };
+                        const catMap = await tenantCatalogMap(tenant.id);
+                        const catRow = catMap.get(String(plan.code)) || null;
+                        const base = tenantSkuPrice(catRow, plan);
+                        const ent = wantEnt ? await entitlementPricingForCustomer(req.customer.id, plan.code, base) : null;
+                        const unit = ent ? ent.cents : base;
+                        if (ent) entApplied = { grant_id: ent.grant_id, rule_code: ent.rule_code, baseUnit: base, finalUnit: unit };
+                        return { available: tenantSkuAvailable(plan, catRow, tenant), unitCents: unit };
+                    }
+                });
+                const data = (result.body && result.body.data) || {};
+                row.reused = !!data.reused;
+                row.order_id = data.order_id || null;
+                row.cdk = data.cdk || '';
+                if (result.http === 200) {
+                    row.status = String(data.status || 'created');
+                    if (!row.reused) {
+                        charged += Number(it.unit_cents) || 0;
+                        delivered += 1;
+                    }
+                    const grantId = entApplied ? entApplied.grant_id : null;
+                    if (grantId != null && !row.reused) {
+                        try {
+                            await entitlementConsume({
+                                grant_id: grantId,
+                                order_trade_no: row.order_id,
+                                plan_code: normalPlan.plan.code,
+                                original_cents: entApplied ? entApplied.baseUnit : normalPlan.base_unit_cents,
+                                final_cents: Number(it.unit_cents) || 0
+                            });
+                        } catch (ce) { /* 扣次失败不阻塞订单 */ }
+                    }
+                } else {
+                    row.error = (result.body && result.body.message) || '下单失败';
+                }
+            } catch (e) {
+                row.error = String((e && e.message) || e).slice(0, 200);
+            }
+            results.push(row);
+        }
+        res.json({
+            success: true,
+            data: {
+                batch_no: prefix, sku: sku, count: count,
+                delivered: delivered,
+                total: openApiUsd(charged),
+                total_base: openApiUsd((upNormal > 0 ? Number(normalPlan.base_total_cents) : 0) + upgradeTotal),
+                entitlement_discount: openApiUsd(upNormal > 0 ? Number(normalPlan.entitlement_discount_cents) : 0),
+                upgrade_total: openApiUsd(upgradeTotal),
+                results: results
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ── v2.17.0 · 代充双轨之二：卡密代充下单（即扣 + 发 N 张卡密，与「直接代充」完全分开）──
+// 顾客选代充商品 → 选「购买卡密」→ 选数量 N → 下单：平台直接扣款并发放 N 张 CDK，订单即刻完成，
+// 顾客拿到卡密凭证；之后随时在「兑换卡密」页输入卡密 + Session 完成开通（原生链路，本端点不触及）。
+app.post('/api/tenant/orders/cdk', authenticateCustomer, async (req, res) => {
+    try {
+        const b = req.body || {};
+        const tenant = req.tenant;
+        const result = await createCdkTopupOrderCore({
+            tenant: tenant,
+            customer: req.customer,
+            sku: String(b.sku || '').trim(),
+            count: Math.max(1, Math.min(100, parseInt(b.count, 10) || 1)),
+            clientOrderNo: String(b.client_order_no || b.order_no || '').trim(),
+            source: 'tenant_web',
+            useEntitlement: b.use_entitlement !== false
+        });
+        return res.status(result.http).json(result.body);
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
 // 我的订单（仅本租户本顾客；不含成本）
 app.get('/api/tenant/orders', authenticateCustomer, async (req, res) => {
     try {
         const rows = await store.runQuery(
-            'SELECT our_order_no, client_order_no, sku_code, qty, amount_cents, status, cdk, created_at, updated_at ' +
+            'SELECT our_order_no, client_order_no, sku_code, qty, amount_cents, status, cdk, cdk_list_json, fulfill_mode, hold_cents, biz_type, created_at, updated_at ' +
             'FROM kc_api_orders WHERE client_id=? AND customer_id=? ORDER BY id DESC LIMIT 100',
             [req.tenant.id, req.customer.id]
         );
+        // v2.16.3：订单状态 delivered 只代表「已发内部卡密」，不代表「开通成功」——
+        // 故一并把该卡密最近一次开通任务的状态带给前台（前台据此显示「已开通 / 开通中 / 继续开通」，避免已开通的单还显示「继续开通」）。
+        const cdks = rows.map(function (r) { return String(r.cdk || '').trim(); }).filter(Boolean);
+        const taskByCdk = {};
+        if (cdks.length) {
+            const ph = cdks.map(function () { return '?'; }).join(',');
+            const tasks = await store.runQuery(
+                'SELECT t.cdk_code, t.status, t.message, t.updated_at FROM task_logs t JOIN ' +
+                '(SELECT cdk_code, MAX(id) AS mid FROM task_logs WHERE cdk_code IN (' + ph + ') GROUP BY cdk_code) x ON x.mid = t.id',
+                cdks
+            );
+            tasks.forEach(function (t) { taskByCdk[String(t.cdk_code)] = t; });
+        }
         const items = rows.map(function (r) {
+            const cdk = String(r.cdk || '').trim();
+            const t = cdk ? taskByCdk[cdk] : null;
             return {
                 order_id: r.our_order_no, sku: r.sku_code, qty: r.qty,
                 amount: openApiUsd(r.amount_cents), currency: 'USD',
-                status: r.status, cdk: r.cdk || null, created_at: r.created_at, updated_at: r.updated_at
+                status: r.status, cdk: r.cdk || null, biz_type: String(r.biz_type || 'other'),
+                // v2.17.0 · 代充双轨：履约方式 + 冻结额 + 卡密代充的卡密凭证列表
+                fulfill_mode: String(r.fulfill_mode || 'auto'),
+                hold_cents: Number(r.hold_cents) || 0,
+                cdk_list: String(r.fulfill_mode || '') === 'cdk' ? parseCdkList(r.cdk_list_json, r.cdk) : [],
+                created_at: r.created_at, updated_at: r.updated_at,
+                activation_status: cdk ? (t ? String(t.status || 'running') : 'none') : 'none',
+                activation_message: t ? String(t.message || '') : '',
+                activation_at: t ? t.updated_at : null
             };
         });
         res.json({ success: true, data: items });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ===== v2.21.0 · 订单「上游进度」查询（顾客侧）=====
+// 直充单在途时，顾客可在订单详情时间线点「上游进度」实时查上游状态。
+// 红线：作用域一律 req.tenant.id + req.customer.id（禁从请求体读归属）；
+//       仅回白名单字段（绝不透传上游 raw —— 里面有卡号/成本等敏感信息）。
+const UP_STATE_LABEL = {
+    queued: ['inflight', '排队中'],
+    awaiting_card: ['inflight', '等待卡资源'],
+    funding_pending: ['inflight', '资金处理中'],
+    dispatching: ['inflight', '调度中'],
+    running: ['inflight', '开通执行中'],
+    requires_action: ['inflight', '需人工介入'],
+    pending: ['inflight', '待处理'],
+    plus_paid: ['inflight', '已扣款（等待开通）'],
+    completed: ['success', '已完成'],
+    declined: ['failed', '已拒绝'],
+    failed_precharge: ['failed', '扣款失败'],
+    cancelled: ['failed', '已取消'],
+    review: ['review', '上游人工对账中']
+};
+const upstreamQueryCache = new Map(); // upstreamOrderId -> { ts, payload }（30s 进程内缓存，防刷上游）
+
+app.get('/api/tenant/orders/:orderNo/upstream', authenticateCustomer, async (req, res) => {
+    try {
+        const orderNo = String(req.params.orderNo || '').trim();
+        const rows = await store.runQuery(
+            'SELECT cdk, fulfill_mode, biz_type FROM kc_api_orders WHERE our_order_no=? AND client_id=? AND customer_id=? LIMIT 1',
+            [orderNo, req.tenant.id, req.customer.id]
+        );
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '订单不存在' });
+        const order = rows[0];
+        // 仅代充单有上游履约；卡密代充（fulfill_mode=cdk）下单即交付、无上游在途概念
+        if (String(order.biz_type || '') !== 'topup' || String(order.fulfill_mode || '') === 'cdk' || !String(order.cdk || '').trim()) {
+            return res.json({ success: true, data: { has_upstream: false, reason: 'non_topup' } });
+        }
+        const trows = await store.runQuery(
+            'SELECT gpt_api_order_id FROM task_logs WHERE cdk_code=? AND gpt_api_order_id IS NOT NULL ORDER BY id DESC LIMIT 1',
+            [String(order.cdk).trim()]
+        );
+        const upstreamId = trows.length ? String(trows[0].gpt_api_order_id || '').trim() : '';
+        if (!upstreamId) {
+            return res.json({ success: true, data: { has_upstream: false, reason: 'not_submitted' } });
+        }
+        const cached = upstreamQueryCache.get(upstreamId);
+        if (cached && Date.now() - cached.ts < 30000) {
+            return res.json({ success: true, data: cached.payload });
+        }
+        const cfg = await store.getGptApiConfig();
+        const q = await gptApi.queryOrder(cfg, upstreamId);
+        if (!q || !q.success) {
+            return res.json({
+                success: true,
+                data: { has_upstream: true, upstream_order_id: upstreamId, unreachable: true, message: '上游暂时无法查询，请稍后再试' }
+            });
+        }
+        const rawStatus = String((q && q.rawStatus) || '').toLowerCase();
+        const meta = UP_STATE_LABEL[rawStatus] || ['inflight', '处理中'];
+        const payload = {
+            has_upstream: true,
+            upstream_order_id: upstreamId,
+            raw_status: rawStatus || 'unknown',
+            state: meta[0],
+            label: meta[1],
+            topup_code: q.data && q.data.topup_code ? String(q.data.topup_code) : '',
+            queried_at: new Date().toISOString()
+        };
+        if (upstreamQueryCache.size > 500) upstreamQueryCache.clear();
+        upstreamQueryCache.set(upstreamId, { ts: Date.now(), payload });
+        res.json({ success: true, data: payload });
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
@@ -2197,23 +2866,61 @@ function rechargeExactAmount(rechargeNo, amountCents) {
     return (micro / 1e6).toFixed(4);                                               // 如 100.0073
 }
 
+// 充值单「支付信息」统一载荷（POST 发起 / GET 续付 共用，避免两处口径漂移）。
+// v2.11.0：接入 BEpusdt 后——
+//   · mode='gateway'：应付金额以网关折算的 actual_amount 为准（token=网关收款地址）；
+//   · mode='mock'   ：未配置网关，维持原有模拟收款（自算 4 位小数尾数）。
+function rechargePayPayload(rc, tenantId) {
+    const expiresAt = rc.expires_at ? new Date(rc.expires_at).getTime() : 0;
+    const expiresIn = expiresAt ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : 0;
+    const gateway = !!(rc.trade_id || rc.actual_amount || rc.payment_url);
+    const actual = rc.actual_amount ? String(rc.actual_amount) : '';
+    return {
+        recharge_no: rc.recharge_no,
+        amount: openApiUsd(rc.amount_cents),
+        currency: 'USD',
+        // 应付精确金额：网关模式用 actual_amount（USDT）；模拟模式用自算尾数
+        exact_amount: actual || rechargeExactAmount(rc.recharge_no, rc.amount_cents),
+        token: 'USDT', network: 'TRC20',
+        min: openApiUsd(WALLET_MIN_CENTS), max: openApiUsd(WALLET_MAX_CENTS),
+        channel: rc.channel || 'bepusdt',
+        mode: gateway ? 'gateway' : 'mock',
+        pay_address: rc.pay_address || '',
+        payment_url: rc.payment_url || '',
+        trade_id: rc.trade_id || '',
+        status: rc.status,
+        expires_at: rc.expires_at ? new Date(rc.expires_at).toISOString() : null,
+        expires_in: expiresIn
+    };
+}
+
 // 钱包余额 + 流水（顾客维度）
 app.get('/api/tenant/wallet', authenticateCustomer, async (req, res) => {
     try {
-        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        const [w] = await store.runQuery('SELECT balance_cents, held_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
         const rows = await store.runQuery(
             'SELECT change_cents, balance_after_cents, type, ref, note, created_at FROM kc_customer_wallet_ledger WHERE customer_id=? ORDER BY id DESC LIMIT 50',
             [req.customer.id]
+        );
+        // v2.11.0：待支付充值单（供「关闭充值页后继续支付」）。只取 pending 且未过期的，按发起时间倒序。
+        const pendRows = await store.runQuery(
+            "SELECT recharge_no, amount_cents, channel, pay_address, trade_id, actual_amount, payment_url, status, expires_at, created_at FROM kc_customer_recharges " +
+            "WHERE customer_id=? AND client_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY id DESC LIMIT 10",
+            [req.customer.id, req.tenant.id]
         );
         res.json({
             success: true,
             data: {
                 balance: openApiUsd(w ? w.balance_cents : 0),
                 balance_cents: w ? Number(w.balance_cents) : 0,
+                // v2.17.0 · 直接代充：冻结额（可用余额之外的在途资金）
+                held: openApiUsd(w ? w.held_cents : 0),
+                held_cents: w ? Number(w.held_cents || 0) : 0,
                 currency: 'USD',
                 presets: WALLET_PRESETS.map(function (c) { return openApiUsd(c); }),
                 min: openApiUsd(WALLET_MIN_CENTS),
                 max: openApiUsd(WALLET_MAX_CENTS),
+                pending_recharges: pendRows.map(function (r) { return rechargePayPayload(r, req.tenant.id); }),
                 ledger: rows.map(function (r) {
                     return {
                         type: r.type,
@@ -2227,7 +2934,18 @@ app.get('/api/tenant/wallet', authenticateCustomer, async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
+// 拼 notify/redirect 用的对外基址：显式配置优先，否则回落到本次请求的 Host（适配租户自有域名）
+function rechargePublicBaseUrl(req) {
+    const cfg = bepusdt.readConfig();
+    if (cfg.publicBaseUrl) return cfg.publicBaseUrl;
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    return host ? proto + '://' + host : '';
+}
+
 // 发起充值（生成收款地址与充值单；不立即入账）
+// v2.11.0：配置了 BEpusdt 时走「网关下单」，应付金额与收款地址以网关返回为准；
+//          未配置时维持原「模拟收款」，行为不变。
 app.post('/api/tenant/wallet/recharge', authenticateCustomer, async (req, res) => {
     try {
         const b = req.body || {};
@@ -2240,30 +2958,133 @@ app.post('/api/tenant/wallet/recharge', authenticateCustomer, async (req, res) =
             return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: '充值金额需在 ' + openApiUsd(WALLET_MIN_CENTS) + ' ~ ' + openApiUsd(WALLET_MAX_CENTS) + ' 之间' });
         }
         const rechargeNo = 'rc_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
-        const payAddress = mockPayAddress();
         const expiresAt = new Date(Date.now() + WALLET_RECHARGE_TTL_MS);
+
+        if (!bepusdt.isEnabled()) {
+            // ===== 模拟模式（未配置网关，保持现状）=====
+            const payAddress = mockPayAddress();
+            await store.runExecute(
+                'INSERT INTO kc_customer_recharges (client_id, customer_id, recharge_no, amount_cents, currency, channel, pay_address, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [req.tenant.id, req.customer.id, rechargeNo, amountCents, 'USD', 'bepusdt', payAddress, 'pending', expiresAt]
+            );
+            return res.json({ success: true, data: rechargePayPayload({ recharge_no: rechargeNo, amount_cents: amountCents, channel: 'bepusdt', pay_address: payAddress, status: 'pending', expires_at: expiresAt }, req.tenant.id) });
+        }
+
+        // ===== 网关模式：先落单（notify 可能早于本响应到达），再下单回填 =====
         await store.runExecute(
             'INSERT INTO kc_customer_recharges (client_id, customer_id, recharge_no, amount_cents, currency, channel, pay_address, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.tenant.id, req.customer.id, rechargeNo, amountCents, 'USD', 'bepusdt', payAddress, 'pending', expiresAt]
+            [req.tenant.id, req.customer.id, rechargeNo, amountCents, 'USD', 'bepusdt', '', 'pending', expiresAt]
+        );
+        const base = rechargePublicBaseUrl(req);
+        const created = await bepusdt.createTransaction({
+            orderId: rechargeNo,
+            amountUsd: bepusdt.fiatAmountUsd(rechargeNo, amountCents),
+            notifyUrl: base ? base + '/api/wallet/bepusdt/notify' : '',
+            redirectUrl: base ? base + '/site' : ''
+        });
+        if (!created.ok) {
+            await store.runExecute("UPDATE kc_customer_recharges SET status='canceled' WHERE recharge_no=? AND status='pending'", [rechargeNo]);
+            return res.status(502).json({ success: false, code: 'GATEWAY_ERROR', message: '收款网关暂时不可用，请稍后重试：' + (created.message || '') });
+        }
+        const d = created.data || {};
+        const gwExpiresAt = Number(d.expiration_time) > 0 ? new Date(Date.now() + Number(d.expiration_time) * 1000) : expiresAt;
+        await store.runExecute(
+            "UPDATE kc_customer_recharges SET trade_id=?, actual_amount=?, payment_url=?, pay_address=?, expires_at=? WHERE recharge_no=? AND status='pending'",
+            [String(d.trade_id || '').slice(0, 64), String(d.actual_amount || '').slice(0, 32), String(d.payment_url || '').slice(0, 512), String(d.token || '').slice(0, 128), gwExpiresAt, rechargeNo]
         );
         res.json({
             success: true,
+            data: rechargePayPayload({
+                recharge_no: rechargeNo, amount_cents: amountCents, channel: 'bepusdt',
+                pay_address: String(d.token || ''), trade_id: String(d.trade_id || ''),
+                actual_amount: String(d.actual_amount || ''), payment_url: String(d.payment_url || ''),
+                status: 'pending', expires_at: gwExpiresAt
+            }, req.tenant.id)
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 续付：按充值单号取回支付信息（顾客关闭充值页后，从「我的钱包 → 待支付充值单」继续支付）。
+// 作用域铁律：只允许取本租户 + 本顾客的充值单。
+app.get('/api/tenant/wallet/recharge/:rechargeNo', authenticateCustomer, async (req, res) => {
+    try {
+        const rechargeNo = String(req.params.rechargeNo || '').trim();
+        if (!rechargeNo) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 recharge_no' });
+        const rows = await store.runQuery(
+            'SELECT id, recharge_no, amount_cents, channel, pay_address, trade_id, actual_amount, payment_url, status, expires_at FROM kc_customer_recharges WHERE recharge_no=? AND customer_id=? AND client_id=? LIMIT 1',
+            [rechargeNo, req.customer.id, req.tenant.id]
+        );
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '充值单不存在' });
+        const rc = rows[0];
+        if (rc.status === 'paid') return res.status(409).json({ success: false, code: 'RECHARGE_PAID', message: '该充值单已到账，无需继续支付' });
+        if (rc.status !== 'pending') return res.status(409).json({ success: false, code: 'RECHARGE_CLOSED', message: '充值单已关闭，请重新发起' });
+        if (rc.expires_at && new Date(rc.expires_at).getTime() < Date.now()) {
+            await store.runExecute("UPDATE kc_customer_recharges SET status='expired' WHERE id=? AND status='pending'", [rc.id]);
+            return res.status(409).json({ success: false, code: 'RECHARGE_EXPIRED', message: '充值单已过期，请重新发起' });
+        }
+        res.json({ success: true, data: rechargePayPayload(rc, req.tenant.id) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// v2.11.0：充值单状态轮询（网关模式前台用于自动确认到账；任何状态都返回 200，便于轮询）。
+app.get('/api/tenant/wallet/recharge/:rechargeNo/status', authenticateCustomer, async (req, res) => {
+    try {
+        const rechargeNo = String(req.params.rechargeNo || '').trim();
+        if (!rechargeNo) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 recharge_no' });
+        const rows = await store.runQuery(
+            "SELECT recharge_no, amount_cents, status, expires_at, paid_at, notify_txid, actual_amount FROM kc_customer_recharges WHERE recharge_no=? AND customer_id=? AND client_id=? LIMIT 1",
+            [rechargeNo, req.customer.id, req.tenant.id]
+        );
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '充值单不存在' });
+        const rc = rows[0];
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
+        res.json({
+            success: true,
             data: {
-                recharge_no: rechargeNo, amount: openApiUsd(amountCents), currency: 'USD',
-                exact_amount: rechargeExactAmount(rechargeNo, amountCents),
-                token: 'USDT', network: 'TRC20',
-                min: openApiUsd(WALLET_MIN_CENTS), max: openApiUsd(WALLET_MAX_CENTS),
-                channel: 'bepusdt', pay_address: payAddress, status: 'pending',
-                expires_at: expiresAt.toISOString(), expires_in: Math.floor(WALLET_RECHARGE_TTL_MS / 1000)
+                recharge_no: req.params.rechargeNo,
+                status: rc.status,
+                paid: rc.status === 'paid',
+                amount: openApiUsd(rc.amount_cents),
+                actual_amount: rc.actual_amount || '',
+                txid: rc.notify_txid || '',
+                balance: openApiUsd(w ? w.balance_cents : 0),
+                expires_at: rc.expires_at ? new Date(rc.expires_at).toISOString() : null
             }
         });
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
 
-// 收款回调（模拟）：真实环境由 BEpusdt notify 服务端触发；此处供前台「模拟到账」调用。
-// 幂等：已 paid 直接回现状，不重复入账。
+// v2.11.0：入账唯一实现（模拟 confirm 与真实 notify 共用，避免两处口径漂移）。
+// 幂等铁律：仅当 status 仍为 pending 时条件更新为 paid；并发/重复回调天然只入账一次。
+// 入账口径：始终按 rc.amount_cents（用户申请金额）入账，链上尾数不额外入账。
+async function applyRechargeCredit(rc, opts = {}) {
+    const amount = Number(rc.amount_cents) || 0;
+    const lock = await store.runExecute(
+        "UPDATE kc_customer_recharges SET status='paid', paid_at=NOW(), notify_txid=?, notified_at=NOW() WHERE id=? AND status='pending'",
+        [String(opts.txid || '').slice(0, 128), rc.id]
+    );
+    if (!lock || Number(lock.affectedRows) === 0) {
+        const [cur] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [rc.customer_id]);
+        return { credited: false, amount, balance: cur ? Number(cur.balance_cents) : 0 };
+    }
+    await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, rc.customer_id]);
+    const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [rc.customer_id]);
+    try {
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [rc.client_id, rc.customer_id, amount, w ? w.balance_cents : 0, 'recharge', rc.recharge_no, '充值 ' + openApiUsd(amount) + '（' + (opts.noteSuffix || 'bepusdt 到账') + '）']
+        );
+    } catch (le) { /* 流水失败不阻塞入账 */ }
+    return { credited: true, amount, balance: w ? Number(w.balance_cents) : 0 };
+}
+
+// 收款确认（顾客自助，仅模拟模式可用）。
+// 铁律：配置了 BEpusdt（生产模式）时必须关闭顾客自助入账，否则顾客可自刷余额 → 403。
 app.post('/api/tenant/wallet/recharge/confirm', authenticateCustomer, async (req, res) => {
     try {
+        if (bepusdt.isEnabled()) {
+            return res.status(403).json({ success: false, code: 'SELF_CONFIRM_DISABLED', message: '已启用链上自动确认，无需也不允许手动确认到账' });
+        }
         const rechargeNo = String((req.body || {}).recharge_no || '').trim();
         if (!rechargeNo) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '缺少 recharge_no' });
         const rows = await store.runQuery(
@@ -2280,23 +3101,127 @@ app.post('/api/tenant/wallet/recharge/confirm', authenticateCustomer, async (req
             await store.runExecute("UPDATE kc_customer_recharges SET status='expired' WHERE id=?", [rc.id]);
             return res.status(409).json({ success: false, code: 'RECHARGE_EXPIRED', message: '充值单已过期，请重新发起' });
         }
-        const amount = Number(rc.amount_cents) || 0;
-        // 条件入账（仅 pending → paid 生效），天然防重复回调
-        const lock = await store.runExecute("UPDATE kc_customer_recharges SET status='paid', paid_at=NOW() WHERE id=? AND status='pending'", [rc.id]);
-        if (!lock || Number(lock.affectedRows) === 0) {
-            return res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: false } });
-        }
-        await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, req.customer.id]);
-        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [req.customer.id]);
-        try {
-            await store.runExecute(
-                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [req.tenant.id, req.customer.id, amount, w ? w.balance_cents : 0, 'recharge', rechargeNo, '充值 ' + openApiUsd(amount) + '（bepusdt 模拟到账）']
-            );
-        } catch (le) { /* 流水失败不阻塞入账 */ }
-        res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: true, amount: openApiUsd(amount), balance: openApiUsd(w ? w.balance_cents : 0) } });
+        const r = await applyRechargeCredit(rc, { noteSuffix: 'bepusdt 模拟到账' });
+        res.json({ success: true, data: { recharge_no: rechargeNo, status: 'paid', credited: r.credited, amount: openApiUsd(r.amount), balance: openApiUsd(r.balance) } });
     } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
 });
+
+// v2.11.0 · BEpusdt notify 收款回调（无鉴权，靠签名 + 业务校验保证安全）。
+// 铁律：验签通过只证明「来源可信」；仍必须校验本地订单、金额、状态，并幂等入账。
+// 响应遵循 BEpusdt 约定：HTTP 200 + {status_code:200, message:'success'} 视为已受理（网关不再重试）。
+app.post('/api/wallet/bepusdt/notify', async (req, res) => {
+    const reject = (reason, message) => res.json({ status_code: 400, message: reason + (message ? '：' + message : '') });
+    try {
+        if (!bepusdt.isEnabled()) return res.json({ status_code: 503, message: 'gateway not configured' });
+        const body = req.body || {};
+        const check = bepusdt.verifyNotify(body, bepusdt.readConfig().apiToken);
+        if (!check.ok) return reject('verify failed', check.reason);
+        await ensureStoreReady();
+        const rechargeNo = String(body.order_id || '').trim();
+        if (!rechargeNo) return reject('missing order_id');
+        const rows = await store.runQuery('SELECT * FROM kc_customer_recharges WHERE recharge_no=? LIMIT 1', [rechargeNo]);
+        if (!rows.length) return reject('order not found', rechargeNo);
+        const rc = rows[0];
+        const txid = String(body.block_transaction_id || body.txid || body.transaction_id || '').slice(0, 128);
+        // 状态：仅成功态入账
+        if (!bepusdt.isPaidStatus(body.status)) {
+            return res.json({ status_code: 200, message: 'ignored(non-paid status=' + String(body.status) + ')' });
+        }
+        // 已入账：幂等直接受理
+        if (rc.status === 'paid') return res.json({ status_code: 200, message: 'success' });
+        if (rc.status !== 'pending') return res.json({ status_code: 200, message: 'ignored(status=' + rc.status + ')' });
+        // 金额校验：链上金额需与下单时的应付金额一致（容差 0.01 USDT），防止错单/异常金额
+        const received = Number(body.actual_amount != null ? body.actual_amount : body.amount);
+        const expectedUsdt = Number(rc.actual_amount) || Number(rechargeExactAmount(rc.recharge_no, rc.amount_cents));
+        if (!isFinite(received) || Math.abs(received - expectedUsdt) > 0.01) {
+            await store.insertAuditLog({
+                actor_type: 'gateway', action: 'recharge.notify_reject', target_type: 'customer_recharge', target_id: rechargeNo,
+                after: { reason: 'AMOUNT_MISMATCH', received, expected: expectedUsdt, txid }, ip: bepusdtNotifyIp(req)
+            });
+            return reject('amount mismatch', 'received=' + received + ' expected=' + expectedUsdt);
+        }
+        const r = await applyRechargeCredit(rc, { txid, noteSuffix: '链上到账 ' + (txid ? '(' + txid.slice(0, 12) + '…)' : '') });
+        await store.insertAuditLog({
+            actor_type: 'gateway', action: 'recharge.notify', target_type: 'customer_recharge', target_id: rechargeNo,
+            after: { credited: r.credited, amount: openApiUsd(r.amount), actual_amount: String(body.actual_amount || ''), txid }, ip: bepusdtNotifyIp(req)
+        });
+        return res.json({ status_code: 200, message: 'success' });
+    } catch (error) {
+        return res.json({ status_code: 500, message: 'internal error: ' + error.message });
+    }
+});
+function bepusdtNotifyIp(req) {
+    return String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || '').slice(0, 64);
+}
+
+// ===== v2.11.0 · 到账调度兜底对账 =====
+// 定位：notify 为主（即时入账），本调度为兜底——覆盖「回调丢失 / 超时 / notify_url 不可达」的漏单。
+// 数据源：网关公开查单接口 POST /api/v1/pay/info {trade_id}（status 1=待付 / 2=成功 / 3=过期）。
+// 铁律：查单结果同样必须复核本地订单与金额，且复用 applyRechargeCredit 的幂等入账，绝不可重复入账。
+const RECHARGE_RECONCILE_INTERVAL_MS = Math.max(5000, Number(process.env.RECHARGE_RECONCILE_INTERVAL_MS || 60 * 1000));
+const RECHARGE_RECONCILE_LOOKBACK_HOURS = Math.max(1, Number(process.env.RECHARGE_RECONCILE_LOOKBACK_HOURS || 2));
+let rechargeReconcileBusy = false;
+
+async function reconcilePendingRechargesOnce() {
+    if (!bepusdt.isEnabled()) return { enabled: false, checked: 0, credited: 0, expired: 0 };
+    await ensureStoreReady();
+    const rows = await store.runQuery(
+        "SELECT * FROM kc_customer_recharges WHERE status='pending' AND trade_id<>'' AND created_at > DATE_SUB(NOW(), INTERVAL ? HOUR) ORDER BY id DESC LIMIT 100",
+        [RECHARGE_RECONCILE_LOOKBACK_HOURS]
+    );
+    let credited = 0, expired = 0;
+    for (const rc of rows) {
+        try {
+            const q = await bepusdt.queryTransaction(rc.trade_id);
+            if (!q.ok || !q.data) continue;
+            const status = Number(q.data.status);
+            if (status === 2) {
+                // 金额复核：链上到账金额需与下单应付一致（容差 0.01 USDT）
+                const received = Number(q.data.actual_amount);
+                const expected = Number(rc.actual_amount) || Number(rechargeExactAmount(rc.recharge_no, rc.amount_cents));
+                if (!isFinite(received) || Math.abs(received - expected) > 0.01) {
+                    await store.insertAuditLog({
+                        actor_type: 'system', action: 'recharge.reconcile_reject', target_type: 'customer_recharge', target_id: rc.recharge_no,
+                        after: { reason: 'AMOUNT_MISMATCH', received, expected, trade_id: rc.trade_id }, ip: ''
+                    });
+                    continue;
+                }
+                const r = await applyRechargeCredit(rc, { txid: String(rc.trade_id), noteSuffix: '对账补入账' });
+                if (r.credited) {
+                    credited += 1;
+                    await store.insertAuditLog({
+                        actor_type: 'system', action: 'recharge.reconcile', target_type: 'customer_recharge', target_id: rc.recharge_no,
+                        after: { credited: true, amount: openApiUsd(r.amount), trade_id: rc.trade_id }, ip: ''
+                    });
+                }
+            } else if (status === 3 && rc.expires_at && new Date(rc.expires_at).getTime() < Date.now()) {
+                const up = await store.runExecute("UPDATE kc_customer_recharges SET status='expired' WHERE id=? AND status='pending'", [rc.id]);
+                if (up && Number(up.affectedRows) > 0) expired += 1;
+            }
+        } catch (e) { /* 单笔失败不阻断整轮对账 */ }
+    }
+    return { enabled: true, checked: rows.length, credited, expired };
+}
+
+function startRechargeReconciler() {
+    if (!bepusdt.isEnabled()) {
+        console.log('[充值对账] 收款网关未配置，维持模拟模式，跳过调度');
+        return;
+    }
+    console.log('[充值对账] 已启用（每 ' + Math.round(RECHARGE_RECONCILE_INTERVAL_MS / 1000) + 's 查单兜底）');
+    setInterval(async () => {
+        if (rechargeReconcileBusy) return;
+        rechargeReconcileBusy = true;
+        try {
+            const r = await reconcilePendingRechargesOnce();
+            if (r.credited || r.expired) console.log('[充值对账] 本轮扫描 ' + r.checked + ' 单，补入账 ' + r.credited + '，置过期 ' + r.expired);
+        } catch (e) {
+            console.warn('[充值对账] 本轮失败：' + (e && e.message));
+        } finally {
+            rechargeReconcileBusy = false;
+        }
+    }, RECHARGE_RECONCILE_INTERVAL_MS).unref();
+}
 
 // ===== v1.43.0 · Stage 3.4 权益包前台（G4 闭环）=====
 // 铁律：作用域一律 customer_id=req.customer.id + client_id=req.tenant.id（由 authenticateCustomer 回写）。
@@ -2327,6 +3252,10 @@ app.get('/api/tenant/packs', async (req, res) => {
             'SELECT code, display_name, grant_uses, grant_period_days, sale_price_cents, note FROM kc_entitlement_rules WHERE status=? AND sale_price_cents > 0 ORDER BY priority DESC, id DESC',
             ['active']
         );
+        // v2.19.0：附「该权益包已配置权益价的商品数」——前台展示适用范围，避免「有包却用不了」的困惑
+        const covRows = await store.runQuery("SELECT rule_code, COUNT(*) AS n FROM kc_entitlement_prices WHERE status='active' GROUP BY rule_code");
+        const covMap = {};
+        covRows.forEach(function (r) { covMap[String(r.rule_code)] = Number(r.n) || 0; });
         const items = rows.map(function (r) {
             return {
                 code: r.code,
@@ -2335,6 +3264,7 @@ app.get('/api/tenant/packs', async (req, res) => {
                 period_days: Number(r.grant_period_days) || 0,
                 price: openApiUsd(r.sale_price_cents),
                 currency: 'USD',
+                covered_products: covMap[String(r.code)] || 0,
                 note: r.note || ''
             };
         });
@@ -2444,7 +3374,9 @@ function requireTenantOwner(req, res, next) {
     }
     next();
 }
-const TENANT_BRAND_COLS = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
+const TENANT_BRAND_COLS = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'color_scheme', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
+// v2.14.0：可选的配色方案白名单（前台 <html data-scheme>），非法值回落默认「简约白」
+const KC_COLOR_SCHEMES = ['mint', 'ocean', 'violet', 'ember', 'ink'];
 
 // 概览
 app.get('/api/tenant-admin/overview', authenticateTenantStaff, async (req, res) => {
@@ -2496,9 +3428,10 @@ app.get('/api/tenant-admin/products', authenticateTenantStaff, async (req, res) 
         const tid = req.tenant.id;
         const catMap = await tenantCatalogMap(tid);
         const rows = await store.runQuery(
-            'SELECT k.code, k.display_name, k.api_enabled, k.api_markup_percent, k.upstream_plan_key, u.upstream_price_cents ' +
+            'SELECT k.*, u.upstream_price_cents ' +
             'FROM kc_plans k LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
-            'WHERE k.api_enabled = 1 ORDER BY k.id'
+            // v2.13.0：与主站目录同口径（上架 + 在售 + active），保证代理商后台看到的就是主站口径
+            'WHERE k.show_flag = 1 AND k.sell_flag = 1 AND k.status = \'active\' ORDER BY k.id'
         );
         res.json({
             success: true,
@@ -2536,7 +3469,7 @@ app.get('/api/tenant-admin/brand', authenticateTenantStaff, async (req, res) => 
     try {
         const brand = await loadTenantBrand(req.tenant.id);
         res.json({ success: true, data: brand || {
-            brand_name: '', logo_url: '', primary_color: '', accent_color: '',
+            brand_name: '', logo_url: '', primary_color: '', accent_color: '', color_scheme: 'ink',
             support_contact: '', support_url: '', hero_title: '', hero_subtitle: '', footer_text: '', extra: null
         } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -2544,7 +3477,8 @@ app.get('/api/tenant-admin/brand', authenticateTenantStaff, async (req, res) => 
 app.post('/api/tenant-admin/brand', authenticateTenantStaff, async (req, res) => {
     try {
         const tid = req.tenant.id;
-        const b = req.body || {};
+        const b = Object.assign({}, req.body || {});
+        if (KC_COLOR_SCHEMES.indexOf(String(b.color_scheme)) < 0) b.color_scheme = 'ink';
         const vals = TENANT_BRAND_COLS.map(function (c) { return String(b[c] || '').slice(0, 500); });
         const exist = await store.runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [tid]);
         if (exist.length) {
@@ -2620,10 +3554,268 @@ app.post('/api/tenant-admin/staff', authenticateTenantStaff, requireTenantOwner,
         res.json({ success: true, message: '已创建员工' });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
+// 场景 B（v2.5.0）：租户 owner 重置本租户员工密码 → 一次性令牌（仅回显一次）+ 强制首改。非 owner 被 requireTenantOwner 拦为 403。
+app.post('/api/tenant-admin/staff/:id/reset-password', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const rows = await store.runQuery('SELECT id, email, role FROM kc_tenant_staff WHERE id=? AND client_id=? LIMIT 1', [id, req.tenant.id]);
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '员工不存在' });
+        if (req.tenantStaff && Number(req.tenantStaff.id) === id) {
+            return res.status(400).json({ success: false, code: 'SELF', message: '不能重置当前登录账号的密码' });
+        }
+        const actor = tenantAuditActor(req);
+        const temp = await issuePasswordReset({
+            accountType: 'tenant_staff', accountId: id,
+            actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+        });
+        await store.runExecute('UPDATE kc_tenant_staff SET password_hash=?, must_change_password=1 WHERE id=? AND client_id=?', [adminAuth.createPasswordHash(temp), id, req.tenant.id]);
+        await store.insertAuditLog(Object.assign(actor, {
+            action: 'staff.reset_password', target_type: 'tenant_staff', target_id: String(id),
+            before: null, after: { must_change_password: 1 }
+        }));
+        res.json({ success: true, data: { id: id, temp_password: temp, reset_expires_in: PASSWORD_RESET_TTL_SEC } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+// 批次 5（v2.7.0）：租户员工管理补齐 —— 改角色 / 启用·禁用（仅 owner；kc_tenant_staff.role ENUM 仅 owner|staff）。
+async function countActiveTenantOwners(tid) {
+    const rows = await store.runQuery("SELECT COUNT(*) AS total FROM kc_tenant_staff WHERE client_id=? AND role='owner' AND status='active'", [tid]);
+    return Number(rows[0] && rows[0].total) || 0;
+}
+app.put('/api/tenant-admin/staff/:id', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const rows = await store.runQuery('SELECT id, email, role, status FROM kc_tenant_staff WHERE id=? AND client_id=? LIMIT 1', [id, req.tenant.id]);
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '员工不存在' });
+        const before = rows[0];
+        const role = String((req.body && req.body.role) || '').trim();
+        if (role !== 'owner' && role !== 'staff') return res.status(400).json({ success: false, message: '角色只能是 owner 或 staff' });
+        if (before.role === 'owner' && role === 'staff' && (await countActiveTenantOwners(req.tenant.id)) <= 1) {
+            return res.status(400).json({ success: false, code: 'LAST_OWNER', message: '不能降级最后一个负责人' });
+        }
+        await store.runExecute('UPDATE kc_tenant_staff SET role=? WHERE id=? AND client_id=?', [role, id, req.tenant.id]);
+        await store.insertAuditLog(Object.assign(tenantAuditActor(req), {
+            action: 'staff.update', target_type: 'tenant_staff', target_id: String(id),
+            before: { role: before.role }, after: { role: role }
+        }));
+        res.json({ success: true, message: '已更新员工角色', data: { id: id, role: role } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/staff/:id/status', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const rows = await store.runQuery('SELECT id, email, role, status FROM kc_tenant_staff WHERE id=? AND client_id=? LIMIT 1', [id, req.tenant.id]);
+        if (!rows.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '员工不存在' });
+        const before = rows[0];
+        const status = String((req.body && req.body.status) || '').trim();
+        if (status !== 'active' && status !== 'disabled') return res.status(400).json({ success: false, message: '状态只能是 active 或 disabled' });
+        if (status === 'disabled') {
+            if (req.tenantStaff && Number(req.tenantStaff.id) === id) {
+                return res.status(400).json({ success: false, code: 'SELF', message: '不能禁用当前登录账号' });
+            }
+            if (before.role === 'owner' && (await countActiveTenantOwners(req.tenant.id)) <= 1) {
+                return res.status(400).json({ success: false, code: 'LAST_OWNER', message: '不能禁用最后一个负责人' });
+            }
+        }
+        await store.runExecute('UPDATE kc_tenant_staff SET status=? WHERE id=? AND client_id=?', [status, id, req.tenant.id]);
+        await store.insertAuditLog(Object.assign(tenantAuditActor(req), {
+            action: 'staff.update', target_type: 'tenant_staff', target_id: String(id),
+            before: { status: before.status }, after: { status: status }
+        }));
+        res.json({ success: true, message: status === 'active' ? '已启用该员工' : '已禁用该员工', data: { id: id, status: status } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+// 租户员工自助改密（强制首改闸门的唯一白名单写操作）。
+app.post('/api/tenant-admin/change-password', authenticateTenantStaff, async (req, res) => {
+    try {
+        const currentPassword = String((req.body && req.body.currentPassword) || '');
+        const newPassword = String((req.body && req.body.newPassword) || '');
+        if (!currentPassword) return res.status(400).json({ success: false, message: '请输入原密码' });
+        const strength = validatePasswordStrength(newPassword);
+        if (!strength.ok) return res.status(400).json({ success: false, message: strength.message });
+        const staff = req.tenantStaff;
+        if (!adminAuth.verifyPassword(currentPassword, staff.password_hash)) {
+            return res.status(400).json({ success: false, message: '原密码错误' });
+        }
+        if (adminAuth.verifyPassword(newPassword, staff.password_hash)) {
+            return res.status(400).json({ success: false, message: '新密码不能与原密码相同' });
+        }
+        await store.runExecute('UPDATE kc_tenant_staff SET password_hash=?, must_change_password=0 WHERE id=?', [adminAuth.createPasswordHash(newPassword), staff.id]);
+        await store.insertAuditLog(Object.assign(tenantAuditActor(req), {
+            action: 'staff.change_own_password', target_type: 'tenant_staff', target_id: String(staff.id),
+            before: null, after: { must_change_password: 0 }
+        }));
+        res.json({ success: true, message: '密码修改成功，请重新登录' });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+// ===== v2.3.0 · 顾客管理域：代理商后台镜像 =====
+// 铁律：作用域锁 req.tenant.id（:id 必须属于本租户，否则 404）；响应剔除 cost_cents 与 tenant 字段。
+app.get('/api/tenant-admin/customers', authenticateTenantStaff, async (req, res) => {
+    try {
+        const data = await customerListQuery(req, req.tenant.id);
+        data.items = data.items.map(function (r) { const o = Object.assign({}, r); delete o.tenant_name; return o; });
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.get('/api/tenant-admin/customers/:id', authenticateTenantStaff, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const data = await customerDetailData(c);
+        delete data.customer.tenant_name;
+        delete data.customer.tenant_id;
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.get('/api/tenant-admin/customers/:id/wallet', authenticateTenantStaff, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerWalletData(id) });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.get('/api/tenant-admin/customers/:id/orders', authenticateTenantStaff, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const data = await customerOrdersData(id, req.query || {});
+        data.items = data.items.map(function (r) { const o = Object.assign({}, r); delete o.cost_cents; return o; });
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.get('/api/tenant-admin/customers/:id/entitlements', authenticateTenantStaff, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerEntitlementsData(id) });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/customers/:id/status', authenticateTenantStaff, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        const status = String((req.body || {}).status || '').trim();
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        if (status !== 'active' && status !== 'disabled') return res.status(400).json({ success: false, message: 'status 仅支持 active/disabled' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        await store.runExecute('UPDATE kc_customers SET status=? WHERE id=? AND client_id=?', [status, id, req.tenant.id]);
+        await store.insertAuditLog(Object.assign(tenantAuditActor(req), {
+            action: status === 'disabled' ? 'customer.freeze' : 'customer.unfreeze',
+            target_type: 'customer', target_id: String(id),
+            before: { status: c.status }, after: { status: status }
+        }));
+        res.json({ success: true, data: { id: id, status: status } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+app.post('/api/tenant-admin/customers/:id/reset-password', authenticateTenantStaff, requireTenantOwner, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, req.tenant.id);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const actor = tenantAuditActor(req);
+        // v2.5.0：统一走一次性重置令牌（库里只存 sha256，30min 过期，用后即焚），明文仅本次回显。
+        const temp = await issuePasswordReset({
+            accountType: 'customer', accountId: id,
+            actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+        });
+        await store.runExecute('UPDATE kc_customers SET password_hash=?, must_change_password=1 WHERE id=? AND client_id=?', [adminAuth.createPasswordHash(temp), id, req.tenant.id]);
+        await store.insertAuditLog(Object.assign(actor, {
+            action: 'customer.reset_password', target_type: 'customer', target_id: String(id),
+            before: null, after: { must_change_password: 1 }
+        }));
+        res.json({ success: true, data: { temp_password: temp, reset_expires_in: PASSWORD_RESET_TTL_SEC } });
+    } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
 
 app.use('/api/public/business', createBusinessStorefrontRouter(createRequireStorefrontUser()));
 app.use('/api/admin/business', createBusinessAdminRouter(authenticateAdmin));
 app.use('/api/admin', authenticateAdmin);
+app.use('/api/admin', requirePasswordChanged);
+
+// ── v2.8.0（批次6）端点级权限收口 ──
+// 用「路径 → 权限点」映射表给既有后台端点补 requirePermission，与 kc_admin_menus 的 permission 同源：
+// 菜单能看见 = 端点放行，菜单看不见 = 端点 403，从根上消除「菜单/接口」两套判定漂移。
+// 表内为 GET 读 / 其余写 的页面，`methods.GET` 覆盖读点，`point` 为默认（写）点。
+// 例外（刻意不设门，理由见 CHANGELOG v2.8.0）：登录 / 二次鉴权 / 会话 / 改密 / 2FA 自助端点（登录壳依赖）、
+// 仪表盘与系统配置共享读 `/api/admin/data`、安全状态读 `/api/admin/security/status`。
+// 已内联 requirePermission 的域（customers / roles / admins / permissions / menus / audit-logs / password-resets）不入本表，避免双重判定。
+const ADMIN_ROUTE_PERMISSIONS = [
+    // 订单与账单（menu: billing 开通账单 / cancel_renewal 续费管理 / checkout_debug 支付链接调试 / logs 任务管理）
+    { re: /^\/api\/admin\/billing(\/|$)/, point: 'order.read' },
+    { re: /^\/api\/admin\/subscription(\/|$)/, point: 'order.read' },
+    { re: /^\/api\/admin\/checkout(\/|$)/, point: 'order.read' },
+    { re: /^\/api\/admin\/task-logs(\/|$)/, point: 'order.read' },
+    // 日志（menu: runtime_logs 运行日志 / admin_login_logs 登录日志）
+    { re: /^\/api\/admin\/runtime-logs(\/|$)/, point: 'audit.read' },
+    { re: /^\/api\/admin\/login-logs(\/|$)/, point: 'audit.read' },
+    // 资产（menu: cdks CDK 管理 / cards 银行卡池 / sessions Session 管理）
+    { re: /^\/api\/admin\/cdks(\/|$)/, point: 'entitlement.issue' },
+    { re: /^\/api\/admin\/cards(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/sessions(\/|$)/, point: 'system.config' },
+    // 自动化与系统资源（menu: proxies 代理池 / browser_pool 浏览器池）
+    { re: /^\/api\/admin\/proxies(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/browser-pool(\/|$)/, point: 'system.config' },
+    // 系统与安全（menu: tax_addresses 免税地址 / config 系统配置 / sitecfg 站点与定价）
+    { re: /^\/api\/admin\/addresses(\/|$)/, point: 'admin.write' },
+    { re: /^\/api\/admin\/config(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/site-config(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/region(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/telegram(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/hcaptcha(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/gpt-api(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/integration(\/|$)/, point: 'system.config' },
+    { re: /^\/api\/admin\/security\/(2fa-mode|paths)$/, point: 'system.config' },
+    // 商品与定价（GET 读 → pricing.read；其余写 → pricing.write）
+    { re: /^\/api\/admin\/products(\/|$)/, methods: { GET: 'pricing.read' }, point: 'pricing.write' },
+    { re: /^\/api\/admin\/plans(\/|$)/, methods: { GET: 'pricing.read' }, point: 'pricing.write' },
+    { re: /^\/api\/admin\/listing-cards(\/|$)/, methods: { GET: 'pricing.read' }, point: 'pricing.write' },
+    { re: /^\/api\/admin\/upstreams(\/|$)/, methods: { GET: 'pricing.read' }, point: 'pricing.write' },
+    { re: /^\/api\/admin\/card-config(\/|$)/, methods: { GET: 'pricing.read' }, point: 'pricing.write' },
+    // 权益（GET 读 → entitlement.read；发放 / 撤销 → entitlement.issue；报价 → pricing.write）
+    { re: /^\/api\/admin\/entitlements\/actions(\/|$)/, point: 'entitlement.read' },
+    { re: /^\/api\/admin\/entitlements\/user-lookup(\/|$)/, point: 'entitlement.read' },
+    { re: /^\/api\/admin\/entitlements\/grants(\/|$)/, methods: { GET: 'entitlement.read' }, point: 'entitlement.issue' },
+    { re: /^\/api\/admin\/entitlements\/rules(\/|$)/, methods: { GET: 'entitlement.read' }, point: 'entitlement.issue' },
+    { re: /^\/api\/admin\/entitlements\/prices(\/|$)/, methods: { GET: 'entitlement.read' }, point: 'pricing.write' },
+    { re: /^\/api\/admin\/entitlements\/packs(\/|$)/, point: 'pricing.write' },
+    // 租户与 API 客户（GET 读 → tenant.read；其余写 → tenant.write）
+    { re: /^\/api\/admin\/tenants(\/|$)/, methods: { GET: 'tenant.read' }, point: 'tenant.write' },
+    { re: /^\/api\/admin\/api-clients(\/|$)/, methods: { GET: 'tenant.read' }, point: 'tenant.write' },
+    { re: /^\/api\/admin\/api-portal(\/|$)/, methods: { GET: 'tenant.read' }, point: 'tenant.write' },
+    // 履约触发（发卡 → entitlement.issue）
+    { re: /^\/api\/admin\/trigger-activation$/, point: 'entitlement.issue' }
+];
+
+function adminRoutePermission(req) {
+    const p = String(req.originalUrl || '').split('?')[0];
+    for (const entry of ADMIN_ROUTE_PERMISSIONS) {
+        if (!entry.re.test(p)) continue;
+        const byMethod = entry.methods && entry.methods[String(req.method || 'GET').toUpperCase()];
+        return byMethod || entry.point || '';
+    }
+    return '';
+}
+
+app.use('/api/admin', (req, res, next) => {
+    const point = adminRoutePermission(req);
+    if (!point) return next();
+    if (!adminHasPermission(req.admin, point)) {
+        return res.status(403).json({ success: false, code: 'FORBIDDEN', message: `缺少权限：${point}` });
+    }
+    return next();
+});
 
 app.get('/subscription', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'subscription.html'));
@@ -2752,7 +3944,9 @@ app.get('/api/admin/session', (req, res) => {
     let payload = req.admin;
 
     if (shouldRefresh) {
-        const refreshed = issueAdminToken(req.admin.pv, req.admin.email);
+        const refreshed = issueAdminToken(req.admin.pv, req.admin.email, {
+            id: req.admin.id, role: req.admin.role, permissions: req.admin.permissions
+        });
         refreshedToken = refreshed.token;
         payload = refreshed.payload;
     }
@@ -2764,6 +3958,8 @@ app.get('/api/admin/session', (req, res) => {
         expiresAt: payload.exp,
         issuedAt: payload.iat,
         permissions: payload.permissions,
+        role: req.admin.role || 'super',
+        must_change_password: Boolean(req.admin.must_change_password),
         email: payload.email || ''
     });
 });
@@ -2776,7 +3972,9 @@ app.get('/api/admin/security/status', async (req, res) => {
         const paths = await store.getAdminPaths();
         res.json({
             success: true,
-            email: authConfig.email,
+            email: (req.admin && req.admin.email) || authConfig.email,
+            role: (req.admin && req.admin.role) || 'super',
+            isSuper: !req.admin || req.admin.role === 'super',
             totpEnabled: authConfig.totpEnabled,
             login2faMode: authConfig.login2faMode,
             availableMethods: adminAuth.getAvailable2faMethods(authConfig, telegramSettings),
@@ -3518,7 +4716,9 @@ app.get('/api/admin/gpt-api', async (req, res) => {
                 plan_key: cfg.plan_key,
                 country: cfg.country,
                 currency: cfg.currency,
-                mock: cfg.mock
+                mock: cfg.mock,
+                mock_lock: gptApi.isMockLockEnabled(),
+                effective_mock: gptApi.isMockMode(cfg)
             }
         });
     } catch (error) {
@@ -3550,15 +4750,23 @@ app.post('/api/admin/gpt-api/test', async (req, res) => {
         await ensureStoreReady();
         const body = req.body || {};
         const saved = await store.getGptApiConfig();
+        // 取值优先级（F1/F3）：请求体里填的值 → 后台已保存的 DB 配置 → 客户端内部 env 兜底
         const merged = {
             base_url: String(body.base_url || '').trim() || saved.base_url,
             api_key: String(body.api_key || '').trim() || saved.api_key
         };
         const result = await gptApi.testConnection(merged);
         if (!result.success) {
-            return res.status(400).json({ success: false, message: result.error || '连接失败' });
+            return res.status(400).json({ success: false, mock: result.mock === true, message: result.error || '连接失败' });
         }
-        res.json({ success: true, message: result.message, plans: result.plans, balance: result.balance });
+        res.json({
+            success: true,
+            mock: result.mock === true,
+            lock: result.lock === true,
+            message: result.message,
+            plans: result.plans,
+            balance: result.balance
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -3568,8 +4776,17 @@ app.get('/api/admin/gpt-api/status', async (req, res) => {
     try {
         await ensureStoreReady();
         const cfg = await store.getGptApiConfig();
+        const mockLock = gptApi.isMockLockEnabled();
+        const effectiveMock = gptApi.isMockMode(cfg);
         if (!cfg.api_key) {
-            return res.status(400).json({ success: false, message: '尚未配置第三方代充 API Key' });
+            return res.status(400).json({
+                success: false,
+                mock: effectiveMock,
+                mock_lock: mockLock,
+                message: mockLock
+                    ? '尚未配置第三方代充 API Key（当前安全锁 MOCK 生效，未真实连通 ZovoCard）'
+                    : '尚未配置第三方代充 API Key'
+            });
         }
         const [plansResult, balanceResult, recentOrders] = await Promise.all([
             gptApi.fetchPlans(cfg),
@@ -3587,16 +4804,155 @@ app.get('/api/admin/gpt-api/status', async (req, res) => {
             updated_at: order.updated_at,
             order_id: order.gpt_api_order_id,
             task_id: order.gpt_api_task_id,
-            topup_code: order.gpt_api_topup_code || null
+            topup_code: order.gpt_api_topup_code || null,
+            card_id: order.gpt_api_card_id || null,
+            card_last_four: order.gpt_api_card_last4 || null
         }));
         res.json({
             success: true,
+            mock: effectiveMock,
+            mock_lock: mockLock,
             gpt_plans: plansResult.gptPlans,
             credit_plans: plansResult.creditPlans,
             balance: balanceResult.success ? balanceResult.data : null,
             balance_error: balanceResult.success ? null : balanceResult.error,
             recent_orders: orders
         });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ─── 代充卡池：选卡策略 / 选卡预览 / 卡余额维护（§6.18.5a + §6.4/6.9）──────
+// 读为主；写只有两处：套用选卡策略、卡补足。权限沿用 gpt-api 组的 system.config。
+
+// 推荐选卡策略（第 1 层）：分散使用 + 失败不计次 + 保留自动换卡兜底 + 不做严格选择。
+const GPT_API_RECOMMENDED_CARD_RULES = Object.freeze({
+    product: 'gpt',
+    select_mode: 'lowest_usage',
+    count_failures: false,
+    auto_switch_on_fail: true,
+    max_auto_switches: 2,
+    strict_select: false
+});
+
+async function loadGptApiCfg() {
+    await ensureStoreReady();
+    return store.getGptApiConfig();
+}
+
+app.get('/api/admin/gpt-api/card-rules', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const product = String(req.query.product || 'gpt').trim().toLowerCase();
+        const result = await gptApi.getCardRules(cfg, { product });
+        if (!result.success) return res.status(400).json({ success: false, message: result.error || '选卡策略查询失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), product, list: result.list || [], recommended: GPT_API_RECOMMENDED_CARD_RULES });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.post('/api/admin/gpt-api/card-rules', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const body = req.body || {};
+        const product = String(body.product || 'gpt').trim().toLowerCase();
+        // use_recommended=true → 服务端权威的推荐策略（第 1 层已拍板的一套）
+        const payload = body.use_recommended ? { ...GPT_API_RECOMMENDED_CARD_RULES, product } : { ...body, product };
+        const result = await gptApi.putCardRules(cfg, payload);
+        if (!result.success) return res.status(400).json({ success: false, error_code: result.errorCode || null, message: result.error || '选卡策略保存失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), product, applied: result.applied ?? result.data ?? null });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/gpt-api/card-pool/schedule', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const result = await gptApi.previewCardPoolSchedule(cfg, {
+            product: String(req.query.product || 'gpt'),
+            plan: req.query.plan ? String(req.query.plan) : undefined,
+            card_mode: req.query.card_mode ? String(req.query.card_mode) : 'auto_existing'
+        });
+        if (!result.success) return res.status(400).json({ success: false, error_code: result.errorCode || null, message: result.error || '选卡预览失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), preview: result.data || null });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/gpt-api/card-products', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const result = await gptApi.listCardProducts(cfg);
+        if (!result.success) return res.status(400).json({ success: false, message: result.error || '卡产品查询失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), list: result.list || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 卡余额看板：sync=1 触发上游余额同步，balance_sort=asc 便于发现低余额卡。只回脱敏卡。
+app.get('/api/admin/gpt-api/cards', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const result = await gptApi.listCards(cfg, {
+            page: req.query.page,
+            page_size: req.query.page_size,
+            balance_sort: req.query.balance_sort ? String(req.query.balance_sort) : undefined,
+            sync: req.query.sync ? String(req.query.sync) : undefined,
+            issuer: req.query.issuer ? String(req.query.issuer) : undefined,
+            status: req.query.status ? String(req.query.status) : undefined,
+            q: req.query.q ? String(req.query.q) : undefined
+        });
+        if (!result.success) return res.status(400).json({ success: false, message: result.error || '卡列表查询失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), total: result.total, list: result.redacted || [] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/gpt-api/cards/usage', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const cardId = String(req.query.card_id || '').trim();
+        if (!cardId) return res.status(400).json({ success: false, message: '缺少 card_id' });
+        const result = await gptApi.getCardUsage(cfg, cardId, { product: String(req.query.product || 'gpt') });
+        if (!result.success) return res.status(400).json({ success: false, message: result.error || '剩余次数查询失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), usage: result.data || null });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 卡补足（写）：★amount_below_min 是不可重试的参数错误，切勿原样重发★
+app.post('/api/admin/gpt-api/cards/recharge', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const body = req.body || {};
+        const result = await gptApi.rechargeCard(cfg, { cardId: body.card_id, amount: body.amount });
+        if (!result.success) {
+            const message = result.amountBelowMin
+                ? '补足金额低于该卡的最低充值下限（min_recharge），请调大金额后重试（此错误不可重试）'
+                : (result.error || '卡补足失败');
+            return res.status(400).json({ success: false, error_code: result.errorCode || null, amount_below_min: result.amountBelowMin === true, message });
+        }
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), pending: result.pending === true, message: result.msg || '补足成功' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+app.get('/api/admin/gpt-api/cards/fund-flows', async (req, res) => {
+    try {
+        const cfg = await loadGptApiCfg();
+        const cardId = String(req.query.card_id || '').trim();
+        if (!cardId) return res.status(400).json({ success: false, message: '缺少 card_id' });
+        const result = await gptApi.listCardFundFlows(cfg, cardId);
+        if (!result.success) return res.status(400).json({ success: false, message: result.error || '资金流水查询失败' });
+        res.json({ success: true, mock: gptApi.isMockMode(cfg), list: result.list || [] });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
@@ -3862,6 +5218,10 @@ app.delete('/api/admin/cards/:id', requireSecondaryAuth, async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ success: false, error: '卡片不存在' });
         }
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'card.delete', target_type: 'card_asset', target_id: String(cardId),
+            before: { card_id: cardId }, after: null
+        }));
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -4027,12 +5387,36 @@ app.post('/api/admin/change-password', async (req, res) => {
         return res.status(400).json({ success: false, message: '请输入原密码' });
     }
 
-    if (newPassword.length < 6) {
-        return res.status(400).json({ success: false, message: '新密码至少 6 位' });
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.ok) {
+        return res.status(400).json({ success: false, message: strength.message });
     }
 
     try {
         await ensureStoreReady();
+        // v2.4.0：多管理员账号 → 改自己（kc_admin_users）；无 auid 的旧令牌 → 回落 app_config 单账号。
+        if (req.admin && req.admin.id) {
+            const row = await store.getAdminUserAuthRowByEmail(req.admin.email);
+            if (!row) return res.status(401).json({ success: false, message: '登录状态已失效，请重新登录' });
+            if (!verifyPassword(currentPassword, row.password_hash)) {
+                return res.status(400).json({ success: false, message: '原密码错误' });
+            }
+            if (verifyPassword(newPassword, row.password_hash)) {
+                return res.status(400).json({ success: false, message: '新密码不能与原密码相同' });
+            }
+            await store.setAdminUserPassword(req.admin.id, adminAuth.createPasswordHash(newPassword));
+            await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+                action: 'admin.change_own_password', target_type: 'admin_user', target_id: String(req.admin.id),
+                before: null, after: { must_change_password: 0 }
+            }));
+            await logAdminSecurityEvent('password_changed', {
+                ...adminAuth.getClientMeta(req),
+                email: req.admin.email,
+                detail: '登录密码已修改'
+            });
+            return res.json({ success: true, message: '密码修改成功，请重新登录' });
+        }
+
         const authConfig = await store.getAdminAuthConfig();
 
         if (!verifyPassword(currentPassword, authConfig.passwordHash)) {
@@ -4318,6 +5702,96 @@ function mapGptApiPlanKey(planType) {
     return GPT_API_PLAN_MAP[String(planType || '').trim()] || 'plus';
 }
 
+/**
+ * v2.19.x · 直接代充「当前套餐 / 目标套餐」与升级报价。
+ * 先 preflight（校验 Session + 取 preflight_token），再调 upgrade-quotes；
+ * 命中「目标套餐的可用报价」→ 升级（返回新 token/币种/应付差额）；否则视为新购（mode='new'）。
+ * 依据 ZovoCard OpenAPI：POST /gpt-direct/upgrade-quotes（body 仅 preflight_token）。
+ * ★升级报价失败不抛错（回落 new），避免影响普通新购；仅 preflight 失败（Session 无效）才 ok=false★
+ *
+ * v2.20.0 · 升级零售价口径（用户拍板）：
+ *   「Zovo 升级差额」是**账户发票币种**的金额（常见 PHP/JPY），不是 USD；平台钱包是 USD 账本。
+ *   故：costUSD = (amount_minor / 10^exponent) × 实时汇率(该币种→USD)
+ *       retail  = round(costUSD × 100 × (1 + 升级加价率%))   ← 加价率取 kc_plans.upgrade_markup_percent
+ *   ★不复用平台 api_markup_percent（对外 API 分销），升级加价率是**独立配置**★
+ *   ★汇率取不到（非 USD 且无缓存）→ 返回 fxUnavailable，由调用方禁止计价，绝不臆测汇率★
+ */
+async function resolveUpgradeQuote(cfg, { planKey, session, sessionToken, markupPercent }) {
+    const apiPlanKey = mapGptApiPlanKey(planKey);
+    const pfRes = await gptApi.inspectPay(cfg, { planKey: apiPlanKey, session, sessionToken });
+    if (!pfRes.success) {
+        return { ok: false, mode: 'invalid', error: pfRes.error || 'session_invalid', errorCode: pfRes.errorCode, httpCode: pfRes.httpCode };
+    }
+    const pfData = (pfRes && pfRes.data) || {};
+    const pfToken = pfData.preflight_token || (pfData.data && pfData.data.preflight_token) || '';
+    const uq = await gptApi.upgradeQuotes(cfg, { preflightToken: pfToken, planKey: apiPlanKey });
+    if (!uq.success) {
+        return { ok: true, mode: 'new', upgradeQuoteError: uq.errorCode || uq.error || 'upgrade_quotes_failed' };
+    }
+    const quotes = Array.isArray(uq.quotes) ? uq.quotes : [];
+    const match = quotes.filter(function (q) { return q && String(q.plan || '') === apiPlanKey && q.available === true; })[0] || null;
+    if (!match) return { ok: true, mode: 'new', currentPlan: null };
+    const expRaw = Number(match.minor_unit_exponent);
+    const exponent = Number.isFinite(expRaw) ? expRaw : 2;
+    const amountMinorRaw = Number(match.amount_minor);
+    const amountMinor = Number.isFinite(amountMinorRaw) ? Math.max(0, amountMinorRaw) : 0;
+    const currency = String(match.currency || 'USD').toUpperCase();
+    const currentPlan = String(match.current_plan || '') || null;
+    // v2.20.0 · 币种折算（USD 恒为 1，无需外呼）；取不到汇率 → 不臆测，交由上层禁止计价
+    const fx = await fxRate.getUsdPerCurrency(currency);
+    if (!fx.ok) {
+        return { ok: true, mode: 'new', fxUnavailable: true, currentPlan: currentPlan, upgradeQuoteError: 'fx_unavailable' };
+    }
+    // ★两级新鲜度★：汇率回退到「最近缓存」（未超最大容忍时长）→ 带安全垫（仅用于**预估冻结额**）
+    const priced = fxRate.computeUpgradeRetailCents({
+        amountMinor: amountMinor,
+        exponent: exponent,
+        usdPerCurrency: fx.usd_per_currency,
+        markupPercent: markupPercent,
+        bufferPercent: fx.buffer_percent
+    });
+    if (!priced.ok) {
+        return { ok: true, mode: 'new', fxUnavailable: true, currentPlan: currentPlan, upgradeQuoteError: priced.error };
+    }
+    return {
+        ok: true,
+        mode: 'upgrade',
+        currentPlan: currentPlan,
+        quote: {
+            plan: apiPlanKey,
+            currency: currency,
+            amountMinor: amountMinor,
+            exponent: exponent,
+            cents: priced.retail_cents,
+            costCents: priced.cost_cents,
+            estCostCents: priced.est_cents,
+            usdPerCurrency: priced.usd_per_currency,
+            fxSource: fx.source,
+            fxStale: fx.stale === true,
+            fxCacheAgeMs: Number(fx.cache_age_ms) || 0,
+            fxBufferPercent: priced.buffer_percent,
+            markupPercent: priced.markup_percent,
+            preflightToken: String(match.preflight_token || ''),
+            expiresAt: match.expires_at || null
+        }
+    };
+}
+
+/**
+ * 第 3 层审计：从上游订单快照里提取「实际使用的托管卡」（卡ID + 后四位）。
+ * 上游通常到选卡/开卡后才回传这两个字段；取不到时返回 null，绝不臆测。
+ */
+function extractCardAudit(raw) {
+    if (!raw || typeof raw !== 'object') return { id: null, last4: null };
+    const nested = (raw.order && typeof raw.order === 'object') ? raw.order : {};
+    const id = raw.card_id ?? nested.card_id ?? null;
+    const last4 = raw.card_last_four ?? nested.card_last_four ?? null;
+    return {
+        id: (id === null || id === undefined || id === '') ? null : (Number(id) || null),
+        last4: last4 ? String(last4) : null
+    };
+}
+
 function parseCardExpiry(value) {
     const match = String(value || '').trim().match(/^(0?[1-9]|1[0-2])\s*\/?\s*(\d{2}|\d{4})$/);
     if (!match) throw new Error('银行卡有效期格式错误，应为 MMYY、MM/YY 或 MM/YYYY');
@@ -4359,17 +5833,43 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
         }
 
         const apiPlanKey = mapGptApiPlanKey(planType);
-        await setProgress('running', 10, '正在检查 Session 格式...');
-        const inspect = await gptApi.inspectPay(cfg, {
-            planKey: apiPlanKey,
-            session: sessionPayload
-        });
-        if (!inspect.success) {
-            const statusText = inspect.status ? ` (HTTP ${inspect.status})` : '';
-            const detail = [inspect.error, inspect.reason, inspect.upstreamStatus ? `upstream ${inspect.upstreamStatus}` : ''].filter(Boolean).join(' / ');
-            throw new Error(`Session 格式或有效期检查失败${statusText}: ${detail || 'session_invalid'}`);
+        // v2.19.x · 升级履约：升级账号优先复用下单时落库的升级报价（未过期）；过期或缺失则现取
+        const directOrder = await store.getDirectOrderByCdk(cdk).catch(() => null);
+        let upgradeSubmit = null;
+        if (directOrder && directOrder.upgrade_json) {
+            try {
+                const up = JSON.parse(directOrder.upgrade_json) || {};
+                const expMs = up.expires_at ? new Date(up.expires_at).getTime() : 0;
+                if (up.token && (!expMs || expMs > Date.now() + 3000)) {
+                    upgradeSubmit = { preflightToken: String(up.token), currency: String(up.currency || 'USD').toUpperCase(), cents: Number(up.cents) || 0 };
+                    logTask(jobKey, `升级履约：复用下单报价（当前 ${up.current_plan || '—'} → ${apiPlanKey}，差额 ${((Number(up.cents) || 0) / 100).toFixed(2)}）`);
+                } else {
+                    const rq = await resolveUpgradeQuote(cfg, { planKey: apiPlanKey, session: sessionPayload });
+                    if (!rq.ok) throw new Error(`Session 格式或有效期检查失败: ${rq.error || 'session_invalid'}`);
+                    if (rq.mode === 'upgrade') {
+                        upgradeSubmit = { preflightToken: rq.quote.preflightToken, currency: rq.quote.currency, cents: rq.quote.cents };
+                        logTask(jobKey, `升级履约：报价已过期，重新取价（当前 ${rq.currentPlan || '—'} → ${apiPlanKey}）`);
+                    } else {
+                        throw new Error('该账号当前套餐仍在有效期（无法升级），请等会员到期后再充值');
+                    }
+                }
+            } catch (e) {
+                if (!upgradeSubmit) throw e;
+            }
         }
-        logTask(jobKey, 'Session 本機格式／有效期檢查通過；上游將於代充任務中驗證登入狀態');
+        if (!upgradeSubmit) {
+            await setProgress('running', 10, '正在检查 Session 格式...');
+            const inspect = await gptApi.inspectPay(cfg, {
+                planKey: apiPlanKey,
+                session: sessionPayload
+            });
+            if (!inspect.success) {
+                const statusText = inspect.status ? ` (HTTP ${inspect.status})` : '';
+                const detail = [inspect.error, inspect.reason, inspect.upstreamStatus ? `upstream ${inspect.upstreamStatus}` : ''].filter(Boolean).join(' / ');
+                throw new Error(`Session 格式或有效期检查失败${statusText}: ${detail || 'session_invalid'}`);
+            }
+            logTask(jobKey, 'Session 本機格式／有效期檢查通過；上游將於代充任務中驗證登入狀態');
+        }
 
         const proxy = await store.getActiveProxy();
         logTask(jobKey, proxy
@@ -4378,7 +5878,9 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
 
         // 本機检查通过后才从卡池预留一张卡，避免无效 Session 占用资产。
         // ZovoCard / SpaceXCard 模式：卡由平台提供，不依赖本地银行卡池，跳过取卡。
-        const useZovocard = /zovocard|openapi\/v1/i.test(cfg.base_url || '');
+        const useZovocard = gptApi.isMockMode(cfg)
+            || /zovocard|openapi\/v1/i.test(cfg.base_url || '')
+            || /zovocard|openapi\/v1/i.test(process.env.ZOVOCARD_BASE_URL || '');
         let newCard = null;
         reservedCard = null;
         if (!useZovocard) {
@@ -4407,11 +5909,13 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
             planKey: apiPlanKey,
             session: sessionPayload,
             country: cfg.country,
-            currency: cfg.currency,
+            currency: upgradeSubmit ? upgradeSubmit.currency : cfg.currency,
             newCard,
             proxy,
             clientRef: `kc-cdk-${cdk}-${jobKey}`,
-            idempotencyKey
+            idempotencyKey,
+            preflightToken: upgradeSubmit ? upgradeSubmit.preflightToken : undefined,
+            paymentMode: upgradeSubmit ? 'direct' : undefined
         });
 
         if (!submit.success) {
@@ -4438,6 +5942,10 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
         let finalStatus = 'running';
         let finalMessage = '第三方代充进行中';
         let lastRaw = submit.data;
+        // v2.20.0 · 升级单实付结算所需：上游订单终态回传的「实付金额（含币种/小数位）」
+        let finalAmountMinor = 0;
+        let finalCurrency = '';
+        let finalExponent = null;
         const maxPolls = Number(process.env.GPT_API_MAX_POLLS || 120);
         const pollIntervalMs = Number(process.env.GPT_API_POLL_INTERVAL_MS || 5000);
 
@@ -4459,35 +5967,70 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
 
             lastRaw = queryRes.data;
             const rawStatus = String(queryRes.rawStatus || '').toLowerCase();
+            const orderState = gptApiOrderState(rawStatus);
             const progress = Math.min(95, 40 + poll);
 
-            if (isTerminalGptApiStatus(rawStatus)) {
-                const businessResult = lastRaw && typeof lastRaw.result === 'object' ? lastRaw.result : {};
-                const succeeded = businessResult.ok === false ? false : isSuccessGptApiStatus(rawStatus);
-                const failureDetail = businessResult.error || lastRaw?.error || businessResult.status || rawStatus || 'unknown';
-                finalStatus = succeeded ? 'success' : 'failed';
-                finalMessage = succeeded ? '第三方代充开通成功' : `第三方代充失败: ${failureDetail}`;
-                await setProgress(
-                    finalStatus,
-                    succeeded ? 100 : 99,
-                    finalMessage,
-                    {
-                        gptApiRaw: JSON.stringify(lastRaw),
-                        gptApiTopupCode: gptApi.extractTopupCode(lastRaw)
-                    }
-                );
-                break;
+            // 进行中（queued / awaiting_card / funding_pending / dispatching / running /
+            // requires_action / pending / plus_paid）→ 继续轮询，绝不呈现为失败
+            if (orderState === 'inflight') {
+                await setProgress('running', progress, `上游处理中 (${rawStatus || 'inflight'})...`);
+                continue;
             }
 
-            await setProgress('running', progress, `上游处理中 (${rawStatus || 'pending'})...`);
+            const businessResult = lastRaw && typeof lastRaw.result === 'object' ? lastRaw.result : {};
+            const failureDetail = businessResult.error || lastRaw?.error || businessResult.status || rawStatus || 'unknown';
+            if (orderState === 'success') {
+                finalStatus = 'success';
+                finalMessage = '第三方代充开通成功';
+                // v2.20.0 · 取「实付金额」用于升级结算（★不以 quoted/final 金额判成功，成功只看 status★）
+                const rawOrder = (lastRaw && lastRaw.order && typeof lastRaw.order === 'object') ? lastRaw.order : {};
+                const fMinor = Number(lastRaw && (lastRaw.final_amount_minor ?? rawOrder.final_amount_minor));
+                if (Number.isFinite(fMinor) && fMinor > 0) finalAmountMinor = fMinor;
+                finalCurrency = String((lastRaw && (lastRaw.currency || rawOrder.currency)) || '');
+                const fExp = Number(lastRaw && (lastRaw.minor_unit_exponent ?? rawOrder.minor_unit_exponent));
+                if (Number.isFinite(fExp)) finalExponent = fExp;
+            } else if (orderState === 'failed') {
+                finalStatus = 'failed';
+                finalMessage = `第三方代充失败: ${failureDetail}`;
+            } else {
+                // review：上游人工对账中 —— ★不判失败、不重试、不回滚 CDK★
+                finalStatus = 'manual';
+                finalMessage = '上游代充订单进入人工对账（review），暂不判定失败，请稍后查询进度';
+                shouldRollbackCdk = false;
+            }
+            const cardAudit = extractCardAudit(lastRaw);
+            if (cardAudit.last4) {
+                logTask(jobKey, `上游订单 ${orderId} 关联托管卡 ****${cardAudit.last4}（卡ID ${cardAudit.id ?? '—'}）`);
+            }
+            await setProgress(
+                finalStatus,
+                orderState === 'success' ? 100 : 99,
+                finalMessage,
+                {
+                    gptApiRaw: JSON.stringify(lastRaw),
+                    gptApiTopupCode: gptApi.extractTopupCode(lastRaw),
+                    gptApiCardId: cardAudit.id,
+                    gptApiCardLast4: cardAudit.last4
+                }
+            );
+            break;
         }
 
         if (finalStatus === 'running') {
-            finalStatus = 'failed';
-            finalMessage = '第三方代充超时未完成，请稍后在第三方平台查询订单状态';
+            // 轮询用尽仍未到终态：可能是排队 / 自动换卡 / 前置动作 / 人工对账进行中。
+            // ★不得呈现为失败★；保留 CDK 占用，交由周期对账按权威状态（account-orders）后续处置。
+            finalStatus = 'manual';
+            finalMessage = '第三方代充仍在处理中（上游订单未到终态），请稍后查询进度或联系客服';
+            shouldRollbackCdk = false;
+            const pendingCardAudit = extractCardAudit(lastRaw);
+            if (pendingCardAudit.last4) {
+                logTask(jobKey, `上游订单 ${orderId} 当前关联托管卡 ****${pendingCardAudit.last4}（卡ID ${pendingCardAudit.id ?? '—'}）`);
+            }
             await setProgress(finalStatus, 99, finalMessage, {
                 gptApiRaw: JSON.stringify(lastRaw),
-                gptApiTopupCode: gptApi.extractTopupCode(lastRaw)
+                gptApiTopupCode: gptApi.extractTopupCode(lastRaw),
+                gptApiCardId: pendingCardAudit.id,
+                gptApiCardLast4: pendingCardAudit.last4
             });
         }
 
@@ -4497,9 +6040,17 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
             await store.recordCardUsage(reservedCard?.id);
             await store.releaseCard(reservedCard?.id).catch(() => { });
             notifyTaskOutcome({ event: 'success', email: accountEmail, cdk, jobKey, message: finalMessage });
-        } else {
+            // v2.17.0 · 直接代充：上游成功 → 冻结转扣款（v2.20.0：升级单按实付金额结算，多退不追）
+            await settleDirectOrderByCdk(cdk, 'success', finalMessage, { finalAmountMinor, finalCurrency, finalExponent }).catch(() => { });
+        } else if (finalStatus === 'failed') {
             await store.releaseCard(reservedCard?.id).catch(() => { });
             notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey, message: finalMessage });
+            // v2.17.0 · 直接代充：上游失败 → 解冻退回可用余额
+            await settleDirectOrderByCdk(cdk, 'failed', finalMessage).catch(() => { });
+        } else {
+            // manual：结果未定，不发送失败通知
+            await store.releaseCard(reservedCard?.id).catch(() => { });
+            logTask(jobKey, '任务进入人工处理态（未判定失败），等待周期对账确认最终状态');
         }
     } catch (error) {
         console.error(`[GPT API Task Error] ${jobKey}:`, error);
@@ -4520,6 +6071,8 @@ async function runGptApiWorker({ task, token, session, cdk, planType }) {
             progress: 0
         });
         notifyTaskOutcome({ event: 'failure', email: accountEmail, cdk, jobKey, message: error.message });
+        // v2.17.0 · 直接代充：任务异常 → 解冻退回可用余额
+        await settleDirectOrderByCdk(cdk, 'failed', error.message).catch(() => { });
     } finally {
         releaseForegroundSlot(jobKey);
         if (shouldRollbackCdk) {
@@ -4545,19 +6098,14 @@ function maskProxyForLog(proxyUrl) {
     }
 }
 
-const GPT_API_TERMINAL_SUCCESS = new Set(['success', 'succeeded', 'completed', 'paid', 'active', '开通成功', '成功']);
-const GPT_API_TERMINAL_FAILED = new Set(['failed', 'declined', 'canceled', 'cancelled', 'error', 'expired', 'rejected', '失败', '取消']);
-
-function isSuccessGptApiStatus(rawStatus) {
-    const s = String(rawStatus || '').toLowerCase().trim();
-    return [...GPT_API_TERMINAL_SUCCESS].some((kw) => s.includes(kw.toLowerCase()));
-}
-
-function isTerminalGptApiStatus(rawStatus) {
-    const s = String(rawStatus || '').toLowerCase().trim();
-    if (!s) return false;
-    if (isSuccessGptApiStatus(s)) return true;
-    return [...GPT_API_TERMINAL_FAILED].some((kw) => s.includes(kw.toLowerCase()));
+// 订单状态归一（ZovoCard 文档 §6.18.5）：
+//   终态成功 = completed；终态失败 = declined / failed_precharge / cancelled；
+//   review = 人工对账中（非失败，也不重试）；
+//   其余 = 进行中（queued / awaiting_card / funding_pending / dispatching / running /
+//          requires_action / pending / plus_paid）——自动换卡中途 decline 会回到 queued。
+// ★绝不把进行中或 review 判为失败★
+function gptApiOrderState(rawStatus) {
+    return gptApi.normalizeOrderState(rawStatus);
 }
 
 function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clientIp }) {
@@ -4742,6 +6290,9 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
             }
 
+            // v2.17.0 · 直接代充结算：success→冻结转扣款 · failed→解冻 · manual→保持冻结
+            try { await settleDirectOrderByCdk(cdk, finalStatus, normalizedAnalysis?.message || ''); } catch (_) { }
+
             if (isNoActivationEligibilityMessage(normalizedAnalysis?.message)) {
                 const cdkCooledDown = await store.recordCdkFailure(cdk);
                 const ipCooledDown = clientIp
@@ -4805,6 +6356,8 @@ function spawnActivationWorker({ task, token, sessionRaw, cdk, cdkDetails, clien
                 await store.markCdkUnused(cdk);
                 logTask(task.jobKey, `CDK ${cdk} 已回滚为未使用`);
             }
+            // v2.17.0 · 直接代充：后台任务异常 → 解冻退回可用余额
+            try { await settleDirectOrderByCdk(cdk, 'failed', bgError.message); } catch (_) { }
         } finally {
             releaseForegroundSlot(task.jobKey);
             if (getTotalActiveJobs() === 0) {
@@ -4825,6 +6378,494 @@ function isCdkExpired(cdkDetails) {
     const created = new Date(cdkDetails.created_at).getTime();
     if (!isFinite(created)) return false;
     return Date.now() > created + CDK_VALID_DAYS * 86400 * 1000;
+}
+
+// v2.15.0：开通失败 → 自动退回余额（幂等）。
+// 口径：代充 / 权益 / 发卡均从「顾客平台余额」扣款，开通失败即退回顾客钱包；
+//      沿用 createApiOrderCore「履约失败退回」的同一流水写法（kc_customer_wallet_ledger / kc_api_balance_ledger 的 refund 行）。
+// 幂等：以「订单状态原子改判」作为准入闸门（仅 delivered → failed 的那一次执行退款，
+//      重复调用 affectedRows=0 直接返回），并以 refund 流水的 ref（内部单号）精确留痕，绝不可重复退款。
+async function refundOrderOnActivationFailure(cdk, reason) {
+    const code = String(cdk || '').trim();
+    if (!code) return false;
+    try {
+        await ensureStoreReady();
+        const gateRows = await store.runQuery(
+            "SELECT id, client_id, customer_id, our_order_no, amount_cents, status FROM kc_api_orders WHERE cdk=? AND status='delivered' LIMIT 1",
+            [code]
+        );
+        if (!gateRows.length) return false; // 无对应订单 / 已处理过
+        const o = gateRows[0];
+        const amount = Number(o.amount_cents) || 0;
+        const ref = String(o.our_order_no || '');
+        if (amount <= 0) return false;
+        // 幂等护栏（v2.15.1）：以 refund 流水的 ref（内部单号）精确判重，任何路径下只要该单已有退款流水即不再退。
+        const dupWallet = await store.runQuery(
+            "SELECT id FROM kc_customer_wallet_ledger WHERE type='refund' AND ref=? LIMIT 1",
+            [ref]
+        );
+        if (dupWallet.length) return false;
+        const dupTenant = await store.runQuery(
+            "SELECT id FROM kc_api_balance_ledger WHERE type='refund' AND ref=? LIMIT 1",
+            [ref]
+        );
+        if (dupTenant.length) return false;
+        // 原子闸门：仅当订单仍为 delivered 时才允许退款，避免并发 / 重试导致重复入账
+        const gate = await store.runExecute(
+            "UPDATE kc_api_orders SET status='failed', fail_reason=? WHERE id=? AND status='delivered'",
+            [('开通失败已退款：' + String(reason || '')).slice(0, 200), o.id]
+        );
+        if (!gate || Number(gate.affectedRows) === 0) return false;
+        if (o.customer_id) {
+            // 顾客钱包（tenant_web 下单）：退回到 kc_customers.balance_cents + 顾客钱包流水
+            await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, o.customer_id]);
+            const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [o.customer_id]);
+            await store.runExecute(
+                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [o.client_id, o.customer_id, amount, w ? w.balance_cents : 0, 'refund', ref, '开通失败退回']
+            );
+        } else {
+            // 对接方订单（open_api 下单，无顾客）：按既有模式退回租户余额
+            await store.runExecute('UPDATE kc_api_clients SET balance_cents = balance_cents + ? WHERE id=?', [amount, o.client_id]);
+            const [b] = await store.runQuery('SELECT balance_cents FROM kc_api_clients WHERE id=? LIMIT 1', [o.client_id]);
+            await store.runExecute(
+                'INSERT INTO kc_api_balance_ledger (client_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?)',
+                [o.client_id, amount, b ? b.balance_cents : 0, 'refund', ref, '开通失败退回']
+            );
+        }
+        console.log(`[Refund] 开通失败退回 cdk=${code} order=${ref} amount_cents=${amount} → ${o.customer_id ? 'customer_wallet' : 'tenant_balance'}`);
+        return true;
+    } catch (e) {
+        console.error('[Refund] 退款失败:', e && e.message);
+        return false;
+    }
+}
+
+// ===== v2.17.0 · 代充双轨：资金冻结（hold）/ 核销（capture）/ 解冻（release）=====
+// 定位：「平台直接代充」与「卡密代充」彻底分轨 —— 直接代充走「先冻结、上游成功才扣款、失败即解冻」；
+//       卡密代充走「下单即扣款 + 发 N 张卡密凭证」。
+// 口径：kc_customers.balance_cents = **可用余额**；新增 held_cents = **冻结额**。冻结只在这两者之间搬钱，不新增账户。
+//       · capture：冻结转扣款（可用余额在冻结时已离开，故 capture 只减冻结额、记 change=0 流水）；
+//       · release：冻结退回可用余额（可用 ↑、冻结 ↓）。
+// 幂等：capture/release 均以「订单状态原子改判 + hold_cents>0」为准入闸门（affectedRows=0 直接跳过），
+//       配合钱包流水 ref 判重，绝不重复加减。铁律：不侵入 KC 原生 CDK 发放 / 兑换链路。
+
+// 冻结：可用余额 → 冻结额（不足返回 INSUFFICIENT_BALANCE）
+async function holdCustomerFunds({ tenantId, customerId, cents, ref, note }) {
+    const amount = Math.round(Number(cents) || 0);
+    if (amount <= 0) return { ok: false, code: 'NO_AMOUNT' };
+    const upd = await store.runExecute(
+        'UPDATE kc_customers SET balance_cents = balance_cents - ?, held_cents = held_cents + ? WHERE id=? AND client_id=? AND balance_cents >= ?',
+        [amount, amount, customerId, tenantId, amount]
+    );
+    if (!upd || Number(upd.affectedRows) === 0) return { ok: false, code: 'INSUFFICIENT_BALANCE' };
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [tenantId, customerId, -amount, w ? w.balance_cents : 0, 'hold', ref, String(note || ('下单冻结 ' + ref)).slice(0, 255)]
+        );
+    } catch (le) { /* 流水失败不阻塞资金流转 */ }
+    return { ok: true, amount };
+}
+
+// 核销：订单完成，冻结额转为实际扣款（可用余额不变）
+async function captureOrderHold(order, note) {
+    const amount = Math.round(Number(order && order.hold_cents) || 0);
+    if (amount <= 0) return { ok: false, code: 'NO_HOLD' };
+    const ref = String((order && order.our_order_no) || '');
+    const gate = await store.runExecute(
+        "UPDATE kc_api_orders SET status='delivered', hold_cents=0 WHERE id=? AND status='created' AND hold_cents>0",
+        [order.id]
+    );
+    if (!gate || Number(gate.affectedRows) === 0) return { ok: false, code: 'ALREADY_SETTLED' };
+    await store.runExecute('UPDATE kc_customers SET held_cents = GREATEST(held_cents - ?, 0) WHERE id=?', [amount, order.customer_id]);
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [order.customer_id]);
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [order.client_id, order.customer_id, 0, w ? w.balance_cents : 0, 'capture', ref, String(note || '开通完成，冻结转扣款').slice(0, 255)]
+        );
+    } catch (le) { /* 忽略 */ }
+    return { ok: true, amount };
+}
+
+// 解冻：订单失败，冻结额退回可用余额
+async function releaseOrderHold(order, note) {
+    const amount = Math.round(Number(order && order.hold_cents) || 0);
+    if (amount <= 0) return { ok: false, code: 'NO_HOLD' };
+    const ref = String((order && order.our_order_no) || '');
+    const reason = String(note || '开通失败，已解冻').slice(0, 200);
+    const gate = await store.runExecute(
+        "UPDATE kc_api_orders SET status='failed', hold_cents=0, fail_reason=? WHERE id=? AND status='created' AND hold_cents>0",
+        [reason, order.id]
+    );
+    if (!gate || Number(gate.affectedRows) === 0) return { ok: false, code: 'ALREADY_SETTLED' };
+    await store.runExecute(
+        'UPDATE kc_customers SET held_cents = GREATEST(held_cents - ?, 0), balance_cents = balance_cents + ? WHERE id=?',
+        [amount, amount, order.customer_id]
+    );
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [order.customer_id]);
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [order.client_id, order.customer_id, amount, w ? w.balance_cents : 0, 'release', ref, String(note || '开通失败，冻结已解冻').slice(0, 255)]
+        );
+    } catch (le) { /* 忽略 */ }
+    return { ok: true, amount };
+}
+
+// v2.20.0 · 升级实付结算所需的「按实收金额核销」：冻结额 → 核销实收；差额退回可用余额（多退）。
+// 实收 ≥ 冻结额时只核销冻结额（少补不追，订单留痕见冻结额即实收上限）。
+// 幂等闸门与 captureOrderHold 完全一致（订单状态原子改判 + hold_cents>0）。
+async function settleOrderHoldAtFinal(order, finalCents, note) {
+    const hold = Math.round(Number(order && order.hold_cents) || 0);
+    if (hold <= 0) return { ok: false, code: 'NO_HOLD' };
+    const target = Math.max(0, Math.round(Number(finalCents) || 0));
+    const captured = Math.min(hold, target);
+    const released = Math.max(0, hold - target);
+    const ref = String((order && order.our_order_no) || '');
+    const gate = await store.runExecute(
+        "UPDATE kc_api_orders SET status='delivered', hold_cents=0 WHERE id=? AND status='created' AND hold_cents>0",
+        [order.id]
+    );
+    if (!gate || Number(gate.affectedRows) === 0) return { ok: false, code: 'ALREADY_SETTLED' };
+    // 可用余额：冻结里只放出「多退」的部分；核销部分不再回到可用余额
+    await store.runExecute(
+        'UPDATE kc_customers SET held_cents = GREATEST(held_cents - ?, 0), balance_cents = balance_cents + ? WHERE id=?',
+        [hold, released, order.customer_id]
+    );
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [order.customer_id]);
+        const balAfter = Number(w ? w.balance_cents : 0);
+        const balBefore = balAfter - released;
+        const ledgerNote = String(note || '升级完成，按实付金额结算').slice(0, 200);
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [order.client_id, order.customer_id, 0, balBefore, 'capture', ref, (ledgerNote + '（核销 ' + (captured / 100).toFixed(2) + '）').slice(0, 255)]
+        );
+        if (released > 0) {
+            await store.runExecute(
+                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [order.client_id, order.customer_id, released, balAfter, 'release', ref, ('升级结算多退 ' + (released / 100).toFixed(2)).slice(0, 255)]
+            );
+        }
+    } catch (le) { /* 流水失败不阻塞资金流转 */ }
+    return { ok: true, amount: captured, released, final_cents: target };
+}
+
+// v2.20.0 · 升级单按「上游实付金额 × 当前汇率 × 下单时加价率」重算应收 → 多退少补（不追）。
+// ★结算取「准确价」：即使汇率是回退的最近缓存，也**不加安全垫**（bufferPercent 固定 0）★；
+// 汇率完全取不到（无缓存 / 缓存超最大容忍时长）时返回 ok:false（调用方回落「按冻结额核销」，不臆测）。
+async function settleUpgradeOrderAtFinal(order, { finalAmountMinor, finalCurrency, finalExponent }) {
+    let up = {};
+    try { up = JSON.parse(order.upgrade_json) || {}; } catch (e) { up = {}; }
+    const currency = String(finalCurrency || up.currency || 'USD').toUpperCase();
+    const expRaw = Number(finalExponent);
+    const exponent = Number.isFinite(expRaw) ? expRaw : (Number.isFinite(Number(up.exponent)) ? Number(up.exponent) : 2);
+    const fx = await fxRate.getUsdPerCurrency(currency);
+    if (!fx.ok) return { ok: false, code: 'FX_UNAVAILABLE' };
+    const priced = fxRate.computeUpgradeRetailCents({
+        amountMinor: Number(finalAmountMinor) || 0,
+        exponent: exponent,
+        usdPerCurrency: fx.usd_per_currency,
+        markupPercent: Number(up.markup_percent) || 0,
+        bufferPercent: 0
+    });
+    if (!priced.ok) return { ok: false, code: 'PRICE_INVALID' };
+    return settleOrderHoldAtFinal(order, priced.retail_cents, '升级完成，按上游实付金额结算（多退不追）');
+}
+
+// 任务终态（两 worker 落点）→ 直接代充订单结算：success→核销 · failed→解冻 · manual/maintenance/running→保持冻结
+// v2.20.0 · 升级单：success 且带「上游实付金额」时按实付 × 当前汇率 × 加价率 重算应收（多退不追）。
+async function settleDirectOrderByCdk(cdk, terminalStatus, message, opts) {
+    const code = String(cdk || '').trim();
+    if (!code) return false;
+    try {
+        await ensureStoreReady();
+        const rows = await store.runQuery(
+            "SELECT id, client_id, customer_id, our_order_no, amount_cents, hold_cents, status, upgrade_json FROM kc_api_orders WHERE cdk=? AND fulfill_mode='direct' LIMIT 1",
+            [code]
+        );
+        if (!rows.length) return false; // 非直接代充单（卡密代充 / 非代充 / 历史单）→ 不参与
+        const o = rows[0];
+        if (o.status !== 'created' || Number(o.hold_cents) <= 0) return false; // 已结算 / 无冻结
+        if (terminalStatus === 'success') {
+            const oo = opts || {};
+            const finalMinor = Number(oo.finalAmountMinor);
+            if (o.upgrade_json && Number.isFinite(finalMinor) && finalMinor > 0) {
+                const rf = await settleUpgradeOrderAtFinal(o, oo);
+                if (rf.ok) {
+                    console.log(`[代充冻结] 升级实付结算 order=${o.our_order_no} cdk=${code} 核销=${(rf.amount / 100).toFixed(2)} 多退=${(rf.released / 100).toFixed(2)}`);
+                    return true;
+                }
+                console.warn(`[代充冻结] 升级实付结算不可用（${rf.code}）→ 回落按冻结额核销 order=${o.our_order_no}`);
+            }
+            const r = await captureOrderHold(o, '开通完成，冻结转扣款');
+            if (r.ok) console.log(`[代充冻结] 核销 order=${o.our_order_no} cdk=${code} amount_cents=${r.amount}`);
+            return r.ok;
+        }
+        if (terminalStatus === 'failed') {
+            const r = await releaseOrderHold(o, '开通失败（' + String(message || '').slice(0, 80) + '），已解冻');
+            if (r.ok) console.log(`[代充冻结] 解冻 order=${o.our_order_no} cdk=${code} amount_cents=${r.amount}`);
+            return r.ok;
+        }
+        return false; // manual / maintenance / running → 保持冻结
+    } catch (e) {
+        console.error('[代充冻结] 结算失败:', e && e.message);
+        return false;
+    }
+}
+
+// ===== v2.15.1 · 周期对账退款兜底（订单层，不侵入原生）=====
+// 定位：代充 / 权益 / 发卡都从「顾客平台余额」扣款；原生是卡密兑换制，兑换本身不涉及余额，
+//      因此原生没有「扣了余额要退」的逻辑，这条兜底必须由我们自己的订单层扫描。
+// 场景：下单即扣款并同步发卡（订单置 delivered）；客户随后走开通，若原生开通任务 failed 或
+//      长时间无进展，则订单会一直停在 delivered，而余额未被退回——本调度周期性发现并退回。
+// 数据源：kc_api_orders（我们自己的顾客订单）+ task_logs（原生任务日志，仅只读查询状态）。
+// 幂等：退款一律复用 refundOrderOnActivationFailure（原子状态闸门 + refund 流水 ref 判重），
+//      重复扫描 affectedRows=0 / ref 命中即跳过，绝不重复退款。
+// 开关：ACTIVATION_REFUND_RECONCILE_ENABLED=0 关闭（默认开启）；间隔 / 时限均可由环境变量调整。
+const ACTIVATION_REFUND_RECONCILE_ENABLED = String(process.env.ACTIVATION_REFUND_RECONCILE_ENABLED || '1') !== '0';
+const ACTIVATION_REFUND_RECONCILE_INTERVAL_MS = Math.max(30000, Number(process.env.ACTIVATION_REFUND_RECONCILE_INTERVAL_MS || 5 * 60 * 1000));
+const ACTIVATION_REFUND_MIN_AGE_MS = Math.max(60000, Number(process.env.ACTIVATION_REFUND_MIN_AGE_MS || 12 * 60 * 1000));
+const ACTIVATION_REFUND_TASK_TIMEOUT_MS = Math.max(60000, Number(process.env.ACTIVATION_REFUND_TASK_TIMEOUT_MS || 15 * 60 * 1000));
+// v2.17.0 · 直接代充：下单后一直未启动开通的「冻结单」超时解冻阈值（避免资金长期挂起）
+const ACTIVATION_HOLD_UNSTARTED_TIMEOUT_MS = Math.max(60000, Number(process.env.ACTIVATION_HOLD_UNSTARTED_TIMEOUT_MS || 30 * 60 * 1000));
+let activationRefundReconcileBusy = false;
+
+// ===== v2.16.0 · account-orders 权威对账源（§6.18.5b，产品方已同意）=====
+// 账户级只读订单同步（游标分页）作为退款对账的**权威源**；按单查询 / 原生任务日志仅作兜底。
+// 幂等：order_id 作 upsert key，只允许更新的 updated_at 覆盖；旧值绝不回退。
+const ACCOUNT_ORDERS_SYNC_ENABLED = String(process.env.ACCOUNT_ORDERS_SYNC_ENABLED || '1') !== '0';
+const ACCOUNT_ORDERS_PAGE_SIZE = 100;
+const ACCOUNT_ORDERS_MAX_PAGES = 50;
+const ACCOUNT_ORDERS_OVERLAP_MS = Math.max(60 * 1000, Number(process.env.ACCOUNT_ORDERS_OVERLAP_MS || 5 * 60 * 1000));
+const ACCOUNT_ORDERS_SYNC_KEY = 'zovo_account_orders_sync_state';
+// order_id(String) → { status, updated_at, source }
+const accountOrdersCache = new Map();
+
+/**
+ * 增量同步 account-orders（权威对账源）。
+ * 首个请求带 updated_after（水位回退 overlap 做重叠）→ 后续只带 cursor；
+ * 全部分页消费完才推进水位（sync_until）。任何失败都不抛出，交由兜底逻辑处理。
+ */
+async function syncAccountOrdersOnce() {
+    if (!ACCOUNT_ORDERS_SYNC_ENABLED) return { skipped: true };
+    const cfg = await store.getGptApiConfig();
+    let watermark = '';
+    try {
+        const raw = await store.getAppConfigValue(ACCOUNT_ORDERS_SYNC_KEY, '');
+        if (raw) watermark = String((JSON.parse(raw) || {}).watermark || '');
+    } catch (_) { /* 水位读取失败则从零全量遍历 */ }
+    const updatedAfter = watermark
+        ? new Date(new Date(watermark).getTime() - ACCOUNT_ORDERS_OVERLAP_MS).toISOString()
+        : '';
+
+    let cursor = '';
+    let pages = 0;
+    let upserted = 0;
+    let syncUntil = watermark;
+    for (;;) {
+        if (pages >= ACCOUNT_ORDERS_MAX_PAGES) break;
+        // 首请求带筛选；后续请求只带 cursor（+ page_size），不再带 source/updated_after
+        const res = cursor
+            ? await gptApi.listAccountOrders(cfg, { cursor, page_size: ACCOUNT_ORDERS_PAGE_SIZE })
+            : await gptApi.listAccountOrders(cfg, { updated_after: updatedAfter, page_size: ACCOUNT_ORDERS_PAGE_SIZE });
+        if (!res || !res.success) break;
+        const list = Array.isArray(res.list) ? res.list : [];
+        for (const row of list) {
+            const id = String(row.order_id ?? '').trim();
+            if (!id) continue;
+            const prev = accountOrdersCache.get(id);
+            if (prev) {
+                const prevTs = Date.parse(prev.updated_at);
+                const nextTs = Date.parse(row.updated_at);
+                // 旧 updated_at 不得覆盖新状态
+                if (Number.isFinite(prevTs) && Number.isFinite(nextTs) && nextTs < prevTs) continue;
+            }
+            accountOrdersCache.set(id, {
+                status: String(row.status || ''),
+                updated_at: String(row.updated_at || ''),
+                source: String(row.source || '')
+            });
+            upserted += 1;
+        }
+        pages += 1;
+        if (res.sync_until) syncUntil = String(res.sync_until);
+        if (res.has_more === true && res.next_cursor) cursor = String(res.next_cursor);
+        else break;
+    }
+    if (syncUntil) {
+        try { await store.setAppConfigValue(ACCOUNT_ORDERS_SYNC_KEY, JSON.stringify({ watermark: syncUntil, updated_at: new Date().toISOString() })); } catch (_) { /* 水位仅优化增量，写失败不影响本轮 */ }
+    }
+    return { pages, upserted, tracked: accountOrdersCache.size, watermark: syncUntil };
+}
+
+/**
+ * 判定某笔 Zovo 直充订单的最终归属：优先 account-orders（权威），其次按单查询，均不可用则返回 null。
+ * 返回 { verdict: 'success'|'failed'|'inflight'|'review'|null, source, raw }
+ */
+async function resolveZovoOrderVerdict(orderId, cfg) {
+    const key = String(orderId || '').trim();
+    if (!key) return { verdict: null, source: 'none', raw: '' };
+    const cached = accountOrdersCache.get(key);
+    if (cached) {
+        return { verdict: gptApi.normalizeOrderState(cached.status), source: 'account_orders', raw: cached.status };
+    }
+    try {
+        const res = await gptApi.queryOrder(cfg, key);
+        if (res && res.success) {
+            const raw = res.rawStatus || (res.data && res.data.status) || '';
+            return { verdict: gptApi.normalizeOrderState(raw), source: 'order_query', raw };
+        }
+    } catch (_) { /* 兜底查询失败 → 交由原生任务日志判定 */ }
+    return { verdict: null, source: 'unavailable', raw: '' };
+}
+
+async function reconcileFailedActivationsOnce() {
+    await ensureStoreReady();
+    // ① 优先：增量同步 account-orders 权威源（失败不阻断，回退到按单查询 / 原生任务日志）
+    try {
+        const sync = await syncAccountOrdersOnce();
+        if (sync && sync.upserted) {
+            console.log(`[开通退款对账] account-orders 同步 ${sync.pages} 页 / upsert ${sync.upserted}（在库 ${sync.tracked}）`);
+        }
+    } catch (e) {
+        console.warn('[开通退款对账] account-orders 同步失败，回退按单查询：' + (e && e.message));
+    }
+
+    let captured = 0, released = 0;
+
+    // ① v2.17.0 · 直接代充在途：扫描「冻结中」的单（status='created' 且 hold_cents>0），按任务终态核销 / 解冻；
+    //     无任务且超时未启动 → 解冻（避免资金长期挂起）；manual / maintenance / 进行中 → 保持冻结待人工。
+    try {
+        const held = await store.runQuery(
+            "SELECT id, client_id, customer_id, our_order_no, cdk, amount_cents, hold_cents, status, created_at FROM kc_api_orders " +
+            "WHERE customer_id IS NOT NULL AND fulfill_mode='direct' AND status='created' AND hold_cents>0 " +
+            "AND created_at < DATE_SUB(NOW(), INTERVAL ? SECOND) ORDER BY id ASC LIMIT 100",
+            [Math.round(ACTIVATION_REFUND_MIN_AGE_MS / 1000)]
+        );
+        const cfgHold = await store.getGptApiConfig();
+        for (const o of held) {
+            try {
+                const t = o.cdk ? await store.getLatestTaskByCdk(o.cdk) : null;
+                if (!t) {
+                    const ageMs = Date.now() - new Date(o.created_at).getTime();
+                    if (ageMs > ACTIVATION_HOLD_UNSTARTED_TIMEOUT_MS) {
+                        const r = await releaseOrderHold(o, '未启动开通，超时已解冻');
+                        if (r.ok) { released += 1; console.log(`[代充冻结对账] 超时解冻 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                    }
+                    continue;
+                }
+                const zovoOrderId = t.gpt_api_order_id ? String(t.gpt_api_order_id).trim() : '';
+                if (zovoOrderId) {
+                    const { verdict } = await resolveZovoOrderVerdict(zovoOrderId, cfgHold);
+                    const fv = verdict || gptApiOrderState(t.status);
+                    if (fv === 'success') {
+                        const r = await captureOrderHold(o, '上游直充成功，冻结转扣款');
+                        if (r.ok) { captured += 1; console.log(`[代充冻结对账] 核销 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                    } else if (fv === 'failed') {
+                        const r = await releaseOrderHold(o, '上游直充失败，已解冻');
+                        if (r.ok) { released += 1; console.log(`[代充冻结对账] 解冻 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                    }
+                    // inflight / review / 未知 → 保持冻结
+                } else {
+                    const st = String(t.status || '');
+                    if (st === 'success') {
+                        const r = await captureOrderHold(o, '开通成功，冻结转扣款');
+                        if (r.ok) { captured += 1; console.log(`[代充冻结对账] 核销 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                    } else if (st === 'failed') {
+                        const r = await releaseOrderHold(o, '开通任务失败，已解冻');
+                        if (r.ok) { released += 1; console.log(`[代充冻结对账] 解冻 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                    } else if (st === 'running') {
+                        const lastMs = t.updated_at ? new Date(t.updated_at).getTime() : 0;
+                        if (lastMs && Date.now() - lastMs > ACTIVATION_REFUND_TASK_TIMEOUT_MS) {
+                            const r = await releaseOrderHold(o, '开通任务长时间无进展（超时），已解冻');
+                            if (r.ok) { released += 1; console.log(`[代充冻结对账] 超时解冻 order=${o.our_order_no} amount_cents=${r.amount}`); }
+                        }
+                    }
+                    // maintenance / manual → 保持冻结待人工
+                }
+            } catch (e) { /* 单笔失败不阻断整轮对账 */ }
+        }
+    } catch (e) {
+        console.warn('[代充冻结对账] 本轮失败：' + (e && e.message));
+    }
+
+    // ② 只读扫描：顾客维度（余额扣款）「已核销却事后失败」的单（排除卡密代充 —— 卡密是顾客买到的凭证，
+    //     兑换失败时卡密会回滚为未使用、顾客可重试，不自动退款）
+    const rows = await store.runQuery(
+        "SELECT id, client_id, customer_id, our_order_no, cdk, amount_cents, status, created_at FROM kc_api_orders " +
+        "WHERE customer_id IS NOT NULL AND cdk<>'' AND status='delivered' AND fulfill_mode<>'cdk' " +
+        "AND created_at < DATE_SUB(NOW(), INTERVAL ? SECOND) ORDER BY id ASC LIMIT 100",
+        [Math.round(ACTIVATION_REFUND_MIN_AGE_MS / 1000)]
+    );
+    const cfg = await store.getGptApiConfig();
+    let refunded = 0;
+    for (const o of rows) {
+        try {
+            // 只读查询原生任务日志：该 CDK 最近一条任务
+            const t = await store.getLatestTaskByCdk(o.cdk);
+            if (!t) continue; // 尚无开通任务 → 顾客仍持未兑换卡密，属正常待用态，不退（避免误退）
+
+            const zovoOrderId = t.gpt_api_order_id ? String(t.gpt_api_order_id).trim() : '';
+            let failed = false, reason = '';
+
+            if (zovoOrderId) {
+                // Zovo 直充订单：以 account-orders 权威状态（或按单查询）为准。
+                // ★review / 进行中一律不退款★；仅明确失败终态才退。
+                const { verdict, source, raw } = await resolveZovoOrderVerdict(zovoOrderId, cfg);
+                const finalVerdict = verdict || gptApiOrderState(t.status); // 权威源不可用 → 兜底读任务状态（Zovo 语义）
+                if (finalVerdict !== 'failed') continue; // success / inflight / review / 未知 → 不处理
+                failed = true;
+                reason = `上游直充失败（${source === 'account_orders' ? 'account-orders 权威' : source}：${raw || finalVerdict}）`;
+            } else {
+                // 原生开通任务（无 Zovo 订单号）：保留既有判据
+                if (String(t.status) === 'failed') {
+                    failed = true;
+                    reason = '开通任务失败：' + String(t.message || '');
+                } else if (String(t.status) === 'running') {
+                    const lastMs = t.updated_at ? new Date(t.updated_at).getTime() : 0;
+                    if (lastMs && Date.now() - lastMs > ACTIVATION_REFUND_TASK_TIMEOUT_MS) {
+                        failed = true;
+                        reason = '开通任务长时间无进展（超时）';
+                    }
+                }
+            }
+            if (!failed) continue; // success / maintenance / manual / 仍在进行中 → 不处理
+            const done = await refundOrderOnActivationFailure(o.cdk, reason);
+            if (done) {
+                refunded += 1;
+                console.log(`[开通退款对账] 已退回余额 order=${o.our_order_no} cdk=${o.cdk} amount_cents=${o.amount_cents} reason=${reason}`);
+            }
+        } catch (e) { /* 单笔失败不阻断整轮对账 */ }
+    }
+    return { checked: rows.length, refunded, captured, released };
+}
+
+function startActivationRefundReconciler() {
+    if (!ACTIVATION_REFUND_RECONCILE_ENABLED) {
+        console.log('[开通退款对账] 已通过环境变量关闭（ACTIVATION_REFUND_RECONCILE_ENABLED=0），跳过调度');
+        return;
+    }
+    console.log('[开通退款对账] 已启用（每 ' + Math.round(ACTIVATION_REFUND_RECONCILE_INTERVAL_MS / 1000) + 's 扫描；订单账龄 > ' + Math.round(ACTIVATION_REFUND_MIN_AGE_MS / 1000) + 's；任务超时 > ' + Math.round(ACTIVATION_REFUND_TASK_TIMEOUT_MS / 1000) + 's）');
+    // 启动即先兜底扫一轮（覆盖重启期间遗留的漏退单），失败不抛出
+    reconcileFailedActivationsOnce()
+        .then((r) => { if (r.refunded) console.log('[开通退款对账] 启动首轮扫描 ' + r.checked + ' 单，退款 ' + r.refunded + ' 单'); })
+        .catch((e) => console.warn('[开通退款对账] 启动首轮失败：' + (e && e.message)));
+    setInterval(async () => {
+        if (activationRefundReconcileBusy) return;
+        activationRefundReconcileBusy = true;
+        try {
+            const r = await reconcileFailedActivationsOnce();
+            if (r.refunded) console.log('[开通退款对账] 本轮扫描 ' + r.checked + ' 单，退款 ' + r.refunded + ' 单');
+        } catch (e) {
+            console.warn('[开通退款对账] 本轮失败：' + (e && e.message));
+        } finally {
+            activationRefundReconcileBusy = false;
+        }
+    }, ACTIVATION_REFUND_RECONCILE_INTERVAL_MS).unref();
 }
 
 async function handleActivationRequest(req, res) {
@@ -5736,6 +7777,818 @@ app.get('/api/admin/entitlements/actions', requireSecondaryAuth, async (req, res
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+// ============================================================
+// v2.3.0 · 后台用户与账号管理（批次 1）：顾客管理域
+// 技术后台 /api/admin/customers*（全局 authenticateAdmin）；代理商后台 /api/tenant-admin/customers*。
+// 铁律：租户侧作用域锁 req.tenant.id；代理商侧响应剔除 cost_cents 与 tenant 字段；金额一律分→$。
+// ============================================================
+function adminAuditActor(req) {
+    return {
+        actor_type: 'platform_admin',
+        actor_id: null,
+        actor_email: String((req.admin && req.admin.email) || ''),
+        ip: String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || '')
+    };
+}
+function tenantAuditActor(req) {
+    const staff = req.tenantStaff || {};
+    return {
+        actor_type: staff.role === 'owner' ? 'tenant_owner' : 'tenant_staff',
+        actor_id: staff.id != null ? Number(staff.id) : null,
+        actor_email: String(staff.email || ''),
+        ip: String(req.headers['x-forwarded-for'] || (req.socket && req.socket.remoteAddress) || '')
+    };
+}
+const TEMP_PASSWORD_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+function randomTempPassword() {
+    const bytes = crypto.randomBytes(10);
+    let out = '';
+    for (let i = 0; i < 10; i += 1) out += TEMP_PASSWORD_CHARS[bytes[i] % TEMP_PASSWORD_CHARS.length];
+    return 'Kc' + out;
+}
+
+// ============================================================
+// v2.5.0 · 密码与账号安全（批次 3）：统一重置抽象 + 登录安全
+// ============================================================
+const PASSWORD_RESET_TTL_SEC = 30 * 60; // 30 分钟过期
+
+function sha256Hex(input) {
+    return crypto.createHash('sha256').update(String(input || '')).digest('hex');
+}
+
+// 密码强度：≥8 位 + 同时含字母与数字（前台/后台统一口径）。
+function validatePasswordStrength(password) {
+    const pwd = String(password || '');
+    if (pwd.length < 8) return { ok: false, message: '密码至少 8 位' };
+    if (!/[A-Za-z]/.test(pwd) || !/[0-9]/.test(pwd)) return { ok: false, message: '密码需同时包含字母与数字' };
+    return { ok: true };
+}
+
+// 四场景统一抽象（A 平台 super 重置管理员 / B 租户 owner 重置 staff / C 管理员重置顾客 / D 顾客自助找回）：
+// 生成一次性明文令牌（仅本次回显），库里只落 sha256，30 分钟过期，用后即焚。
+async function registerResetToken({ token, accountType, accountId, actorType, actorId, actorEmail, ip, ttlSeconds }) {
+    const hash = sha256Hex(token);
+    const ttl = ttlSeconds || PASSWORD_RESET_TTL_SEC;
+    await store.createPasswordReset({
+        tokenHash: hash, tokenHint: hash.slice(0, 8),
+        accountType, accountId, ttlSeconds: ttl,
+        createdByType: actorType, createdBy: actorEmail
+    });
+    await store.insertAuditLog({
+        actor_type: actorType, actor_id: actorId, actor_email: actorEmail, ip,
+        action: 'password.reset_issued', target_type: accountType, target_id: String(accountId),
+        before: null, after: { expires_in: ttl }
+    });
+    return ttl;
+}
+
+async function issuePasswordReset(params) {
+    const raw = randomTempPassword();
+    await registerResetToken(Object.assign({}, params, { token: raw }));
+    return raw;
+}
+
+// 消费令牌：用后即焚。返回 { ok, reason: consumed|used|expired|not_found }。
+async function consumePasswordResetToken({ token, accountType, accountId, actorType, actorId, actorEmail, ip }) {
+    const result = await store.consumePasswordReset({ tokenHash: sha256Hex(token), accountType });
+    await store.insertAuditLog({
+        actor_type: actorType || 'system', actor_id: actorId || null, actor_email: actorEmail || '', ip: ip || '',
+        action: result.ok ? 'password.reset_consumed' : 'password.reset_rejected',
+        target_type: accountType, target_id: String(accountId == null ? '' : accountId),
+        before: null, after: { result: result.reason }
+    });
+    return result;
+}
+
+// 游客/代理入口的令牌换取临时密码：把令牌消费结果映射为 HTTP 语义。
+function resetTokenFailureStatus(reason) {
+    if (reason === 'not_found') return { status: 404, code: 'RESET_NOT_FOUND' };
+    if (reason === 'used') return { status: 410, code: 'RESET_USED' };
+    if (reason === 'expired') return { status: 410, code: 'RESET_EXPIRED' };
+    return { status: 400, code: 'RESET_INVALID' };
+}
+
+// tenantId 为 null 时不限租户（技术后台）；否则强制 c.client_id = tenantId
+async function fetchCustomerScoped(id, tenantId) {
+    const rows = tenantId
+        ? await store.runQuery('SELECT c.*, t.name AS tenant_name FROM kc_customers c INNER JOIN kc_api_clients t ON t.id = c.client_id WHERE c.id=? AND c.client_id=? LIMIT 1', [id, tenantId])
+        : await store.runQuery('SELECT c.*, t.name AS tenant_name FROM kc_customers c INNER JOIN kc_api_clients t ON t.id = c.client_id WHERE c.id=? LIMIT 1', [id]);
+    return rows.length ? rows[0] : null;
+}
+function customerListRow(r) {
+    return {
+        id: Number(r.id),
+        client_id: Number(r.client_id),
+        tenant_name: r.tenant_name || '',
+        email: r.email,
+        display_name: r.display_name || '',
+        balance_cents: Number(r.balance_cents) || 0,
+        balance: openApiUsd(r.balance_cents),
+        status: r.status,
+        orders_count: Number(r.orders_count) || 0,
+        last_login_at: r.last_login_at || null,
+        created_at: r.created_at
+    };
+}
+async function customerListQuery(req, tenantId) {
+    const q = String(req.query.q || '').trim();
+    const status = String(req.query.status || '').trim();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 20));
+    const where = [];
+    const params = [];
+    if (tenantId) {
+        where.push('c.client_id = ?'); params.push(Number(tenantId));
+    } else {
+        const tenant = parseInt(req.query.tenant, 10);
+        if (tenant) { where.push('c.client_id = ?'); params.push(tenant); }
+    }
+    if (q) { where.push('(c.email LIKE ? OR c.display_name LIKE ?)'); params.push('%' + q + '%', '%' + q + '%'); }
+    if (status === 'active' || status === 'disabled') { where.push('c.status = ?'); params.push(status); }
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+    const totalRows = await store.runQuery('SELECT COUNT(*) AS c FROM kc_customers c ' + whereSql, params);
+    const rows = await store.runQuery(
+        'SELECT c.id, c.client_id, t.name AS tenant_name, c.email, c.display_name, c.balance_cents, c.status, c.last_login_at, c.created_at, ' +
+        '(SELECT COUNT(*) FROM kc_api_orders o WHERE o.customer_id = c.id) AS orders_count ' +
+        'FROM kc_customers c INNER JOIN kc_api_clients t ON t.id = c.client_id ' + whereSql +
+        ' ORDER BY c.id DESC LIMIT ? OFFSET ?',
+        params.concat([pageSize, (page - 1) * pageSize])
+    );
+    return { items: rows.map(customerListRow), total: Number(totalRows[0] && totalRows[0].c) || 0, page: page, page_size: pageSize };
+}
+async function customerDetailData(c) {
+    const id = Number(c.id);
+    const oRows = await store.runQuery('SELECT COUNT(*) AS c FROM kc_api_orders WHERE customer_id=?', [id]);
+    const eRows = await store.runQuery('SELECT COUNT(*) AS c FROM kc_entitlement_grants WHERE customer_id=?', [id]);
+    const agg = await store.runQuery(
+        "SELECT COALESCE(SUM(CASE WHEN type='recharge' THEN change_cents ELSE 0 END),0) AS r, " +
+        "COALESCE(SUM(CASE WHEN type='consume' THEN change_cents ELSE 0 END),0) AS c " +
+        'FROM kc_customer_wallet_ledger WHERE customer_id=?', [id]
+    );
+    const s = agg[0] || {};
+    return {
+        customer: {
+            id: id,
+            client_id: Number(c.client_id),
+            tenant_id: Number(c.client_id),
+            tenant_name: c.tenant_name || '',
+            email: c.email,
+            display_name: c.display_name || '',
+            balance_cents: Number(c.balance_cents) || 0,
+            balance: openApiUsd(c.balance_cents),
+            status: c.status,
+            must_change_password: Number(c.must_change_password) ? 1 : 0,
+            admin_note: c.admin_note || '',
+            last_login_at: c.last_login_at || null,
+            created_at: c.created_at
+        },
+        stats: {
+            orders_count: Number(oRows[0] && oRows[0].c) || 0,
+            entitlements_count: Number(eRows[0] && eRows[0].c) || 0,
+            recharge_total: openApiUsd(s.r),
+            consume_total: openApiUsd(Math.abs(Number(s.c) || 0))
+        }
+    };
+}
+async function customerWalletData(customerId) {
+    const id = Number(customerId);
+    const custRows = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [id]);
+    const balanceCents = custRows.length ? (Number(custRows[0].balance_cents) || 0) : 0;
+    const agg = await store.runQuery(
+        'SELECT type, COALESCE(SUM(change_cents),0) AS s FROM kc_customer_wallet_ledger WHERE customer_id=? GROUP BY type', [id]
+    );
+    const sums = { recharge: 0, consume: 0, refund: 0, adjust: 0 };
+    agg.forEach(function (r) { sums[String(r.type)] = Number(r.s) || 0; });
+    const ledger = await store.runQuery(
+        'SELECT change_cents, balance_after_cents, type, ref, note, created_at FROM kc_customer_wallet_ledger WHERE customer_id=? ORDER BY created_at ASC, id ASC', [id]
+    );
+    const recharges = await store.runQuery(
+        'SELECT recharge_no, amount_cents, currency, channel, status, paid_at, expires_at, created_at FROM kc_customer_recharges WHERE customer_id=? ORDER BY id DESC', [id]
+    );
+    return {
+        summary: {
+            recharge_total: openApiUsd(sums.recharge),
+            consume_total: openApiUsd(Math.abs(sums.consume)),
+            refund_total: openApiUsd(sums.refund),
+            adjust_total: openApiUsd(sums.adjust),
+            balance: openApiUsd(balanceCents)
+        },
+        ledger: ledger.map(function (r) {
+            return { created_at: r.created_at, type: r.type, change: openApiUsd(r.change_cents), balance_after: openApiUsd(r.balance_after_cents), ref: r.ref || '', note: r.note || '' };
+        }),
+        recharges: recharges.map(function (r) {
+            return { recharge_no: r.recharge_no, amount: openApiUsd(r.amount_cents), currency: r.currency, channel: r.channel, status: r.status, paid_at: r.paid_at || null, expires_at: r.expires_at || null, created_at: r.created_at };
+        })
+    };
+}
+// 并两源：kc_api_orders + kc_customer_pack_purchases（kind='pack'，biz_type=entitlement），内存合并后分页
+async function customerOrdersData(customerId, filters) {
+    const f = filters || {};
+    const id = Number(customerId);
+    const bizType = String(f.biz_type || '').trim();
+    const status = String(f.status || '').trim();
+    const source = String(f.source || '').trim();
+    const page = Math.max(1, parseInt(f.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(f.page_size, 10) || 20));
+    const items = [];
+    const wantOrders = !bizType || bizType !== 'entitlement';
+    const wantPacks = !bizType || bizType === 'entitlement';
+    if (wantOrders) {
+        const where = ['o.customer_id = ?'];
+        const params = [id];
+        if (bizType) { where.push('o.biz_type = ?'); params.push(bizType); }
+        if (status) { where.push('o.status = ?'); params.push(status); }
+        if (source) { where.push('o.source = ?'); params.push(source); }
+        const rows = await store.runQuery(
+            'SELECT o.our_order_no, o.client_order_no, o.sku_code, o.qty, o.amount_cents, o.status, o.cdk, o.source, o.cost_cents, o.biz_type, o.created_at, k.display_name AS sku_name ' +
+            'FROM kc_api_orders o LEFT JOIN kc_plans k ON k.code = o.sku_code WHERE ' + where.join(' AND '),
+            params
+        );
+        rows.forEach(function (r) {
+            items.push({
+                kind: 'order', no: r.our_order_no, client_order_no: r.client_order_no || '',
+                biz_type: r.biz_type || 'other', sku: r.sku_code, sku_name: r.sku_name || '',
+                qty: Number(r.qty) || 0, amount: openApiUsd(r.amount_cents), status: r.status,
+                cdk: r.cdk || null, source: r.source || '', cost_cents: Number(r.cost_cents) || 0,
+                created_at: r.created_at
+            });
+        });
+    }
+    if (wantPacks) {
+        const rows = await store.runQuery(
+            'SELECT p.purchase_no, p.client_ref, p.pack_code, p.price_cents, p.status, p.created_at, e.display_name AS pack_name ' +
+            'FROM kc_customer_pack_purchases p LEFT JOIN kc_entitlement_rules e ON e.code = p.pack_code WHERE p.customer_id = ?',
+            [id]
+        );
+        rows.forEach(function (r) {
+            items.push({
+                kind: 'pack', no: r.purchase_no, client_order_no: r.client_ref || '',
+                biz_type: 'entitlement', sku: r.pack_code, sku_name: r.pack_name || '',
+                qty: 1, amount: openApiUsd(r.price_cents), status: r.status,
+                cdk: null, source: 'pack', cost_cents: 0, created_at: r.created_at
+            });
+        });
+    }
+    items.sort(function (a, b) { return new Date(b.created_at).getTime() - new Date(a.created_at).getTime(); });
+    const total = items.length;
+    const start = (page - 1) * pageSize;
+    return { items: items.slice(start, start + pageSize), total: total, page: page, page_size: pageSize };
+}
+async function customerEntitlementsData(customerId) {
+    const rows = await store.runQuery(
+        'SELECT g.id, g.rule_code, r.display_name, g.remaining_uses, g.total_uses, g.status, g.source, g.source_ref, g.expires_at, g.created_at ' +
+        'FROM kc_entitlement_grants g JOIN kc_entitlement_rules r ON r.code = g.rule_code WHERE g.customer_id=? ORDER BY g.id DESC',
+        [Number(customerId)]
+    );
+    return {
+        items: rows.map(function (r) {
+            return {
+                id: Number(r.id), rule_code: r.rule_code, display_name: r.display_name || '',
+                remaining_uses: Number(r.remaining_uses) || 0, total_uses: Number(r.total_uses) || 0,
+                status: r.status, source: r.source, source_ref: r.source_ref || '',
+                expires_at: r.expires_at || null, created_at: r.created_at
+            };
+        })
+    };
+}
+
+// 列表（分页/搜索/筛选）
+app.get('/api/admin/customers', requirePermission('customer.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        res.json({ success: true, data: await customerListQuery(req, null) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 详情（余额 + 聚合）
+app.get('/api/admin/customers/:id', requirePermission('customer.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerDetailData(c) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 账单（余额流水 + 充值单 + 汇总）
+app.get('/api/admin/customers/:id/wallet', requirePermission('customer.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerWalletData(id) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 订单（并两源，含 cost_cents）
+app.get('/api/admin/customers/:id/orders', requirePermission('customer.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerOrdersData(id, req.query || {}) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 权益（按 customer_id 命中，非 user_id）
+app.get('/api/admin/customers/:id/entitlements', requirePermission('customer.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        res.json({ success: true, data: await customerEntitlementsData(id) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 冻结 / 解冻
+app.post('/api/admin/customers/:id/status', requirePermission('customer.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        const status = String((req.body || {}).status || '').trim();
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        if (status !== 'active' && status !== 'disabled') return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'status 仅支持 active/disabled' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        await store.runExecute('UPDATE kc_customers SET status=? WHERE id=?', [status, id]);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: status === 'disabled' ? 'customer.freeze' : 'customer.unfreeze',
+            target_type: 'customer', target_id: String(id),
+            before: { status: c.status }, after: { status: status }
+        }));
+        res.json({ success: true, data: { id: id, status: status } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 备注 / 昵称
+app.post('/api/admin/customers/:id/note', requirePermission('customer.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        const b = req.body || {};
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const sets = [];
+        const params = [];
+        const before = {};
+        const after = {};
+        if (b.admin_note !== undefined) {
+            const note = String(b.admin_note || '').slice(0, 255);
+            sets.push('admin_note=?'); params.push(note);
+            before.admin_note = c.admin_note || ''; after.admin_note = note;
+        }
+        if (b.display_name !== undefined) {
+            const dn = String(b.display_name || '').slice(0, 128);
+            sets.push('display_name=?'); params.push(dn);
+            before.display_name = c.display_name || ''; after.display_name = dn;
+        }
+        if (!sets.length) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'admin_note 或 display_name 至少提供一项' });
+        params.push(id);
+        await store.runExecute('UPDATE kc_customers SET ' + sets.join(', ') + ' WHERE id=?', params);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'customer.update', target_type: 'customer', target_id: String(id), before: before, after: after
+        }));
+        res.json({ success: true, data: { id: id } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 重置密码（一次性临时密码，仅回显一次；明文不落审计）
+app.post('/api/admin/customers/:id/reset-password', requirePermission('customer.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const actor = adminAuditActor(req);
+        // v2.5.0：统一走一次性重置令牌（库里只存 sha256，30min 过期，用后即焚），明文仅本次回显。
+        const temp = await issuePasswordReset({
+            accountType: 'customer', accountId: id,
+            actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+        });
+        await store.runExecute('UPDATE kc_customers SET password_hash=?, must_change_password=1 WHERE id=?', [adminAuth.createPasswordHash(temp), id]);
+        await store.insertAuditLog(Object.assign(actor, {
+            action: 'customer.reset_password', target_type: 'customer', target_id: String(id),
+            before: null, after: { must_change_password: 1 }
+        }));
+        res.json({ success: true, data: { temp_password: temp, reset_expires_in: PASSWORD_RESET_TTL_SEC } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ★ v2.9.0 客服人工补录充值：链上认单依据是精确金额的 4 位小数尾数，客户未输小数会导致扫链漏单；
+// 客服在链上钱包核对确实到账后，用「链上交易哈希」为凭证人工补录入账（同一哈希幂等，不可重复入账）。
+// 口径：流水 type='adjust'（人工干预 **与系统自动到账分开统计**）、ref=tx_hash；可选把关联的 pending 充值单置为已到账。
+app.post('/api/admin/customers/:id/wallet/credit', requirePermission('customer.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const c = await fetchCustomerScoped(id, null);
+        if (!c) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '顾客不存在' });
+        const b = req.body || {};
+        const txHash = String(b.tx_hash || '').trim().slice(0, 128);
+        if (!txHash) return res.status(400).json({ success: false, code: 'TX_HASH_REQUIRED', message: '链上交易哈希必填（人工补录须留链上凭证）' });
+        const rechargeNo = String(b.recharge_no || '').trim().slice(0, 64);
+        const reason = String(b.reason || '').trim().slice(0, 128);
+        let amountCents = parseInt(b.amount_cents, 10);
+        if (!isFinite(amountCents) || amountCents <= 0) {
+            const usd = Number(b.amount);
+            amountCents = isFinite(usd) && usd > 0 ? Math.round(usd * 100) : 0;
+        }
+        if (!isFinite(amountCents) || amountCents <= 0 || amountCents > WALLET_MAX_CENTS) {
+            return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: '补录金额需为 ' + openApiUsd(1) + ' ~ ' + openApiUsd(WALLET_MAX_CENTS) + ' 之间的正数' });
+        }
+        // 幂等：同一链上交易哈希只能补录一次
+        const dup = await store.runQuery('SELECT id FROM kc_customer_wallet_ledger WHERE customer_id=? AND ref=? LIMIT 1', [id, txHash]);
+        if (dup.length) return res.status(409).json({ success: false, code: 'DUPLICATE_TX', message: '该链上交易哈希已补录过，请勿重复操作' });
+        const beforeBal = Number(c.balance_cents) || 0;
+        await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amountCents, id]);
+        const wRows = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [id]);
+        const afterBal = wRows.length ? (Number(wRows[0].balance_cents) || 0) : beforeBal + amountCents;
+        const ledger = await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [Number(c.client_id), id, amountCents, afterBal, 'adjust', txHash,
+                '客服人工补录充值' + (rechargeNo ? '（充值单 ' + rechargeNo + '）' : '') + (reason ? ' · ' + reason : '')]
+        );
+        let rechargeStatus = null;
+        if (rechargeNo) {
+            const upd = await store.runExecute("UPDATE kc_customer_recharges SET status='paid', paid_at=NOW() WHERE recharge_no=? AND customer_id=? AND status='pending'", [rechargeNo, id]);
+            if (Number(upd && upd.affectedRows) > 0) rechargeStatus = 'paid';
+        }
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'customer.wallet_credit', target_type: 'customer', target_id: String(id),
+            before: { balance_cents: beforeBal },
+            after: { balance_cents: afterBal, amount_cents: amountCents, tx_hash: txHash, recharge_no: rechargeNo || null, reason: reason || null }
+        }));
+        res.json({
+            success: true,
+            data: {
+                customer_id: id, ledger_id: ledger.insertId || 0,
+                amount: openApiUsd(amountCents), balance: openApiUsd(afterBal), balance_cents: afterBal,
+                tx_hash: txHash, recharge_no: rechargeNo || null, recharge_status: rechargeStatus
+            }
+        });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 手动开号
+app.post('/api/admin/customers', requirePermission('customer.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const clientId = parseInt(b.client_id, 10);
+        const email = adminAuth.normalizeEmail(b.email);
+        if (!clientId) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'client_id 必填' });
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '邮箱格式不正确' });
+        const tenant = await store.runQuery('SELECT id FROM kc_api_clients WHERE id=? LIMIT 1', [clientId]);
+        if (!tenant.length) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '租户不存在' });
+        const dup = await store.runQuery('SELECT id FROM kc_customers WHERE client_id=? AND email=? LIMIT 1', [clientId, email]);
+        if (dup.length) return res.status(409).json({ success: false, code: 'DUPLICATE', message: '该租户下邮箱已存在' });
+        const rawPwd = String(b.password || '');
+        const tempProvided = rawPwd ? null : randomTempPassword();
+        const pwd = rawPwd || tempProvided;
+        const displayName = String(b.display_name || '').slice(0, 128);
+        const ins = await store.runExecute(
+            'INSERT INTO kc_customers (client_id, email, password_hash, display_name, status, must_change_password) VALUES (?, ?, ?, ?, ?, ?)',
+            [clientId, email, adminAuth.createPasswordHash(pwd), displayName, 'active', rawPwd ? 0 : 1]
+        );
+        const newId = ins.insertId;
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'customer.create', target_type: 'customer', target_id: String(newId),
+            before: null, after: { client_id: clientId, email: email, display_name: displayName }
+        }));
+        const data = { id: newId, email: email };
+        if (tempProvided) data.temp_password = tempProvided;
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ============================================================
+// v2.4.0 · 后台用户与账号管理（批次 2）：平台管理员账号域 + RBAC 地基
+// 主体(admin) → 角色(kc_admin_roles) → 权限点(permissions)。仅 super 可增删/改角色/重置他人密码。
+// ============================================================
+
+// 权限点目录（供「角色与权限」页权限矩阵渲染）
+app.get('/api/admin/permissions', requirePermission('role.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        res.json({ success: true, data: { points: store.PERMISSION_POINTS } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ── 角色 ──
+app.get('/api/admin/roles', requirePermission('role.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const roles = await store.listAdminRoles();
+        const counts = {};
+        for (const r of roles) counts[r.code] = await store.countAdminUsersByRole(r.code);
+        res.json({ success: true, data: { roles: roles, counts: counts } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+app.post('/api/admin/roles', requirePermission('role.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const code = String(b.code || '').trim();
+        if (!/^[a-z][a-z0-9_]{1,31}$/.test(code)) {
+            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '角色代号须为小写字母/数字/下划线，2-32 位' });
+        }
+        const before = await store.getAdminRoleByCode(code);
+        const role = await store.upsertAdminRole({ code: code, name: b.name, permissions: b.permissions, note: b.note });
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: before ? 'role.update' : 'role.create', target_type: 'admin_role', target_id: code,
+            before: before ? { name: before.name, permissions: before.permissions } : null,
+            after: { name: role.name, permissions: role.permissions }
+        }));
+        res.json({ success: true, data: role });
+    } catch (error) {
+        const msg = String(error.message || '');
+        const code = msg.includes('不可修改') ? 'FORBIDDEN' : 'INTERNAL';
+        res.status(code === 'FORBIDDEN' ? 403 : 500).json({ success: false, code: code, message: msg });
+    }
+});
+
+app.delete('/api/admin/roles/:code', requirePermission('role.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const code = String(req.params.code || '').trim();
+        const before = await store.getAdminRoleByCode(code);
+        if (!before) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '角色不存在' });
+        await store.deleteAdminRole(code);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'role.delete', target_type: 'admin_role', target_id: code,
+            before: { name: before.name, permissions: before.permissions }, after: null
+        }));
+        res.json({ success: true, data: { code: code } });
+    } catch (error) {
+        const msg = String(error.message || '');
+        const bad = msg.includes('内置') || msg.includes('在用');
+        res.status(bad ? 400 : 500).json({ success: false, code: bad ? 'INVALID_REQUEST' : 'INTERNAL', message: msg });
+    }
+});
+
+// ── 管理员账号 ──
+app.get('/api/admin/admins', requirePermission('admin.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        res.json({ success: true, data: { admins: await store.listAdminUsers() } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+app.post('/api/admin/admins', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const email = adminAuth.normalizeEmail(b.email);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '邮箱格式不正确' });
+        }
+        const roleCode = String(b.role_code || 'viewer').trim();
+        const role = await store.getAdminRoleByCode(roleCode);
+        if (!role) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '角色不存在' });
+        if (await store.getAdminUserByEmail(email)) {
+            return res.status(409).json({ success: false, code: 'DUPLICATE', message: '该邮箱已存在管理员账号' });
+        }
+        const rawPwd = String(b.password || '');
+        if (rawPwd) {
+            const strength = validatePasswordStrength(rawPwd);
+            if (!strength.ok) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: strength.message });
+        }
+        const actor = adminAuditActor(req);
+        // v2.5.0：留空自动生成的临时密码亦登记为一次性重置令牌（库中只存 sha256）。
+        const tempProvided = rawPwd ? null : randomTempPassword();
+        const pwd = rawPwd || tempProvided;
+        const newId = await store.createAdminUser({
+            email: email, passwordHash: adminAuth.createPasswordHash(pwd), roleCode: roleCode, note: b.note
+        });
+        if (rawPwd) await store.runExecute('UPDATE kc_admin_users SET must_change_password = 0 WHERE id = ?', [newId]);
+        if (tempProvided) {
+            await registerResetToken({
+                token: tempProvided, accountType: 'admin', accountId: newId,
+                actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+            });
+        }
+        await store.insertAuditLog(Object.assign(actor, {
+            action: 'admin.create', target_type: 'admin_user', target_id: String(newId),
+            before: null, after: { email: email, role_code: roleCode }
+        }));
+        const data = { id: newId, email: email, role_code: roleCode };
+        if (tempProvided) data.temp_password = tempProvided;
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+app.put('/api/admin/admins/:id', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const target = await store.getAdminUserById(id);
+        if (!target) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '管理员不存在' });
+        const b = req.body || {};
+        const sets = [];
+        const params = [];
+        const before = { role_code: target.role_code, status: target.status, note: target.note };
+        const after = {};
+        if (b.role_code !== undefined) {
+            const roleCode = String(b.role_code || '').trim();
+            const role = await store.getAdminRoleByCode(roleCode);
+            if (!role) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '角色不存在' });
+            if (target.role_code === 'super' && roleCode !== 'super' && (await store.countAdminUsersByRole('super')) <= 1) {
+                return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '不能移除最后一个超级管理员' });
+            }
+            sets.push('role_code = ?'); params.push(roleCode); after.role_code = roleCode;
+        }
+        if (b.note !== undefined) { sets.push('note = ?'); params.push(String(b.note || '').slice(0, 255)); after.note = String(b.note || '').slice(0, 255); }
+        if (!sets.length) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'role_code 或 note 至少提供一项' });
+        await store.updateAdminUserFields(id, sets, params);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'admin.update', target_type: 'admin_user', target_id: String(id), before: before, after: after
+        }));
+        res.json({ success: true, data: await store.getAdminUserById(id) });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+app.post('/api/admin/admins/:id/status', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        const status = String((req.body || {}).status || '').trim();
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        if (status !== 'active' && status !== 'disabled') {
+            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'status 仅支持 active/disabled' });
+        }
+        const target = await store.getAdminUserById(id);
+        if (!target) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '管理员不存在' });
+        if (status === 'disabled') {
+            if (req.admin && Number(req.admin.id) === id) {
+                return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '不能禁用当前登录账号' });
+            }
+            if (target.role_code === 'super' && (await store.countAdminUsersByRole('super')) <= 1) {
+                return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '不能禁用最后一个超级管理员' });
+            }
+        }
+        await store.updateAdminUserFields(id, ['status = ?'], [status]);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: status === 'disabled' ? 'admin.disable' : 'admin.enable', target_type: 'admin_user', target_id: String(id),
+            before: { status: target.status }, after: { status: status }
+        }));
+        res.json({ success: true, data: { id: id, status: status } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 重置他人密码（场景 A：平台 super 重置管理员）。v2.5.0：内部走 kc_password_resets 令牌，端点契约不变。
+app.post('/api/admin/admins/:id/reset-password', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const target = await store.getAdminUserById(id);
+        if (!target) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '管理员不存在' });
+        const actor = adminAuditActor(req);
+        const temp = await issuePasswordReset({
+            accountType: 'admin', accountId: id,
+            actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+        });
+        await store.setAdminUserTempPassword(id, adminAuth.createPasswordHash(temp));
+        await store.insertAuditLog(Object.assign(actor, {
+            action: 'admin.reset_password', target_type: 'admin_user', target_id: String(id),
+            before: null, after: { must_change_password: 1 }
+        }));
+        res.json({ success: true, data: { temp_password: temp, reset_expires_in: PASSWORD_RESET_TTL_SEC } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 消费一次性重置令牌（场景 D 的通道位 + TC-F-14 用后即焚/过期门）。用后即焚：同一令牌第二次返回 410。
+app.post('/api/admin/password-resets/consume', requirePermission('admin.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const token = String((req.body && req.body.token) || '').trim();
+        const accountType = String((req.body && req.body.account_type) || '').trim();
+        if (!token) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'token 必填' });
+        const actor = adminAuditActor(req);
+        const result = await consumePasswordResetToken({
+            token, accountType,
+            actorType: actor.actor_type, actorId: actor.actor_id, actorEmail: actor.actor_email, ip: actor.ip
+        });
+        if (!result.ok) {
+            const mapped = resetTokenFailureStatus(result.reason);
+            return res.status(mapped.status).json({ success: false, code: mapped.code, message: '重置令牌无效或已失效' });
+        }
+        res.json({ success: true, data: { consumed: true } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 重置令牌审计列表（仅 super；不返回明文，仅 hash 前 8 位）。
+app.get('/api/admin/password-resets', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const rows = await store.listPasswordResets({ limit: req.query.limit });
+        res.json({ success: true, data: { items: rows } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 强制下线（场景：会话超时/强制下线）：仅递增 password_version，令该账号所有既有令牌立即失效，需重新登录。
+app.post('/api/admin/admins/:id/force-logout', requireSuperAdmin, async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const id = parseInt(req.params.id, 10);
+        if (!id) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: 'id 必填' });
+        const target = await store.getAdminUserById(id);
+        if (!target) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '管理员不存在' });
+        await store.runExecute('UPDATE kc_admin_users SET password_version = password_version + 1 WHERE id = ?', [id]);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'admin.force_logout', target_type: 'admin_user', target_id: String(id),
+            before: null, after: { session_invalidated: true }
+        }));
+        res.json({ success: true, data: { id: id, session_invalidated: true } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// 操作审计查询（v2.5.0 · 谁改了什么）：与「运行日志/登录日志」严格区分，本端点只读 kc_audit_logs。
+app.get('/api/admin/audit-logs', requirePermission('audit.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const q = req.query || {};
+        const data = await store.listAuditLogs({
+            action: q.action, target_type: q.target_type, target_id: q.target_id,
+            actor_email: q.actor_email, from: q.from, to: q.to,
+            page: q.page, page_size: q.page_size
+        });
+        data.items = data.items.map((r) => ({
+            id: Number(r.id), actor_type: r.actor_type, actor_id: r.actor_id ? Number(r.actor_id) : null,
+            actor_email: r.actor_email, action: r.action, target_type: r.target_type, target_id: r.target_id,
+            before: r.before_json, after: r.after_json, ip: r.ip, created_at: r.created_at
+        }));
+        res.json({ success: true, data: data });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+// ── 后台菜单（数据驱动，v2.6.0 批次 4）──
+app.get('/api/admin/menus', requirePermission('menu.read'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        res.json({ success: true, data: { menus: await store.listAdminMenus() } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
+app.post('/api/admin/menus', requirePermission('menu.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const b = req.body || {};
+        const keyV = String(b.key || b.menu_key || '').trim();
+        if (!keyV) return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: '菜单 key 必填' });
+        const before = await store.getAdminMenuByKey(keyV);
+        const after = await store.upsertAdminMenu({
+            key: keyV,
+            label: b.label,
+            icon: b.icon,
+            group: b.group,
+            isGroup: b.is_group != null ? b.is_group : b.isGroup,
+            sort: b.sort,
+            permission: b.permission,
+            visible: b.visible
+        });
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: before ? 'menu.update' : 'menu.create', target_type: 'admin_menu', target_id: keyV,
+            before: before || null, after: after
+        }));
+        res.json({ success: true, data: { menu: after, created: !before } });
+    } catch (error) {
+        res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: error.message });
+    }
+});
+
+app.delete('/api/admin/menus/:key', requirePermission('menu.write'), async (req, res) => {
+    try {
+        await ensureStoreReady();
+        const keyV = String(req.params.key || '').trim();
+        const before = await store.getAdminMenuByKey(keyV);
+        if (!before) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: '菜单不存在' });
+        const r = await store.deleteAdminMenu(keyV);
+        if (!r.ok) {
+            const msg = r.reason === 'builtin' ? '内置菜单不可删除（与页面契约绑定）'
+                : r.reason === 'has_children' ? '该组下仍有菜单项，请先移除子项' : '菜单不存在';
+            return res.status(400).json({ success: false, code: 'INVALID_REQUEST', message: msg });
+        }
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'menu.delete', target_type: 'admin_menu', target_id: keyV, before: before, after: null
+        }));
+        res.json({ success: true, data: { key: keyV } });
+    } catch (error) { res.status(500).json({ success: false, code: 'INTERNAL', message: error.message }); }
+});
+
 // ─── 后台：集成配置管理 ─────────────────────────────────────────────────────
 
 // ============================================================
@@ -6145,7 +8998,7 @@ app.post('/api/admin/upstreams/:code/health/refresh', requireSecondaryAuth, asyn
 // v1.16.0 · 资费层（SP-2026-10-11-v1.0.1 §4.2）
 // ============================================================
 function planCodeNorm(v) { return String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 64); }
-function planTypeNorm(v) { return ['recharge', 'account', 'entitlement'].includes(v) ? v : 'recharge'; }
+function planTypeNorm(v) { return ['recharge', 'account', 'entitlement', 'website'].includes(v) ? v : 'recharge'; }
 function planStatusNorm(v) { return ['active', 'paused', 'archived'].includes(v) ? v : 'active'; }
 function pricingPeriodNorm(v) { return ['once', 'month', 'quarter', 'half_year', 'year', 'two_year', 'three_year'].includes(v) ? v : 'month'; }
 function pricingSourceNorm(v) { return ['manual', 'promotion', 'entitlement'].includes(v) ? v : 'manual'; }
@@ -6568,6 +9421,10 @@ app.post('/api/admin/entitlements/prices', requireSecondaryAuth, async (req, res
             );
             saved++;
         }
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'pricing.update', target_type: 'entitlement_price', target_id: rule_code,
+            before: null, after: { rule_code: rule_code, saved: saved, cleared: cleared }
+        }));
         res.json({ success: true, data: { rule_code, saved, cleared } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -6585,6 +9442,10 @@ app.post('/api/admin/entitlements/packs/:code/price', requireSecondaryAuth, asyn
         const exist = await store.runQuery('SELECT code FROM kc_entitlement_rules WHERE code=? LIMIT 1', [code]);
         if (!exist.length) return res.status(404).json({ success: false, message: '权益包不存在：' + code });
         await store.runExecute('UPDATE kc_entitlement_rules SET sale_price_cents=? WHERE code=?', [cents, code]);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'pricing.update', target_type: 'entitlement_pack', target_id: code,
+            before: null, after: { sale_price_cents: cents }
+        }));
         res.json({ success: true, data: { code, sale_price_cents: cents, price: openApiUsd(cents), sellable: cents > 0 } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -6614,6 +9475,11 @@ app.post('/api/admin/entitlements/rules/:code/issue', requireSecondaryAuth, asyn
         const { user_id, source_ref, note } = req.body || {};
         if (!user_id) return res.status(400).json({ success: false, message: 'user_id 必填' });
         const out = await entitlementGrantIssue(parseInt(user_id, 10), req.params.code, 'manual', source_ref || '', note || '');
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'entitlement.issue', target_type: 'entitlement_grant',
+            target_id: String((out && out.grant_id) || user_id),
+            before: null, after: { user_id: parseInt(user_id, 10), rule_code: req.params.code, reused: Boolean(out && out.reused) }
+        }));
         res.json(out);
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -6625,6 +9491,10 @@ app.post('/api/admin/entitlements/grants/:id/revoke', requireSecondaryAuth, asyn
         const id = parseInt(req.params.id, 10);
         if (!id) return res.status(400).json({ success: false, message: 'id 必填' });
         await store.runExecute("UPDATE kc_entitlement_grants SET status='revoked' WHERE id=? AND status='active'", [id]);
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'entitlement.revoke', target_type: 'entitlement_grant', target_id: String(id),
+            before: { status: 'active' }, after: { status: 'revoked' }
+        }));
         res.json({ success: true, data: { id } });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -6734,6 +9604,10 @@ app.put('/api/admin/listing-cards/:plan_id', requireSecondaryAuth, async (req, r
             'ON DUPLICATE KEY UPDATE card_json=VALUES(card_json), is_visible=VALUES(is_visible), listing_state=VALUES(listing_state), sort=VALUES(sort)',
             [pid, card_json, is_visible, listing_state, sort]
         );
+        await store.insertAuditLog(Object.assign(adminAuditActor(req), {
+            action: 'listing_card.update', target_type: 'listing_card', target_id: String(pid),
+            before: null, after: { is_visible: is_visible, listing_state: listing_state, sort: sort, price: card.price }
+        }));
         res.json({ success: true, message: '已保存（前台刷新即生效）', card });
     } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
@@ -6788,8 +9662,8 @@ app.get('/api/admin/products', requireSecondaryAuth, async (req, res) => {
     try {
         await ensureStoreReady();
         const rows = await store.runQuery(
-            'SELECT k.id, k.code, k.display_name, k.prices_json, k.show_flag, k.sell_flag, k.sort_order, k.content, k.is_topup, ' +
-            '       k.upstream_code, k.upstream_plan_key, k.status AS kc_status, k.api_enabled, k.api_markup_percent, ' +
+            'SELECT k.id, k.code, k.display_name, k.prices_json, k.show_flag, k.sell_flag, k.sort_order, k.content, k.is_topup, k.kc_type, ' +
+            '       k.upstream_code, k.upstream_plan_key, k.status AS kc_status, k.api_enabled, k.api_markup_percent, k.upgrade_markup_percent, ' +
             '       c.card_json, u.display_name AS upstream_display_name, u.status AS upstream_status, h.state AS upstream_health_state, h.checked_at AS upstream_health_at ' +
             'FROM kc_plans k ' +
             'LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
@@ -6813,6 +9687,8 @@ app.get('/api/admin/products', requireSecondaryAuth, async (req, res) => {
                 content: r.content || '',
                 subtitle: card.subtitle || '',
                 is_topup: Number(r.is_topup) === 1,
+                // v2.13.0：商品类型（编辑对话框预选；卡片 category 兜底）
+                kc_type: r.kc_type || card.category || 'recharge',
                 upstream_code: r.upstream_code || '',
                 upstream_plan_key: r.upstream_plan_key || '',
                 upstream_display_name: r.upstream_display_name || '',
@@ -6820,7 +9696,9 @@ app.get('/api/admin/products', requireSecondaryAuth, async (req, res) => {
                 upstream_health_state: r.upstream_health_state || '',
                 upstream_health_at: r.upstream_health_at || '',
                 api_enabled: Number(r.api_enabled) === 1,
-                api_markup_percent: Number(r.api_markup_percent) || 0
+                api_markup_percent: Number(r.api_markup_percent) || 0,
+                // v2.20.0 · 升级加价率（升级代充零售价 = 折算后成本 × (1 + 该幅度)，独立于对外 API 加价率）
+                upgrade_markup_percent: Number(r.upgrade_markup_percent) || 0
             };
         });
         res.json({ success: true, data: list });
@@ -6952,9 +9830,10 @@ app.put('/api/admin/tenants/:id/brand', async (req, res) => {
     try {
         await ensureStoreReady();
         const id = Number(req.params.id);
-        const b = req.body || {};
+        const b = Object.assign({}, req.body || {});
+        if (KC_COLOR_SCHEMES.indexOf(String(b.color_scheme)) < 0) b.color_scheme = 'ink';
         const exist = await store.runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [id]);
-        const cols = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
+        const cols = ['brand_name', 'logo_url', 'primary_color', 'accent_color', 'color_scheme', 'support_contact', 'support_url', 'hero_title', 'hero_subtitle', 'footer_text'];
         const vals = cols.map(function (c) { return String(b[c] || '').slice(0, 500); });
         let extraJson = null;
         if (b.extra !== undefined && b.extra !== null) { try { extraJson = JSON.stringify(b.extra); } catch (_) { extraJson = null; } }
@@ -7098,6 +9977,10 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
         }
         const apiEnabled = b.api_enabled ? 1 : 0;
         const apiMarkup = Math.max(0, Math.min(500, Number(b.api_markup_percent) || 0));
+        // v2.20.0 · 升级加价率（独立于对外 API 加价率）：升级代充零售价 = 折算后成本 × (1 + 该幅度)
+        const upgradeMarkup = Math.max(0, Math.min(500, Number(b.upgrade_markup_percent) || 0));
+        // v2.13.0：商品类型（代充 recharge / 成品号 account / 权益 entitlement / 建站服务 website）→ 同时写 kc_plans.kc_type 与卡片 category
+        const kcType = planTypeNorm(b.kc_type);
 
         const pricesJson = JSON.stringify(period === 'onetime' ? { onetime: price } : { monthly: price });
         let planId = parseInt(b.plan_id, 10) || 0;
@@ -7108,10 +9991,10 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
             const rows = await store.runQuery('SELECT id FROM kc_plans WHERE id=? LIMIT 1', [planId]);
             if (!rows.length) return res.status(404).json({ success: false, message: '商品不存在：' + planId });
             await store.runExecute(
-                'UPDATE kc_plans SET display_name=?, prices_json=?, show_flag=?, sell_flag=?, sort_order=?, content=?, is_topup=?, topup_amount=?, ' +
-                "status=?, api_enabled=?, api_markup_percent=?, upstream_code=?, upstream_plan_key=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                [name, pricesJson, show, sell, sort, content, isTopup ? 1 : 0, topupAmount,
-                 sell ? 'active' : 'paused', apiEnabled, apiMarkup, upstreamCode, upstreamKey, planId]
+                'UPDATE kc_plans SET display_name=?, prices_json=?, show_flag=?, sell_flag=?, sort_order=?, content=?, kc_type=?, is_topup=?, topup_amount=?, ' +
+                "status=?, api_enabled=?, api_markup_percent=?, upgrade_markup_percent=?, upstream_code=?, upstream_plan_key=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                [name, pricesJson, show, sell, sort, content, kcType, isTopup ? 1 : 0, topupAmount,
+                 sell ? 'active' : 'paused', apiEnabled, apiMarkup, upgradeMarkup, upstreamCode, upstreamKey, planId]
             );
         } else {
             const card = {
@@ -7122,7 +10005,7 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
                 promo: { strike: '', text: '' },
                 features: [], guarantees: [], tip: '',
                 button: { text: '立即办理', style: 'solid' },
-                category: 'recharge'
+                category: kcType
             };
             // SKU 规范：code='xplan_<序号>'，序号取现有最大序号 +1（与 kc_plans.id 解耦，保证数字型 SKU 唯一）
             const maxRows = await store.runQuery(
@@ -7131,10 +10014,10 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
             const nextNo = Number(maxRows[0] && maxRows[0].mx || 0) + 1;
             const newCode = 'xplan_' + nextNo;
             const ins = await store.runExecute(
-                'INSERT INTO kc_plans (code, kc_type, display_name, prices_json, show_flag, sell_flag, sort_order, content, is_topup, topup_amount, status, api_enabled, api_markup_percent, upstream_code, upstream_plan_key, note) ' +
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [newCode, isTopup ? 'recharge' : 'subscription', name, pricesJson, show, sell, sort, content,
-                 isTopup ? 1 : 0, topupAmount, sell ? 'active' : 'paused', apiEnabled, apiMarkup, upstreamCode, upstreamKey, 'v2.1.0 商品管理保存']
+                'INSERT INTO kc_plans (code, kc_type, display_name, prices_json, show_flag, sell_flag, sort_order, content, is_topup, topup_amount, status, api_enabled, api_markup_percent, upgrade_markup_percent, upstream_code, upstream_plan_key, note) ' +
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [newCode, kcType, name, pricesJson, show, sell, sort, content,
+                 isTopup ? 1 : 0, topupAmount, sell ? 'active' : 'paused', apiEnabled, apiMarkup, upgradeMarkup, upstreamCode, upstreamKey, 'v2.1.0 商品管理保存']
             );
             planId = ins && ins.insertId ? Number(ins.insertId) : 0;
             if (!planId) return res.status(500).json({ success: false, message: '创建商品失败（未取得 insertId）' });
@@ -7156,6 +10039,7 @@ app.post('/api/admin/products/save', requireSecondaryAuth, async (req, res) => {
         const cardRows = await store.runQuery('SELECT card_json FROM kc_listing_cards WHERE plan_id=? LIMIT 1', [planId]);
         const cardJson = cardRows.length ? (productCardOf(cardRows[0].card_json) || {}) : {};
         cardJson.subtitle = subtitle;
+        cardJson.category = kcType; // v2.13.0：卡片分类与商品类型同源（前台按 category 分「代充/成品号/建站服务」Tab）
         await store.runExecute(
             'INSERT INTO kc_listing_cards (plan_id, card_json, is_visible, listing_state, sort) VALUES (?, ?, ?, ?, ?) ' +
             'ON DUPLICATE KEY UPDATE card_json=VALUES(card_json), updated_at=CURRENT_TIMESTAMP',
@@ -7236,10 +10120,43 @@ function openApiQuotePrice(costCents, markupPercent) {
     const pct = Number(markupPercent) || 0;
     return Math.max(0, Math.round(Number(costCents) || 0) * (100 + pct) / 100);
 }
+// v2.3.0 · 顾客管理域：品类 key → 订单 biz_type 归一（单一事实源口径）
+function bizTypeFromCategory(cat) {
+    const key = String(cat == null ? '' : cat).trim().toLowerCase();
+    if (key === 'recharge') return 'topup';
+    if (key === 'account') return 'account';
+    if (key === 'website') return 'website';
+    // v2.14.0：v2.13.0 起卡片 category 与 kc_plans.kc_type 同源，'entitlement' 需直连归一
+    if (key === 'entitlement' || key === 'pack') return 'entitlement';
+    return 'other';
+}
+function bizTypeFromCardJson(cardJson) {
+    let card = null;
+    if (cardJson && typeof cardJson === 'object') {
+        card = cardJson;
+    } else if (typeof cardJson === 'string' && cardJson) {
+        try { card = JSON.parse(cardJson); } catch (e) { card = null; }
+    }
+    return bizTypeFromCategory(card ? card.category : '');
+}
+// v2.17.0 · 卡密代充：把 cdk_list_json 解析成卡密数组（缺省回落到单张 cdk 列）
+function parseCdkList(raw, fallback) {
+    let arr = [];
+    if (raw) {
+        try {
+            const j = JSON.parse(raw);
+            if (Array.isArray(j)) arr = j.map(function (x) { return String(x || ''); }).filter(Boolean);
+        } catch (e) { /* 解析失败回落到单卡 */ }
+    }
+    if (!arr.length && fallback) arr = [String(fallback)];
+    return arr;
+}
+
 async function openApiFindSku(sku) {
     const rows = await store.runQuery(
-        'SELECT k.*, u.upstream_price_cents FROM kc_plans k ' +
+        'SELECT k.*, u.upstream_price_cents, c.card_json FROM kc_plans k ' +
         'LEFT JOIN kc_upstream_plans u ON u.upstream_code = k.upstream_code AND u.upstream_plan_key = k.upstream_plan_key ' +
+        'LEFT JOIN kc_listing_cards c ON c.plan_id = k.id ' +
         'WHERE k.code = ? LIMIT 1', [sku]
     );
     return rows.length ? rows[0] : null;
@@ -7439,9 +10356,9 @@ async function createApiOrderCore(opts) {
     }
 
     const ins = await store.runExecute(
-        'INSERT INTO kc_api_orders (client_id, customer_id, client_order_no, our_order_no, sku_code, qty, quote_id, source, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [tenantId, customerId, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, source, curCost, q.unit_price_cents, amount, status, cdk, failReason]
+        'INSERT INTO kc_api_orders (client_id, customer_id, client_order_no, our_order_no, sku_code, qty, quote_id, source, biz_type, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [tenantId, customerId, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, source, bizTypeFromCardJson(plan.card_json), curCost, q.unit_price_cents, amount, status, cdk, failReason]
     );
     await store.runExecute('UPDATE kc_api_quote_logs SET consumed_order_id=? WHERE id=?', [ins.insertId, q.id]);
 
@@ -7451,6 +10368,212 @@ async function createApiOrderCore(opts) {
     return { http: 200, body: {
         success: true,
         data: { order_id: ourOrderNo, status: status, amount: openApiUsd(amount), currency: 'USD', cdk: cdk }
+    } };
+}
+
+// ===== v2.17.0 · 代充双轨之一：直接代充下单核心（冻结模型）=====
+// 与 createApiOrderCore 平行、不复用：后者是「即扣 + 发卡（对外API / 非代充 / 卡密代充）」，
+// 本条是「先冻结 → 上游成功才核销、失败即解冻」。
+// 资金：可用余额 → 冻结（kc_customers.held_cents）；订单 status='created'；内部发 1 张「不展示给顾客」的卡密驱动原生 /api/run-process。
+// 终态结算：两 worker 终态钩子 settleDirectOrderByCdk —— success→capture / failed→release / manual→保持冻结。
+async function createDirectTopupOrderCore(opts) {
+    const tenantId = Number(opts.tenantId) || 0;
+    const customerId = opts.customerId ? Number(opts.customerId) : 0;
+    const clientOrderNo = String(opts.clientOrderNo || '').trim();
+    const quoteId = String(opts.quoteId || '').trim();
+    const source = String(opts.source || 'tenant_web');
+    const userRef = String(opts.userRef || ('customer:' + customerId));
+    const resolveCurrent = opts.resolveCurrent;
+    // v2.19.x：升级账号的报价元数据（差额已在暂存的报价里体现；这里落库供 worker 复用 preflight_token）
+    const upgrade = opts.upgrade || null;
+    const upgradeJson = upgrade ? JSON.stringify(upgrade) : null;
+    if (!customerId) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '直接代充需要顾客身份' } };
+    if (!clientOrderNo || clientOrderNo.length > 64) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: 'client_order_no 必填且 ≤64 字符（幂等键）' } };
+    if (!quoteId) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '缺少 quote_id' } };
+
+    // 幂等：同租户同单号直接回原单
+    const dup = await store.runQuery('SELECT * FROM kc_api_orders WHERE client_id=? AND client_order_no=? LIMIT 1', [tenantId, clientOrderNo]);
+    if (dup.length) {
+        const d = dup[0];
+        return { http: 200, body: { success: true, data: { order_id: d.our_order_no, status: d.status, amount: openApiUsd(d.amount_cents), currency: 'USD', cdk: d.cdk || null, fulfill_mode: String(d.fulfill_mode || 'direct'), reused: true } } };
+    }
+
+    const qRows = await store.runQuery('SELECT * FROM kc_api_quote_logs WHERE quote_id=? AND client_id=? LIMIT 1', [quoteId, tenantId]);
+    if (!qRows.length) return { http: 404, body: { success: false, code: 'QUOTE_NOT_FOUND', message: '报价不存在' } };
+    const q = qRows[0];
+    if (q.consumed_order_id) return { http: 409, body: { success: false, code: 'QUOTE_CONSUMED', message: '报价已被使用' } };
+    if (new Date(q.expires_at).getTime() < Date.now()) return { http: 409, body: { success: false, code: 'QUOTE_EXPIRED', message: '报价已过期（60 秒），请重新报价' } };
+
+    const plan = await openApiFindSku(q.sku_code);
+    const curCost = plan ? (Number(plan.upstream_price_cents) || 0) : 0;
+    const current = resolveCurrent ? await resolveCurrent(plan) : null;
+    if (!plan || !current || !current.available) {
+        return { http: 409, body: { success: false, code: 'PRICE_CHANGED', message: '该商品当前不可售，请重新报价', data: { new_unit_price: null } } };
+    }
+    const baseUnit = Number(q.unit_price_cents) || 0;
+    const curUnit = Number(current.unitCents) || 0;
+    const drift = baseUnit > 0 ? Math.abs(curUnit - baseUnit) / baseUnit : 1;
+    if (drift > OPEN_API_PRICE_DRIFT_TOLERANCE) {
+        return { http: 409, body: { success: false, code: 'PRICE_CHANGED', message: '价格已更新（自报价后变动 ' + (drift * 100).toFixed(1) + '% > 3%），请重新报价', data: { new_unit_price: openApiUsd(curUnit) } } };
+    }
+
+    const amount = Number(q.total_cents) || 0;
+    if (amount <= 0) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '金额无效' } };
+    const ourOrderNo = 'dir_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+
+    // ① 冻结：可用余额 → 冻结额
+    const held = await holdCustomerFunds({ tenantId: tenantId, customerId: customerId, cents: amount, ref: ourOrderNo, note: '直接代充下单冻结 ' + clientOrderNo });
+    if (!held.ok) return { http: 402, body: { success: false, code: 'INSUFFICIENT_BALANCE', message: '钱包余额不足，请先充值' } };
+
+    // ② 落单（冻结中）
+    let ins;
+    try {
+        ins = await store.runExecute(
+            'INSERT INTO kc_api_orders (client_id, customer_id, client_order_no, our_order_no, sku_code, qty, quote_id, source, biz_type, fulfill_mode, hold_cents, cost_cents, unit_price_cents, amount_cents, status, cdk, fail_reason, upgrade_json) ' +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'direct', ?, ?, ?, ?, 'created', '', '', ?)",
+            [tenantId, customerId, clientOrderNo, ourOrderNo, q.sku_code, q.qty, quoteId, source, bizTypeFromCardJson(plan.card_json), amount, curCost, q.unit_price_cents, amount, upgradeJson]
+        );
+    } catch (e) {
+        // 落单失败 → 立即解冻（无订单行，直接补偿）
+        await store.runExecute('UPDATE kc_customers SET held_cents=GREATEST(held_cents-?,0), balance_cents=balance_cents+? WHERE id=?', [amount, amount, customerId]).catch(function () { });
+        return { http: 500, body: { success: false, code: 'INTERNAL', message: '下单失败：' + (e && e.message) } };
+    }
+    const orderId = ins && ins.insertId ? Number(ins.insertId) : 0;
+
+    // ③ 内部发 1 张「不展示给顾客」的卡密（驱动原生开通）；失败则解冻并置失败
+    let cdk = '', failReason = '', ok = true;
+    try {
+        const result = await store.issueCdkByRef(ourOrderNo, {
+            planType: String(plan.upstream_plan_key), source: source, orderId: null, userRef: userRef, createCdks: createCdks
+        });
+        cdk = result && result.cdk ? String(result.cdk) : '';
+        if (!cdk) throw new Error('未取得内部卡密');
+        await store.runExecute('UPDATE kc_api_orders SET cdk=? WHERE id=?', [cdk, orderId]);
+    } catch (e) {
+        ok = false;
+        failReason = '发卡失败：' + String((e && e.message) || e).slice(0, 180);
+        await releaseOrderHold({ id: orderId, client_id: tenantId, customer_id: customerId, our_order_no: ourOrderNo, hold_cents: amount }, failReason + '，已解冻');
+    }
+
+    await store.runExecute('UPDATE kc_api_quote_logs SET consumed_order_id=? WHERE id=?', [orderId, q.id]);
+    if (!ok) return { http: 502, body: { success: false, code: 'FULFILL_FAILED', message: '下单失败（金额已解冻）：' + failReason } };
+    return { http: 200, body: {
+        success: true,
+        data: { order_id: ourOrderNo, status: 'created', amount: openApiUsd(amount), currency: 'USD', cdk: cdk, fulfill_mode: 'direct' }
+    } };
+}
+
+// ===== v2.17.0 · 代充双轨之二：卡密代充下单核心（即扣 + 发 N 张卡密）=====
+// 与「直接代充」完全分开：下单立即从可用余额扣款，发放 N 张卡密凭证并落 cdk_list_json；订单直接 delivered。
+// 兑换仍走 KC 原生链路（/api/verify-cdk + /api/run-process），本函数不侵入原生。
+async function createCdkTopupOrderCore(opts) {
+    const tenant = opts.tenant || {};
+    const customer = opts.customer || {};
+    const tenantId = Number(tenant.id) || 0;
+    const customerId = Number(customer.id) || 0;
+    const sku = String(opts.sku || '').trim();
+    const clientOrderNo = String(opts.clientOrderNo || '').trim();
+    const source = String(opts.source || 'tenant_web');
+    if (!tenantId || !customerId) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '卡密代充需要顾客身份' } };
+    if (!clientOrderNo || clientOrderNo.length > 64) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: 'client_order_no 必填且 ≤64 字符（幂等键）' } };
+    if (!sku) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '缺少 sku' } };
+    const count = Math.max(1, Math.min(100, parseInt(opts.count, 10) || 1));
+
+    // 幂等：同租户同单号 → 回原单（含卡密列表）
+    const dup = await store.runQuery('SELECT * FROM kc_api_orders WHERE client_id=? AND client_order_no=? LIMIT 1', [tenantId, clientOrderNo]);
+    if (dup.length) {
+        const d = dup[0];
+        return { http: 200, body: { success: true, data: {
+            order_id: d.our_order_no, status: d.status, amount: openApiUsd(d.amount_cents), currency: 'USD',
+            cdk: d.cdk || null, cdk_list: parseCdkList(d.cdk_list_json, d.cdk), count: Number(d.qty) || 0,
+            fulfill_mode: String(d.fulfill_mode || 'cdk'), reused: true
+        } } };
+    }
+
+    // 定价：与「直接代充」同源（tenantBatchPlan 含权益分配），保证「账单价 = 结算价」
+    const p = await tenantBatchPlan(tenant, customer, sku, count, opts.useEntitlement !== false);
+    if (!p.ok) return { http: p.code === 'SKU_NOT_FOUND' ? 404 : 409, body: { success: false, code: p.code, message: p.message } };
+    const amount = Number(p.total_cents) || 0;
+    if (amount <= 0) return { http: 400, body: { success: false, code: 'INVALID_REQUEST', message: '金额无效' } };
+    const ourOrderNo = 'cdk_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+
+    // ① 立即扣款（可用余额）
+    const deducted = await store.runExecute(
+        'UPDATE kc_customers SET balance_cents = balance_cents - ? WHERE id=? AND client_id=? AND balance_cents >= ?',
+        [amount, customerId, tenantId, amount]
+    );
+    if (!deducted || Number(deducted.affectedRows) === 0) {
+        return { http: 402, body: { success: false, code: 'INSUFFICIENT_BALANCE', message: '钱包余额不足，请先充值' } };
+    }
+    try {
+        const [w] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+        await store.runExecute(
+            'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [tenantId, customerId, -amount, w ? w.balance_cents : 0, 'consume', ourOrderNo, '购买卡密 ' + clientOrderNo]
+        );
+    } catch (le) { /* 流水失败不阻塞 */ }
+
+    // ② 发放 N 张卡密（ref = 内部单号#序号，幂等）
+    const codes = [];
+    let failReason = '';
+    try {
+        for (let i = 1; i <= count; i += 1) {
+            const r = await store.issueCdkByRef(ourOrderNo + '#' + i, {
+                planType: String(p.plan.upstream_plan_key), source: source, orderId: null, userRef: 'customer:' + customerId, createCdks: createCdks
+            });
+            codes.push(r && r.cdk ? String(r.cdk) : '');
+        }
+    } catch (e) { failReason = String((e && e.message) || e).slice(0, 180); }
+    const ok = !failReason && codes.length === count && codes.every(function (c) { return !!c; });
+
+    // ③ 部分失败 → 整单退回（已发卡密会回滚为未使用；顾客可重新下单）
+    if (!ok) {
+        await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, customerId]).catch(function () { });
+        try {
+            const [w2] = await store.runQuery('SELECT balance_cents FROM kc_customers WHERE id=? LIMIT 1', [customerId]);
+            await store.runExecute(
+                'INSERT INTO kc_customer_wallet_ledger (client_id, customer_id, change_cents, balance_after_cents, type, ref, note) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [tenantId, customerId, amount, w2 ? w2.balance_cents : 0, 'refund', ourOrderNo, '发卡失败退回 ' + clientOrderNo]
+            );
+        } catch (le) { /* 忽略 */ }
+    }
+
+    let ins;
+    try {
+        ins = await store.runExecute(
+            'INSERT INTO kc_api_orders (client_id, customer_id, client_order_no, our_order_no, sku_code, qty, quote_id, source, biz_type, fulfill_mode, hold_cents, cdk, cdk_list_json, cost_cents, unit_price_cents, amount_cents, status, fail_reason) ' +
+            "VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 'cdk', 0, ?, ?, ?, ?, ?, ?, ?)",
+            [tenantId, customerId, clientOrderNo, ourOrderNo, sku, count, source, 'topup',
+             ok ? (codes[0] || '') : '', ok ? JSON.stringify(codes) : null,
+             Number(p.plan.upstream_price_cents) || 0, Number(p.base_unit_cents) || 0, amount,
+             ok ? 'delivered' : 'failed', ok ? '' : ('发卡失败：' + failReason)]
+        );
+    } catch (e) {
+        await store.runExecute('UPDATE kc_customers SET balance_cents = balance_cents + ? WHERE id=?', [amount, customerId]).catch(function () { });
+        return { http: 500, body: { success: false, code: 'INTERNAL', message: '下单失败：' + (e && e.message) } };
+    }
+    const orderId = ins && ins.insertId ? Number(ins.insertId) : 0;
+
+    // ④ 权益扣次（与「直接代充」同口径；每张卡按其分配到的 grant 扣 1 次）
+    if (ok) {
+        for (const it of p.items) {
+            if (it.ent_grant_id == null) continue;
+            try {
+                await entitlementConsume({
+                    grant_id: it.ent_grant_id, order_trade_no: ourOrderNo + '#' + it.index,
+                    plan_code: p.plan.code, original_cents: p.base_unit_cents, final_cents: Number(it.unit_cents) || 0
+                });
+            } catch (ce) { /* 扣次失败不阻塞订单 */ }
+        }
+    }
+
+    if (!ok) return { http: 502, body: { success: false, code: 'FULFILL_FAILED', message: '发卡失败（金额已退回）：' + failReason } };
+    return { http: 200, body: {
+        success: true,
+        data: {
+            order_id: ourOrderNo, status: 'delivered', amount: openApiUsd(amount), currency: 'USD',
+            cdk: codes[0] || null, cdk_list: codes, count: count, fulfill_mode: 'cdk'
+        }
     } };
 }
 
@@ -8027,6 +11150,12 @@ async function start() {
         }
     }, 60 * 1000).unref();
 
+    // ── v2.11.0：到账调度兜底对账（未配置收款网关时不启用，维持模拟模式）──
+    startRechargeReconciler();
+
+    // ── v2.15.1：开通失败周期对账退款兜底（订单层；默认开启，ACTIVATION_REFUND_RECONCILE_ENABLED=0 关闭）──
+    startActivationRefundReconciler();
+
     const server = app.listen(PORT, () => {
         const conn = store.connectionInfo;
         runtimeLog.push({
@@ -8043,7 +11172,8 @@ async function start() {
     // WebSocket Server Setup
     const wss = new WebSocket.Server({ server });
     wss.on('connection', (ws) => {
-        let currentJobKey = null;
+        // v2.16.0：批量代充需要在同一条连接上同时订阅多个任务，故订阅集合改为 Set（原先只保留一个 jobKey）
+        const subscribedJobKeys = new Set();
 
         ws.on('message', async (message) => {
             try {
@@ -8058,16 +11188,14 @@ async function start() {
                     return;
                 }
                 if (data.type === 'subscribe' && data.jobKey) {
-                    if (currentJobKey && currentJobKey !== data.jobKey) {
-                        unsubscribeTaskClient(currentJobKey, ws);
+                    const jobKey = String(data.jobKey);
+                    subscribedJobKeys.add(jobKey);
+                    if (!taskClients.has(jobKey)) {
+                        taskClients.set(jobKey, new Set());
                     }
-                    currentJobKey = data.jobKey;
-                    if (!taskClients.has(currentJobKey)) {
-                        taskClients.set(currentJobKey, new Set());
-                    }
-                    taskClients.get(currentJobKey).add(ws);
-                    console.log(`Client subscribed to task: ${currentJobKey}`);
-                    await sendTaskSnapshot(ws, currentJobKey);
+                    taskClients.get(jobKey).add(ws);
+                    console.log(`Client subscribed to task: ${jobKey}`);
+                    await sendTaskSnapshot(ws, jobKey);
                 }
             } catch (e) {
                 console.error('WebSocket message error:', e);
@@ -8075,7 +11203,8 @@ async function start() {
         });
 
         ws.on('close', () => {
-            unsubscribeTaskClient(currentJobKey, ws);
+            subscribedJobKeys.forEach((k) => unsubscribeTaskClient(k, ws));
+            subscribedJobKeys.clear();
         });
     });
 }

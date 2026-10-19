@@ -1,0 +1,17 @@
+{
+  "pass": 20,
+  "fail": 0,
+  "shots": [
+    "01_wallet.png",
+    "02_step1.png",
+    "03_guide.png",
+    "04_step2_pay.png",
+    "05_leave_guard.png",
+    "06_wallet_pending.png",
+    "07_resume.png",
+    "08_ack.png",
+    "09_paid.png"
+  ],
+  "custId": 90,
+  "email": "kc-rcux-mvb4rreh@example.com"
+}

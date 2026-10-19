@@ -255,6 +255,9 @@ async function ensureGptApiColumns() {
     await ensureColumn('task_logs', 'gpt_api_order_id', "VARCHAR(128) NULL DEFAULT NULL");
     await ensureColumn('task_logs', 'gpt_api_task_id', "VARCHAR(128) NULL DEFAULT NULL");
     await ensureColumn('task_logs', 'gpt_api_raw', "MEDIUMTEXT NULL");
+    // 第 3 层审计：记录上游实际使用的托管卡（卡ID + 后四位），用于事后追责/对账
+    await ensureColumn('task_logs', 'gpt_api_card_id', "BIGINT NULL DEFAULT NULL");
+    await ensureColumn('task_logs', 'gpt_api_card_last4', "VARCHAR(8) NULL DEFAULT NULL");
 }
 
 async function ensureGptApiConfigDefaults() {
@@ -413,11 +416,14 @@ async function ensureUpstreamHealthTable() {
 const PLANS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_plans (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(64) NOT NULL COMMENT 'KC SKU 唯一代号（自维护，例如 plus_m / topup_500）',
-    kc_type ENUM('recharge','account','entitlement') NOT NULL DEFAULT 'recharge' COMMENT '商品类型（接《商品类型体系 v1.0.0》）',
+    kc_type ENUM('recharge','account','entitlement','website') NOT NULL DEFAULT 'recharge' COMMENT '商品类型（代充/成品号/权益/建站服务，接《商品类型体系 v1.0.0》）',
     display_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '展示名',
     upstream_code VARCHAR(32) NOT NULL DEFAULT '' COMMENT '→ kc_upstreams.code（空=未绑定上游）',
     upstream_plan_key VARCHAR(64) NOT NULL DEFAULT '' COMMENT '→ kc_upstream_plans.upstream_plan_key',
     status ENUM('active','paused','archived') NOT NULL DEFAULT 'active' COMMENT 'SKU 状态',
+    api_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '对外 API 分销开关',
+    api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 COMMENT '对外 API 加价率（%）',
+    upgrade_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 COMMENT '升级代充加价率（%，v2.20.0；独立于 api_markup_percent）',
     note VARCHAR(255) NOT NULL DEFAULT '' COMMENT '备注',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -462,9 +468,14 @@ async function ensurePlansTable() {
     // v1.24.0 商品管理 MVP：API 分销配置占位列（仅存配置，对外接口 v2 启用）
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status'); } catch (e) { /* 已存在 */ }
     try { await runExecute('ALTER TABLE kc_plans ADD COLUMN api_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_enabled'); } catch (e) { /* 已存在 */ }
+    // v2.20.0 · 升级加价率：升级代充零售价 = Zovo 升级差额（按实时汇率折 USD）× (1 + 升级加价率)。
+    // 与 api_markup_percent（对外 API 分销报价）**相互独立**，不复用；默认 0 = 不加价。
+    try { await runExecute('ALTER TABLE kc_plans ADD COLUMN upgrade_markup_percent DECIMAL(6,2) NOT NULL DEFAULT 0 AFTER api_markup_percent'); } catch (e) { /* 已存在 */ }
     // v2.1.0 · 旧系统退场：商品主数据迁入 KC 原生（原外库的 name/prices/show/sell/sort/content/kc_is_topup/kc_topup_amount）
     try { await runExecute("ALTER TABLE kc_plans ADD COLUMN prices_json JSON NULL COMMENT '商品原价（主单位/美元），如 {\"monthly\":15}；NULL=非在售商品'"); } catch (e) { /* 已存在 */ }
     try { await runExecute("ALTER TABLE kc_plans ADD COLUMN content TEXT NULL COMMENT '商品详情说明'"); } catch (e) { /* 已存在 */ }
+    // v2.13.0 · 商品类型：补 'website'（建站服务），使后台「新增商品」可选 代充/成品号/权益/建站服务 四类（容错）
+    try { await runExecute("ALTER TABLE kc_plans MODIFY COLUMN kc_type ENUM('recharge','account','entitlement','website') NOT NULL DEFAULT 'recharge' COMMENT '商品类型（代充/成品号/权益/建站服务）'"); } catch (e) { /* 已是新定义 */ }
     try { await runExecute("ALTER TABLE kc_plans ADD COLUMN is_topup TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否代充商品'"); } catch (e) { /* 已存在 */ }
     try { await runExecute("ALTER TABLE kc_plans ADD COLUMN topup_amount INT NOT NULL DEFAULT 0 COMMENT '充值面额（分）'"); } catch (e) { /* 已存在 */ }
     try { await runExecute("ALTER TABLE kc_plans ADD COLUMN show_flag TINYINT(1) NOT NULL DEFAULT 1 COMMENT '前台展示开关'"); } catch (e) { /* 已存在 */ }
@@ -525,6 +536,10 @@ const API_ORDERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_api_orders (
     amount_cents INT NOT NULL DEFAULT 0,
     status ENUM('created','delivered','failed') NOT NULL DEFAULT 'created',
     cdk VARCHAR(64) NOT NULL DEFAULT '',
+    cdk_list_json TEXT NULL COMMENT '卡密代充：N 张卡密数组（v2.17.0）；cdk 列保留=首卡',
+    upgrade_json TEXT NULL COMMENT '升级报价元数据 JSON（v2.19.x：直接代充升级路径的 preflight_token/差额/币种/过期/当前套餐）',
+    fulfill_mode ENUM('auto','direct','cdk') NOT NULL DEFAULT 'auto' COMMENT '履约方式：auto=即时交付（历史/对外API/非代充）· direct=直接代充（冻结→核销/解冻）· cdk=卡密代充（即扣+发N卡）',
+    hold_cents INT NOT NULL DEFAULT 0 COMMENT '该单当前冻结额（分，0=无冻结；v2.17.0）',
     fail_reason VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -565,6 +580,14 @@ async function ensureApiOrdersTable() {
     // v1.39.0 · Stage 2.2：租户站顾客维度（open API 订单该列为 NULL；不改变既有幂等键）
     try { await runExecute('ALTER TABLE kc_api_orders ADD COLUMN customer_id BIGINT UNSIGNED NULL AFTER client_id'); } catch (e) { /* 已存在 */ }
     try { await runExecute("ALTER TABLE kc_api_orders ADD COLUMN source VARCHAR(32) NOT NULL DEFAULT 'open_api' AFTER quote_id"); } catch (e) { /* 已存在 */ }
+    // v2.3.0 · 顾客管理域：订单业务类型（下单时定格，避免目录事后改类导致历史失真）
+    try { await runExecute("ALTER TABLE kc_api_orders ADD COLUMN biz_type ENUM('topup','account','website','entitlement','other') NOT NULL DEFAULT 'other' AFTER source"); } catch (e) { /* 已存在 */ }
+    // v2.17.0 · 代充双轨：履约方式 + 该单冻结额 + 多卡承载列（存量库容错 ALTER，默认值即历史语义）
+    try { await runExecute("ALTER TABLE kc_api_orders ADD COLUMN fulfill_mode ENUM('auto','direct','cdk') NOT NULL DEFAULT 'auto' AFTER cdk"); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_api_orders ADD COLUMN hold_cents INT NOT NULL DEFAULT 0 AFTER fulfill_mode'); } catch (e) { /* 已存在 */ }
+    try { await runExecute('ALTER TABLE kc_api_orders ADD COLUMN cdk_list_json TEXT NULL AFTER cdk'); } catch (e) { /* 已存在 */ }
+    // v2.19.x · 直接代充升级路径：仅升级账号落此列（worker 复用 preflight_token；非升级单为 NULL）
+    try { await runExecute('ALTER TABLE kc_api_orders ADD COLUMN upgrade_json TEXT NULL AFTER cdk_list_json'); } catch (e) { /* 已存在 */ }
 }
 async function ensureApiQuoteLogsTable() { await ensureTable('kc_api_quote_logs', API_QUOTE_LOGS_TABLE_SQL); }
 async function ensurePricingRulesTable() { await ensureTable('kc_pricing_rules', PRICING_RULES_TABLE_SQL); }
@@ -590,6 +613,7 @@ const TENANT_BRAND_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_tenant_brand (
     logo_url VARCHAR(512) NOT NULL DEFAULT '',
     primary_color VARCHAR(16) NOT NULL DEFAULT '',
     accent_color VARCHAR(16) NOT NULL DEFAULT '',
+    color_scheme VARCHAR(16) NOT NULL DEFAULT 'ink' COMMENT '前台配色方案：mint/ocean/violet/ember/ink',
     support_contact VARCHAR(191) NOT NULL DEFAULT '',
     support_url VARCHAR(512) NOT NULL DEFAULT '',
     hero_title VARCHAR(255) NOT NULL DEFAULT '',
@@ -632,6 +656,10 @@ async function ensureTenantTables() {
     await ensureTable('kc_tenant_brand', TENANT_BRAND_TABLE_SQL);
     await ensureTable('kc_tenant_catalog', TENANT_CATALOG_TABLE_SQL);
     await ensureTable('kc_tenant_staff', TENANT_STAFF_TABLE_SQL);
+    // v2.5.0：租户员工强制首改位（重置密码后置 1）。
+    try { await runExecute("ALTER TABLE kc_tenant_staff ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER status"); } catch (e) { /* 已存在 */ }
+    // v2.14.0：前台配色方案（租户级）；容错 ALTER，重复执行安全。
+    try { await runExecute("ALTER TABLE kc_tenant_brand ADD COLUMN color_scheme VARCHAR(16) NOT NULL DEFAULT 'ink' AFTER accent_color"); } catch (e) { /* 已存在 */ }
 }
 
 // ---- v1.39.0 · Stage 2 分步接手：KC 自有顾客账号（替代旧会员簿）----
@@ -643,7 +671,8 @@ const CUSTOMERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customers (
     email VARCHAR(191) NOT NULL,
     password_hash VARCHAR(191) NOT NULL DEFAULT '',
     display_name VARCHAR(128) NOT NULL DEFAULT '',
-    balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包余额（分，v1.42.0 Stage 3.3）',
+    balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包可用余额（分，v1.42.0 Stage 3.3）',
+    held_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包冻结金额（分，v2.17.0 直接代充）',
     status ENUM('active','disabled') NOT NULL DEFAULT 'active',
     last_login_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -655,7 +684,12 @@ const CUSTOMERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customers (
 async function ensureCustomersTable() {
     await ensureTable('kc_customers', CUSTOMERS_TABLE_SQL);
     // v1.42.0 · Stage 3.3（G2）：顾客钱包余额列（存量库补列）
-    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包余额（分，v1.42.0 Stage 3.3）' AFTER display_name"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN balance_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包可用余额（分，v1.42.0 Stage 3.3）' AFTER display_name"); } catch (e) { /* 已存在 */ }
+    // v2.17.0 · 直接代充资金冻结：顾客钱包冻结额列（存量库补列，容错）
+    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN held_cents INT NOT NULL DEFAULT 0 COMMENT '顾客钱包冻结金额（分，v2.17.0 直接代充）' AFTER balance_cents"); } catch (e) { /* 已存在 */ }
+    // v2.3.0 · 顾客管理域：强制首次改密位 + 后台备注
+    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 AFTER status"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customers ADD COLUMN admin_note VARCHAR(255) NOT NULL DEFAULT '' AFTER must_change_password"); } catch (e) { /* 已存在 */ }
 }
 
 // ---- v1.42.0 · Stage 3.3 顾客钱包（G2 钱包/充值前台）----
@@ -667,7 +701,7 @@ const CUSTOMER_WALLET_LEDGER_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer
     customer_id BIGINT UNSIGNED NOT NULL COMMENT '顾客 kc_customers.id',
     change_cents INT NOT NULL COMMENT '变动（分，负=扣减）',
     balance_after_cents INT NOT NULL COMMENT '变动后余额（分）',
-    type ENUM('recharge','consume','refund') NOT NULL,
+    type ENUM('recharge','consume','refund','adjust','hold','capture','release') NOT NULL,
     ref VARCHAR(64) NOT NULL DEFAULT '' COMMENT '关联单号 / 充值单号',
     note VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -684,8 +718,13 @@ const CUSTOMER_RECHARGES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer_rec
     amount_cents INT NOT NULL COMMENT '充值金额（分）',
     currency VARCHAR(8) NOT NULL DEFAULT 'USD',
     channel VARCHAR(24) NOT NULL DEFAULT 'bepusdt',
-    pay_address VARCHAR(128) NOT NULL DEFAULT '' COMMENT '收款地址（模拟）',
+    pay_address VARCHAR(128) NOT NULL DEFAULT '' COMMENT '收款地址（模拟 / 网关返回 token）',
     status ENUM('pending','paid','expired','canceled') NOT NULL DEFAULT 'pending',
+    trade_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '网关交易号（v2.11.0）',
+    actual_amount VARCHAR(32) NOT NULL DEFAULT '' COMMENT '网关折算的实际应付金额 USDT（v2.11.0）',
+    payment_url VARCHAR(512) NOT NULL DEFAULT '' COMMENT '网关收银台地址（v2.11.0）',
+    notify_txid VARCHAR(128) NOT NULL DEFAULT '' COMMENT '链上 TxID（v2.11.0）',
+    notified_at DATETIME NULL COMMENT 'notify 到账时间（v2.11.0）',
     paid_at DATETIME NULL,
     expires_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -693,8 +732,21 @@ const CUSTOMER_RECHARGES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_customer_rec
     KEY idx_customer (customer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='顾客充值单（v1.42.0）'`;
 
-async function ensureCustomerWalletLedgerTable() { await ensureTable('kc_customer_wallet_ledger', CUSTOMER_WALLET_LEDGER_TABLE_SQL); }
-async function ensureCustomerRechargesTable() { await ensureTable('kc_customer_recharges', CUSTOMER_RECHARGES_TABLE_SQL); }
+async function ensureCustomerWalletLedgerTable() {
+    await ensureTable('kc_customer_wallet_ledger', CUSTOMER_WALLET_LEDGER_TABLE_SQL);
+    // v2.3.0 · 顾客管理域：流水类型扩展「人工调账 adjust」（幂等，可每次跑）
+    // v2.17.0 · 直接代充：再扩「资金冻结 hold / 核销 capture / 解冻 release」三类（MODIFY 幂等，可每次跑）
+    try { await runExecute("ALTER TABLE kc_customer_wallet_ledger MODIFY COLUMN type ENUM('recharge','consume','refund','adjust','hold','capture','release') NOT NULL"); } catch (e) { /* 已存在 */ }
+}
+async function ensureCustomerRechargesTable() {
+    await ensureTable('kc_customer_recharges', CUSTOMER_RECHARGES_TABLE_SQL);
+    // v2.11.0 · BEpusdt 接入：网关交易号 / 实际应付金额 / 收银台地址 / 链上 TxID（存量库补列，容错）
+    try { await runExecute("ALTER TABLE kc_customer_recharges ADD COLUMN trade_id VARCHAR(64) NOT NULL DEFAULT '' AFTER status"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customer_recharges ADD COLUMN actual_amount VARCHAR(32) NOT NULL DEFAULT '' AFTER trade_id"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customer_recharges ADD COLUMN payment_url VARCHAR(512) NOT NULL DEFAULT '' AFTER actual_amount"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customer_recharges ADD COLUMN notify_txid VARCHAR(128) NOT NULL DEFAULT '' AFTER payment_url"); } catch (e) { /* 已存在 */ }
+    try { await runExecute("ALTER TABLE kc_customer_recharges ADD COLUMN notified_at DATETIME NULL AFTER notify_txid"); } catch (e) { /* 已存在 */ }
+}
 
 // 播种：平台自身写成 tenant_kind='platform' 的一行（主站 = 默认 platform 租户）
 async function seedPlatformTenant() {
@@ -721,8 +773,8 @@ async function seedPlatformTenant() {
             const brand = await runQuery('SELECT client_id FROM kc_tenant_brand WHERE client_id=? LIMIT 1', [tenantId]);
             if (!brand.length) {
                 await runExecute(
-                    "INSERT INTO kc_tenant_brand (client_id, brand_name, primary_color, accent_color) VALUES (?, ?, ?, ?)",
-                    [tenantId, 'KC 直供', '#0F6E56', '#0B5341']
+                    "INSERT INTO kc_tenant_brand (client_id, brand_name, primary_color, accent_color, color_scheme) VALUES (?, ?, ?, ?, ?)",
+                    [tenantId, 'KC 直供', '', '', 'ink']
                 );
             }
         }
@@ -849,6 +901,584 @@ const AFTER_SALES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_after_sales (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='顾客订单售后申请（v1.45.0）'`;
 
 async function ensureAfterSalesTable() { await ensureTable('kc_after_sales', AFTER_SALES_TABLE_SQL); }
+
+// ---- v2.3.0 · 后台用户与账号管理（批次 1）：操作审计 ----
+// 红线：「运行日志/登录日志」= 系统/任务日志；本表 = 操作审计（谁改了什么），两者不许混。
+const AUDIT_LOGS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_audit_logs (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    actor_type VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'platform_admin|tenant_owner|tenant_staff|system',
+    actor_id BIGINT UNSIGNED NULL,
+    actor_email VARCHAR(191) NOT NULL DEFAULT '',
+    action VARCHAR(64) NOT NULL COMMENT '如 customer.freeze',
+    target_type VARCHAR(32) NOT NULL DEFAULT '',
+    target_id VARCHAR(64) NOT NULL DEFAULT '',
+    before_json JSON NULL,
+    after_json JSON NULL,
+    ip VARCHAR(64) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_actor (actor_type, actor_id),
+    KEY idx_action (action),
+    KEY idx_target (target_type, target_id),
+    KEY idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='后台操作审计（v2.3.0）'`;
+
+async function ensureAuditLogsTable() { await ensureTable('kc_audit_logs', AUDIT_LOGS_TABLE_SQL); }
+
+// 写审计：异常不抛出（审计失败不阻塞业务），仅 console.warn。
+async function insertAuditLog(entry = {}) {
+    try {
+        const actorId = (entry.actor_id !== undefined && entry.actor_id !== null && entry.actor_id !== '')
+            ? Number(entry.actor_id) : null;
+        await runExecute(
+            'INSERT INTO kc_audit_logs (actor_type, actor_id, actor_email, action, target_type, target_id, before_json, after_json, ip) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+                String(entry.actor_type || '').slice(0, 32),
+                actorId,
+                String(entry.actor_email || '').slice(0, 191),
+                String(entry.action || '').slice(0, 64),
+                String(entry.target_type || '').slice(0, 32),
+                String(entry.target_id == null ? '' : entry.target_id).slice(0, 64),
+                entry.before == null ? null : JSON.stringify(entry.before),
+                entry.after == null ? null : JSON.stringify(entry.after),
+                String(entry.ip || '').slice(0, 64)
+            ]
+        );
+        return { success: true };
+    } catch (e) {
+        console.warn('[audit] insertAuditLog failed:', e && e.message);
+        return { success: false };
+    }
+}
+
+// ---- v2.5.0 · 密码与账号安全（批次 3）：一次性密码重置令牌 ----
+// 红线：只存 sha256(token) 十六进制，明文临时密码不落库、不落审计；30 分钟过期；用后即焚（used_at）。
+const PASSWORD_RESETS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_password_resets (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    token_hash CHAR(64) NOT NULL COMMENT 'sha256(token) 十六进制，明文不落库',
+    token_hint VARCHAR(12) NOT NULL DEFAULT '' COMMENT 'hash 前 8 位，仅供审计列表辨识',
+    account_type VARCHAR(32) NOT NULL COMMENT 'admin|tenant_staff|customer',
+    account_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_by_type VARCHAR(32) NOT NULL DEFAULT '',
+    created_by VARCHAR(191) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_token_hash (token_hash),
+    KEY idx_account (account_type, account_id),
+    KEY idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='一次性密码重置令牌（v2.5.0）'`;
+
+async function ensurePasswordResetsTable() { await ensureTable('kc_password_resets', PASSWORD_RESETS_TABLE_SQL); }
+
+const PASSWORD_RESET_DEFAULT_TTL_SEC = 30 * 60;
+
+async function createPasswordReset({ tokenHash, tokenHint, accountType, accountId, ttlSeconds, createdByType, createdBy }) {
+    const ttl = Math.max(1, Math.min(Number(ttlSeconds) || PASSWORD_RESET_DEFAULT_TTL_SEC, 24 * 60 * 60));
+    const ins = await runExecute(
+        'INSERT INTO kc_password_resets (token_hash, token_hint, account_type, account_id, expires_at, created_by_type, created_by) ' +
+        'VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND), ?, ?)',
+        [
+            String(tokenHash || '').slice(0, 64),
+            String(tokenHint || '').slice(0, 12),
+            String(accountType || '').slice(0, 32),
+            Number(accountId) || 0,
+            ttl,
+            String(createdByType || '').slice(0, 32),
+            String(createdBy || '').slice(0, 191)
+        ]
+    );
+    return Number(ins.insertId);
+}
+
+// 用后即焚：单条 UPDATE 同时校验「未使用 + 未过期」，命中才算消费成功。
+async function consumePasswordReset({ tokenHash, accountType }) {
+    const hash = String(tokenHash || '').slice(0, 64);
+    if (!hash) return { ok: false, reason: 'not_found' };
+    const result = await runExecute(
+        'UPDATE kc_password_resets SET used_at = NOW() ' +
+        'WHERE token_hash = ? AND account_type = ? AND used_at IS NULL AND expires_at > NOW()',
+        [hash, String(accountType || '').slice(0, 32)]
+    );
+    if (Number(result.affectedRows) === 1) return { ok: true, reason: 'consumed' };
+    const rows = await runQuery('SELECT used_at, expires_at FROM kc_password_resets WHERE token_hash = ? LIMIT 1', [hash]);
+    if (!rows.length) return { ok: false, reason: 'not_found' };
+    if (rows[0].used_at) return { ok: false, reason: 'used' };
+    return { ok: false, reason: 'expired' };
+}
+
+async function listPasswordResets({ limit = 50 } = {}) {
+    const n = Math.max(1, Math.min(Number(limit) || 50, 200));
+    return runQuery(
+        'SELECT id, token_hint, account_type, account_id, expires_at, used_at, created_by_type, created_by, created_at, ' +
+        'TIMESTAMPDIFF(SECOND, created_at, expires_at) AS ttl_seconds ' +
+        'FROM kc_password_resets ORDER BY id DESC LIMIT ?',
+        [n]
+    );
+}
+
+// v2.5.0 · 操作审计查询（分页 + 过滤），供后台「操作审计」页使用。
+async function listAuditLogs({ action, target_type, target_id, actor_email, from, to, page = 1, page_size = 30 } = {}) {
+    const where = [];
+    const params = [];
+    if (action) { where.push('action = ?'); params.push(String(action).slice(0, 64)); }
+    if (target_type) { where.push('target_type = ?'); params.push(String(target_type).slice(0, 32)); }
+    if (target_id) { where.push('target_id = ?'); params.push(String(target_id).slice(0, 64)); }
+    if (actor_email) { where.push('actor_email LIKE ?'); params.push('%' + String(actor_email).slice(0, 191) + '%'); }
+    if (from) { where.push('created_at >= ?'); params.push(String(from).slice(0, 32)); }
+    if (to) { where.push('created_at <= ?'); params.push(String(to).slice(0, 32)); }
+    const whereSql = where.length ? ' WHERE ' + where.join(' AND ') : '';
+    const size = Math.max(1, Math.min(Number(page_size) || 30, 200));
+    const p = Math.max(1, Number(page) || 1);
+    const totalRows = await runQuery('SELECT COUNT(*) AS total FROM kc_audit_logs' + whereSql, params);
+    const rows = await runQuery(
+        'SELECT id, actor_type, actor_id, actor_email, action, target_type, target_id, before_json, after_json, ip, created_at ' +
+        'FROM kc_audit_logs' + whereSql + ' ORDER BY id DESC LIMIT ? OFFSET ?',
+        params.concat([size, (p - 1) * size])
+    );
+    return { total: Number(totalRows[0] && totalRows[0].total) || 0, page: p, page_size: size, items: rows };
+}
+
+// v2.3.0 · 历史订单 biz_type 回填：按 sku_code join 商品目录 category 一次性 UPDATE（幂等）。
+// 映射：recharge→topup / account→account / website→website / pack→entitlement / 其余→other。
+async function backfillOrderBizType() {
+    try {
+        const skus = await runQuery("SELECT DISTINCT sku_code FROM kc_api_orders WHERE biz_type='other'");
+        for (const row of skus) {
+            const sku = String((row && row.sku_code) || '');
+            if (!sku) continue;
+            const plans = await runQuery(
+                'SELECT c.card_json FROM kc_plans k LEFT JOIN kc_listing_cards c ON c.plan_id = k.id WHERE k.code = ? LIMIT 1',
+                [sku]
+            );
+            let category = '';
+            if (plans.length && plans[0].card_json) {
+                try {
+                    const card = typeof plans[0].card_json === 'string' ? JSON.parse(plans[0].card_json) : plans[0].card_json;
+                    category = String((card && card.category) || '').trim().toLowerCase();
+                } catch (e) { category = ''; }
+            }
+            const biz = category === 'recharge' ? 'topup'
+                : category === 'account' ? 'account'
+                : category === 'website' ? 'website'
+                : category === 'pack' ? 'entitlement'
+                : 'other';
+            if (biz === 'other') continue;
+            await runExecute("UPDATE kc_api_orders SET biz_type=? WHERE sku_code=? AND biz_type='other'", [biz, sku]);
+        }
+    } catch (e) {
+        /* 表缺失/异常忽略，不阻塞启动 */
+        console.warn('[audit] backfillOrderBizType skipped:', e && e.message);
+    }
+}
+
+// ---- v2.4.0 · 后台用户与账号管理（批次 2）：平台管理员 + RBAC 地基 ----
+// 三段式：主体(kc_admin_users) → 角色(kc_admin_roles) → 权限点(permissions) → 端点/菜单校验。
+// 超级角色 permissions = ['*'] 表示全权。
+const PERMISSION_POINTS = [
+    { key: 'admin.read', label: '后台账号 · 查看' },
+    { key: 'admin.write', label: '后台账号 · 管理（增删改/改角色/重置密码）' },
+    { key: 'role.read', label: '角色权限 · 查看' },
+    { key: 'role.write', label: '角色权限 · 管理' },
+    { key: 'menu.read', label: '菜单管理 · 查看' },
+    { key: 'menu.write', label: '菜单管理 · 管理' },
+    { key: 'customer.read', label: '顾客 · 查看' },
+    { key: 'customer.write', label: '顾客 · 管理（冻结/改密/开号）' },
+    { key: 'order.read', label: '订单 · 查看' },
+    { key: 'pricing.read', label: '定价 · 查看' },
+    { key: 'pricing.write', label: '定价 · 管理' },
+    { key: 'entitlement.read', label: '权益 · 查看' },
+    { key: 'entitlement.issue', label: '权益 · 发放' },
+    { key: 'tenant.read', label: '租户 · 查看' },
+    { key: 'tenant.write', label: '租户 · 管理' },
+    { key: 'audit.read', label: '操作审计 · 查看' },
+    { key: 'system.config', label: '系统配置' }
+];
+
+const ADMIN_ROLES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_admin_roles (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(32) NOT NULL COMMENT '角色代号：super/operator/viewer/finance/自定义',
+    name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '显示名',
+    permissions_json JSON NULL COMMENT '权限点数组',
+    builtin TINYINT(1) NOT NULL DEFAULT 0 COMMENT '内置角色不可删',
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_role_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='后台角色（v2.4.0）'`;
+
+const ADMIN_USERS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_admin_users (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(191) NOT NULL COMMENT '登录邮箱',
+    password_hash VARCHAR(191) NOT NULL COMMENT 'scrypt 哈希',
+    password_version INT NOT NULL DEFAULT 1 COMMENT '改密后自增，令旧令牌失效',
+    role_code VARCHAR(32) NOT NULL DEFAULT 'viewer' COMMENT '→ kc_admin_roles.code',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    must_change_password TINYINT(1) NOT NULL DEFAULT 0,
+    note VARCHAR(255) NOT NULL DEFAULT '',
+    last_login_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_admin_user_email (email),
+    KEY idx_admin_user_role (role_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='平台后台管理员账号（v2.4.0）'`;
+
+async function ensureAdminRolesTable() { await ensureTable('kc_admin_roles', ADMIN_ROLES_TABLE_SQL); }
+async function ensureAdminUsersTable() { await ensureTable('kc_admin_users', ADMIN_USERS_TABLE_SQL); }
+
+// 内置角色：super 全权；operator 运营（顾客/权益/租户只读+顾客写）；viewer 全只读；finance 财务（订单+定价+审计）
+// v2.8.0（批次6）：四个内置角色均含 menu.read —— 后台导航由 GET /api/admin/menus 驱动，缺该权限会 403 并回落兜底菜单。
+const BUILTIN_ADMIN_ROLES = [
+    { code: 'super', name: '超级管理员', permissions: ['*'], note: '全量权限，唯一可增删管理员' },
+    { code: 'operator', name: '运营', permissions: ['customer.read', 'customer.write', 'order.read', 'entitlement.read', 'entitlement.issue', 'tenant.read', 'pricing.read', 'menu.read', 'audit.read'], note: '日常运营：顾客管理 + 权益发放' },
+    { code: 'viewer', name: '只读', permissions: ['admin.read', 'role.read', 'menu.read', 'customer.read', 'order.read', 'pricing.read', 'entitlement.read', 'tenant.read', 'audit.read'], note: '全部只读，不可写' },
+    { code: 'finance', name: '财务', permissions: ['customer.read', 'order.read', 'pricing.read', 'pricing.write', 'entitlement.read', 'audit.read', 'menu.read'], note: '订单与定价；不涉及账号与租户' }
+];
+
+async function seedAdminRoles() {
+    for (const role of BUILTIN_ADMIN_ROLES) {
+        try {
+            const rows = await runQuery('SELECT id, permissions_json FROM kc_admin_roles WHERE code = ? LIMIT 1', [role.code]);
+            if (!rows.length) {
+                await runExecute(
+                    'INSERT INTO kc_admin_roles (code, name, permissions_json, builtin, note) VALUES (?, ?, ?, 1, ?)',
+                    [role.code, role.name, JSON.stringify(role.permissions), role.note]
+                );
+                continue;
+            }
+            // v2.8.0（批次6）：内置角色权限点幂等对齐——仅补齐「种子含而库中缺」的 menu.read，
+            // 不覆盖运维已配置的其他权限点。
+            if (role.permissions.includes('menu.read')) {
+                const current = parseRolePermissions(rows[0].permissions_json);
+                if (!current.includes('menu.read')) {
+                    current.push('menu.read');
+                    await runExecute('UPDATE kc_admin_roles SET permissions_json = ? WHERE code = ?', [JSON.stringify(current), role.code]);
+                }
+            }
+        } catch (e) { /* 表缺失/异常忽略，不阻塞启动 */ }
+    }
+}
+
+// 迁移：把 app_config 现有单管理员迁为「首个 super」；仅当 kc_admin_users 为空时执行（幂等）。
+// 保留 app_config 旧值 → 旧登录兜底不破坏；迁移后原账号仍可登录（口令哈希原样搬入）。
+async function seedAdminUsers() {
+    try {
+        const existing = await runQuery('SELECT COUNT(*) AS total FROM kc_admin_users');
+        if (Number(existing[0] && existing[0].total) > 0) return;
+        const rows = await runQuery(
+            `SELECT config_key, config_value FROM app_config WHERE config_key IN (?, ?, ?)`,
+            ['admin_email', 'admin_password_hash', 'admin_password_version']
+        );
+        const map = Object.fromEntries(rows.map((item) => [item.config_key, item.config_value]));
+        const email = String(map.admin_email || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+        const hash = String(map.admin_password_hash || '');
+        const pv = Math.max(1, Number(map.admin_password_version || 1));
+        if (!email || !hash) return;
+        await runExecute(
+            'INSERT INTO kc_admin_users (email, password_hash, password_version, role_code, status, must_change_password, note) VALUES (?, ?, ?, ?, ?, 0, ?)',
+            [email, hash, pv, 'super', 'active', '迁移自 app_config 单管理员']
+        );
+        console.log(`[admin-users] 已迁移首个 super 管理员: ${email}`);
+    } catch (e) {
+        console.warn('[admin-users] seedAdminUsers skipped:', e && e.message);
+    }
+}
+
+// ===== 后台菜单（数据驱动，v2.6.0 批次 4）=====
+// 菜单项 = 页面 key（与 admin.html 的 switchPage 契约绑定）；组行 = 可折叠分组。
+// 渲染规则：组行 permission 视为「整组访问门」；item permission 为空表示不限制。
+const ADMIN_MENUS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS kc_admin_menus (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    menu_key VARCHAR(48) NOT NULL COMMENT '页面 key（=switchPage 页面 id）/ 组 key',
+    label VARCHAR(64) NOT NULL DEFAULT '' COMMENT '显示名',
+    icon VARCHAR(48) NOT NULL DEFAULT '' COMMENT 'lucide 图标名',
+    group_key VARCHAR(48) NOT NULL DEFAULT '' COMMENT '所属组 key；空=顶级平铺',
+    is_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=可折叠组行',
+    sort INT NOT NULL DEFAULT 100 COMMENT '同级排序，小在前',
+    permission VARCHAR(64) NOT NULL DEFAULT '' COMMENT '需要的权限点；空=不限制',
+    visible TINYINT(1) NOT NULL DEFAULT 1 COMMENT '0=不渲染',
+    builtin TINYINT(1) NOT NULL DEFAULT 0 COMMENT '内置项：不可删（页面 key 与 switchPage 契约绑定）',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_menu_key (menu_key),
+    KEY idx_group (group_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='后台菜单（数据驱动，v2.6.0）'`;
+
+async function ensureAdminMenusTable() { await ensureTable('kc_admin_menus', ADMIN_MENUS_TABLE_SQL); }
+
+// 种子 = 方案 §十 目标信息架构；补齐该表未列但既有的「续费管理 / 上游管理」2 项，避免页面从导航失联。
+// 「系统与安全」组行 permission='admin.write' → 仅超级管理员可见整组（TC-F-11）。
+const BUILTIN_ADMIN_MENUS = [
+    { menu_key: 'dashboard', label: '概览中心', icon: 'layout-dashboard', group_key: '', is_group: 0, sort: 10, permission: '', visible: 1 },
+    // 业务运营（新组）
+    { menu_key: 'g_business', label: '业务运营', icon: 'briefcase', group_key: '', is_group: 1, sort: 20, permission: '', visible: 1 },
+    { menu_key: 'customers', label: '顾客管理', icon: 'users', group_key: 'g_business', is_group: 0, sort: 21, permission: 'customer.read', visible: 1 },
+    { menu_key: 'entitlements', label: '权益', icon: 'ticket-percent', group_key: 'g_business', is_group: 0, sort: 22, permission: 'entitlement.read', visible: 1 },
+    { menu_key: 'entitlement_prices', label: '权益报价', icon: 'badge-dollar-sign', group_key: 'g_business', is_group: 0, sort: 23, permission: 'pricing.read', visible: 1 },
+    { menu_key: 'products', label: '商品管理', icon: 'shopping-bag', group_key: 'g_business', is_group: 0, sort: 24, permission: 'pricing.read', visible: 1 },
+    { menu_key: 'sitecfg', label: '站点与定价', icon: 'settings-2', group_key: 'g_business', is_group: 0, sort: 25, permission: 'system.config', visible: 1 },
+    { menu_key: 'upstreams', label: '上游管理', icon: 'server-cog', group_key: 'g_business', is_group: 0, sort: 27, permission: 'pricing.read', visible: 1 },
+    // 支付与资产（原组保留；账单记录 → 开通账单；v2.12.0 IA：续费管理 / 免税地址 移入本组）
+    { menu_key: 'g_assets', label: '支付与资产', icon: 'layers', group_key: '', is_group: 1, sort: 30, permission: '', visible: 1 },
+    { menu_key: 'checkout_debug', label: '支付链接调试', icon: '', group_key: 'g_assets', is_group: 0, sort: 31, permission: 'order.read', visible: 1 },
+    { menu_key: 'cards', label: '银行卡池', icon: '', group_key: 'g_assets', is_group: 0, sort: 32, permission: 'system.config', visible: 1 },
+    { menu_key: 'cdks', label: 'CDK 管理', icon: '', group_key: 'g_assets', is_group: 0, sort: 33, permission: 'entitlement.issue', visible: 1 },
+    { menu_key: 'sessions', label: 'Session 管理', icon: '', group_key: 'g_assets', is_group: 0, sort: 34, permission: 'system.config', visible: 1 },
+    { menu_key: 'billing', label: '开通账单', icon: '', group_key: 'g_assets', is_group: 0, sort: 35, permission: 'order.read', visible: 1 },
+    { menu_key: 'cancel_renewal', label: '续费管理', icon: 'rotate-ccw', group_key: 'g_assets', is_group: 0, sort: 36, permission: 'order.read', visible: 1 },
+    { menu_key: 'tax_addresses', label: '免税地址', icon: 'map-pin', group_key: 'g_assets', is_group: 0, sort: 37, permission: 'admin.write', visible: 1 },
+    // 自动化与任务（原「任务与日志」；代理池 / 浏览器池 移入）
+    { menu_key: 'g_tasks', label: '自动化与任务', icon: 'activity', group_key: '', is_group: 1, sort: 40, permission: '', visible: 1 },
+    { menu_key: 'logs', label: '任务管理', icon: '', group_key: 'g_tasks', is_group: 0, sort: 41, permission: 'order.read', visible: 1 },
+    { menu_key: 'automation_tasks', label: '自动化任务', icon: '', group_key: 'g_tasks', is_group: 0, sort: 42, permission: 'order.read', visible: 1 },
+    { menu_key: 'runtime_logs', label: '运行日志', icon: '', group_key: 'g_tasks', is_group: 0, sort: 43, permission: 'audit.read', visible: 1 },
+    { menu_key: 'proxies', label: '代理池', icon: 'globe', group_key: 'g_tasks', is_group: 0, sort: 44, permission: 'system.config', visible: 1 },
+    { menu_key: 'browser_pool', label: '浏览器池', icon: 'monitor-dot', group_key: 'g_tasks', is_group: 0, sort: 45, permission: 'system.config', visible: 1 },
+    // 租户与客户（新组）
+    { menu_key: 'g_tenants', label: '租户与客户', icon: 'building-2', group_key: '', is_group: 1, sort: 50, permission: '', visible: 1 },
+    { menu_key: 'tenants', label: '租户', icon: '', group_key: 'g_tenants', is_group: 0, sort: 51, permission: 'tenant.read', visible: 1 },
+    { menu_key: 'api_clients', label: 'API 客户', icon: 'plug', group_key: 'g_tenants', is_group: 0, sort: 52, permission: 'tenant.read', visible: 1 },
+    // 系统与安全（新组 · 整组仅超级管理员）
+    { menu_key: 'g_security', label: '系统与安全', icon: 'shield-check', group_key: '', is_group: 1, sort: 60, permission: 'admin.write', visible: 1 },
+    { menu_key: 'admins', label: '后台账号', icon: '', group_key: 'g_security', is_group: 0, sort: 61, permission: 'admin.write', visible: 1 },
+    { menu_key: 'admin_roles', label: '角色与权限', icon: '', group_key: 'g_security', is_group: 0, sort: 62, permission: 'admin.write', visible: 1 },
+    { menu_key: 'menus', label: '菜单管理', icon: '', group_key: 'g_security', is_group: 0, sort: 63, permission: 'admin.write', visible: 1 },
+    { menu_key: 'audit_logs', label: '操作审计', icon: '', group_key: 'g_security', is_group: 0, sort: 64, permission: 'audit.read', visible: 1 },
+    { menu_key: 'config', label: '系统配置', icon: '', group_key: 'g_security', is_group: 0, sort: 65, permission: 'system.config', visible: 1 },
+    { menu_key: 'admin_login_logs', label: '登录日志', icon: '', group_key: 'g_security', is_group: 0, sort: 67, permission: 'audit.read', visible: 1 }
+];
+
+// v2.12.0 · IA 调整一次性迁移：把「续费管理 / 免税地址」从旧组挪到「支付与资产」。
+// 仅在库中仍处于旧组时迁移（之后运维在「菜单管理」里的手工调整不会被回写覆盖）。
+const ADMIN_MENU_GROUP_MIGRATIONS = [
+    { key: 'cancel_renewal', from: 'g_business', to: 'g_assets', sort: 36 },
+    { key: 'tax_addresses', from: 'g_security', to: 'g_assets', sort: 37 }
+];
+
+function adminMenuRow(r) {
+    if (!r) return null;
+    return {
+        key: r.menu_key, label: r.label || '', icon: r.icon || '',
+        group: r.group_key || '', is_group: Number(r.is_group) === 1,
+        sort: Number(r.sort), permission: r.permission || '',
+        visible: Number(r.visible) === 1, builtin: Number(r.builtin) === 1
+    };
+}
+
+async function listAdminMenus() {
+    const rows = await runQuery(
+        'SELECT menu_key, label, icon, group_key, is_group, sort, permission, visible, builtin FROM kc_admin_menus ORDER BY sort ASC, id ASC'
+    );
+    return rows.map(adminMenuRow);
+}
+
+async function getAdminMenuByKey(key) {
+    const rows = await runQuery(
+        'SELECT menu_key, label, icon, group_key, is_group, sort, permission, visible, builtin FROM kc_admin_menus WHERE menu_key = ? LIMIT 1',
+        [String(key || '')]
+    );
+    return rows.length ? adminMenuRow(rows[0]) : null;
+}
+
+async function upsertAdminMenu({ key, label, icon, group, isGroup, sort, permission, visible }) {
+    const k = String(key || '').trim().slice(0, 48);
+    if (!k) throw new Error('菜单 key 必填');
+    const existing = await getAdminMenuByKey(k);
+    const labelV = String(label == null ? '' : label).trim().slice(0, 64);
+    const iconV = String(icon == null ? '' : icon).trim().slice(0, 48);
+    const groupV = String(group == null ? '' : group).trim().slice(0, 48);
+    const isGroupV = isGroup === true || Number(isGroup) === 1 ? 1 : 0;
+    const sortV = Number.isFinite(Number(sort)) ? Number(sort) : 100;
+    const permV = String(permission == null ? '' : permission).trim().slice(0, 64);
+    const visV = visible === false || Number(visible) === 0 ? 0 : 1;
+    if (existing) {
+        await runExecute(
+            'UPDATE kc_admin_menus SET label = ?, icon = ?, group_key = ?, is_group = ?, sort = ?, permission = ?, visible = ? WHERE menu_key = ?',
+            [labelV, iconV, groupV, isGroupV, sortV, permV, visV, k]
+        );
+        return getAdminMenuByKey(k);
+    }
+    await runExecute(
+        'INSERT INTO kc_admin_menus (menu_key, label, icon, group_key, is_group, sort, permission, visible, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
+        [k, labelV, iconV, groupV, isGroupV, sortV, permV, visV]
+    );
+    return getAdminMenuByKey(k);
+}
+
+async function deleteAdminMenu(key) {
+    const row = await getAdminMenuByKey(key);
+    if (!row) return { ok: false, reason: 'not_found' };
+    if (row.builtin) return { ok: false, reason: 'builtin' };
+    const children = await runQuery('SELECT COUNT(*) AS total FROM kc_admin_menus WHERE group_key = ?', [String(key)]);
+    if (Number(children[0] && children[0].total) > 0) return { ok: false, reason: 'has_children' };
+    await runExecute('DELETE FROM kc_admin_menus WHERE menu_key = ?', [String(key)]);
+    return { ok: true };
+}
+
+async function seedAdminMenus() {
+    for (const item of BUILTIN_ADMIN_MENUS) {
+        try {
+            const rows = await runQuery('SELECT id, permission, group_key FROM kc_admin_menus WHERE menu_key = ? LIMIT 1', [item.menu_key]);
+            if (rows.length) {
+                // v2.8.0（批次6）：内置菜单的权限点视为安全基线 —— 仅当库里仍是空值时按种子补齐
+                // （保留运维在「菜单管理」里已配置的非空权限，避免每次重启回写覆盖）。
+                const seeded = String(item.permission || '');
+                const current = String(rows[0].permission || '');
+                if (seeded && !current) {
+                    await runExecute('UPDATE kc_admin_menus SET builtin = 1, permission = ? WHERE menu_key = ?', [seeded, item.menu_key]);
+                } else {
+                    await runExecute('UPDATE kc_admin_menus SET builtin = 1 WHERE menu_key = ?', [item.menu_key]);
+                }
+                continue;
+            }
+            await runExecute(
+                'INSERT INTO kc_admin_menus (menu_key, label, icon, group_key, is_group, sort, permission, visible, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
+                [item.menu_key, item.label || '', item.icon || '', item.group_key || '', item.is_group ? 1 : 0, item.sort, item.permission || '', item.visible === 0 ? 0 : 1]
+            );
+        } catch (e) {
+            console.warn('[admin-menus] seed skipped:', e && e.message);
+        }
+    }
+    // v2.12.0 · IA 调整：仅在「仍处于旧组」时迁移，避免覆盖运维后续手工调整
+    for (const m of ADMIN_MENU_GROUP_MIGRATIONS) {
+        try {
+            await runExecute(
+                'UPDATE kc_admin_menus SET group_key = ?, sort = ? WHERE menu_key = ? AND group_key = ?',
+                [m.to, m.sort, m.key, m.from]
+            );
+        } catch (e) {
+            console.warn('[admin-menus] group migration skipped:', e && e.message);
+        }
+    }
+}
+
+function parseRolePermissions(raw) {
+    if (Array.isArray(raw)) return raw;
+    try {
+        const parsed = JSON.parse(String(raw || '[]'));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) { return []; }
+}
+
+function adminRoleRow(r) {
+    if (!r) return null;
+    return {
+        id: Number(r.id), code: r.code, name: r.name || '',
+        permissions: parseRolePermissions(r.permissions_json),
+        builtin: Number(r.builtin) === 1, note: r.note || ''
+    };
+}
+
+async function listAdminRoles() {
+    const rows = await runQuery('SELECT id, code, name, permissions_json, builtin, note FROM kc_admin_roles ORDER BY builtin DESC, id ASC');
+    return rows.map(adminRoleRow);
+}
+
+async function getAdminRoleByCode(code) {
+    const rows = await runQuery('SELECT id, code, name, permissions_json, builtin, note FROM kc_admin_roles WHERE code = ? LIMIT 1', [String(code || '')]);
+    return rows.length ? adminRoleRow(rows[0]) : null;
+}
+
+async function upsertAdminRole({ code, name, permissions, note }) {
+    const c = String(code || '').trim().slice(0, 32);
+    if (!c) throw new Error('角色代号必填');
+    const existing = await getAdminRoleByCode(c);
+    const perms = Array.isArray(permissions) ? permissions : [];
+    if (existing) {
+        if (existing.builtin && c === 'super') throw new Error('内置超级角色不可修改');
+        await runExecute(
+            'UPDATE kc_admin_roles SET name = ?, permissions_json = ?, note = ? WHERE code = ?',
+            [String(name || existing.name || '').slice(0, 64), JSON.stringify(perms), String(note || '').slice(0, 255), c]
+        );
+    } else {
+        await runExecute(
+            'INSERT INTO kc_admin_roles (code, name, permissions_json, builtin, note) VALUES (?, ?, ?, 0, ?)',
+            [c, String(name || '').slice(0, 64), JSON.stringify(perms), String(note || '').slice(0, 255)]
+        );
+    }
+    return getAdminRoleByCode(c);
+}
+
+async function deleteAdminRole(code) {
+    const role = await getAdminRoleByCode(code);
+    if (!role) throw new Error('角色不存在');
+    if (role.builtin) throw new Error('内置角色不可删除');
+    const used = await runQuery('SELECT COUNT(*) AS total FROM kc_admin_users WHERE role_code = ?', [role.code]);
+    if (Number(used[0] && used[0].total) > 0) throw new Error('该角色仍有管理员在用，无法删除');
+    await runExecute('DELETE FROM kc_admin_roles WHERE code = ? AND builtin = 0', [role.code]);
+    return { success: true };
+}
+
+function adminUserRow(r) {
+    if (!r) return null;
+    return {
+        id: Number(r.id), email: r.email, role_code: r.role_code,
+        status: r.status, must_change_password: Number(r.must_change_password) === 1,
+        note: r.note || '', last_login_at: r.last_login_at || null, created_at: r.created_at || null
+    };
+}
+
+async function listAdminUsers() {
+    const rows = await runQuery(
+        'SELECT u.id, u.email, u.role_code, u.status, u.must_change_password, u.note, u.last_login_at, u.created_at, r.name AS role_name ' +
+        'FROM kc_admin_users u LEFT JOIN kc_admin_roles r ON r.code = u.role_code ORDER BY u.id ASC'
+    );
+    return rows.map((r) => Object.assign(adminUserRow(r), { role_name: r.role_name || '' }));
+}
+
+async function getAdminUserByEmail(email) {
+    const rows = await runQuery('SELECT * FROM kc_admin_users WHERE email = ? LIMIT 1', [String(email || '').trim().toLowerCase()]);
+    return rows.length ? adminUserRow(rows[0]) : null;
+}
+
+// 带哈希的完整行（仅供登录校验 / 标记首改使用，勿外泄）
+async function getAdminUserAuthRowByEmail(email) {
+    const rows = await runQuery('SELECT * FROM kc_admin_users WHERE email = ? LIMIT 1', [String(email || '').trim().toLowerCase()]);
+    return rows.length ? rows[0] : null;
+}
+
+async function getAdminUserById(id) {
+    const rows = await runQuery('SELECT * FROM kc_admin_users WHERE id = ? LIMIT 1', [Number(id)]);
+    return rows.length ? adminUserRow(rows[0]) : null;
+}
+
+async function createAdminUser({ email, passwordHash, roleCode, note }) {
+    const ins = await runExecute(
+        'INSERT INTO kc_admin_users (email, password_hash, password_version, role_code, status, must_change_password, note) VALUES (?, ?, 1, ?, ?, 1, ?)',
+        [String(email || '').trim().toLowerCase(), String(passwordHash || ''), String(roleCode || 'viewer'), 'active', String(note || '').slice(0, 255)]
+    );
+    return Number(ins.insertId);
+}
+
+async function updateAdminUserFields(id, sets, params) {
+    if (!sets.length) return;
+    await runExecute('UPDATE kc_admin_users SET ' + sets.join(', ') + ' WHERE id = ?', params.concat([Number(id)]));
+}
+
+async function setAdminUserPassword(id, passwordHash) {
+    await runExecute(
+        'UPDATE kc_admin_users SET password_hash = ?, password_version = password_version + 1, must_change_password = 0 WHERE id = ?',
+        [String(passwordHash || ''), Number(id)]
+    );
+}
+
+async function setAdminUserTempPassword(id, passwordHash) {
+    await runExecute(
+        'UPDATE kc_admin_users SET password_hash = ?, password_version = password_version + 1, must_change_password = 1 WHERE id = ?',
+        [String(passwordHash || ''), Number(id)]
+    );
+}
+
+async function touchAdminUserLastLogin(id) {
+    try {
+        await runExecute('UPDATE kc_admin_users SET last_login_at = NOW() WHERE id = ?', [Number(id)]);
+    } catch (_) { /* 忽略 */ }
+}
+
+async function countAdminUsersByRole(roleCode) {
+    const rows = await runQuery('SELECT COUNT(*) AS total FROM kc_admin_users WHERE role_code = ?', [String(roleCode || '')]);
+    return Number(rows[0] && rows[0].total) || 0;
+}
 
 // v1.43.0 · Stage 3.4（G4）：回填历史权益包售价（分）。
 // 旧系统时代两档权益包的线上售价：轻享 $60（pack_light_off40，5 次）、尊享 $600（pack_pro_off40，50 次）。
@@ -1184,8 +1814,17 @@ async function ensureReady() {
     await ensureEntitlementActionsTable();
     await ensureCustomerPackPurchasesTable();
     await ensureAfterSalesTable();
+    await ensureAuditLogsTable();
+    await ensurePasswordResetsTable();
+    await ensureAdminRolesTable();
+    await ensureAdminUsersTable();
+    await ensureAdminMenusTable();
+    await backfillOrderBizType();
     await backfillPackSalePrices();
     await initializeBaseData();
+    await seedAdminRoles();
+    await seedAdminUsers();
+    await seedAdminMenus();
     await ensureAdminSecurityDefaults();
     await ensureHcaptchaConfigDefaults();
     await ensureGptApiConfigDefaults();
@@ -2179,6 +2818,17 @@ async function resetCdkFailure(cdk) {
          WHERE cdk_code = ?`,
         [String(cdk)]
     );
+}
+
+// v2.19.x：按内部单号或内部卡密取「直接代充」订单（worker 复用其 upgrade_json 里的 preflight_token）
+async function getDirectOrderByCdk(ref) {
+    const v = String(ref || '').trim();
+    if (!v) return null;
+    const rows = await runQuery(
+        "SELECT * FROM kc_api_orders WHERE (our_order_no = ? OR cdk = ?) AND fulfill_mode = 'direct' LIMIT 1",
+        [v, v]
+    );
+    return rows[0] || null;
 }
 
 async function getActivationAttemptLimit(scopeType, scopeKey) {
@@ -3522,7 +4172,8 @@ async function createTaskLog({ tokenPreview, sessionPayload, cdkCode, phone, car
 async function getTaskStatus(jobKey) {
     const rows = await runQuery(
         `SELECT status, message, progress, raw_output, cdk_code, phone, card_last4, failure_screenshots,
-                gpt_api_order_id, gpt_api_task_id, gpt_api_raw, gpt_api_topup_code
+                gpt_api_order_id, gpt_api_task_id, gpt_api_raw, gpt_api_topup_code,
+                gpt_api_card_id, gpt_api_card_last4
          FROM task_logs
          WHERE job_key = ?
          LIMIT 1`,
@@ -3549,7 +4200,7 @@ async function getRunningTaskByCdk(cdk) {
 // 因此能拿到 success / failed 的终态与真实 progress、message。
 async function getLatestTaskByCdk(cdk) {
     const rows = await runQuery(
-        `SELECT job_key, status, message, progress, updated_at
+        `SELECT job_key, status, message, progress, updated_at, gpt_api_order_id
          FROM task_logs
          WHERE cdk_code = ?
          ORDER BY updated_at DESC, id DESC
@@ -3579,7 +4230,7 @@ async function deleteTaskLogByJobKey(jobKey) {
     return { deleted: Number(result.affectedRows || 0), mediaDeleted };
 }
 
-async function updateTaskLog(jobKey, { status, message, rawOutput, cdkCode, phone, cardLast4, progress, failureScreenshots, gptApiOrderId, gptApiTaskId, gptApiRaw, gptApiTopupCode }) {
+async function updateTaskLog(jobKey, { status, message, rawOutput, cdkCode, phone, cardLast4, progress, failureScreenshots, gptApiOrderId, gptApiTaskId, gptApiRaw, gptApiTopupCode, gptApiCardId, gptApiCardLast4 }) {
     const screenshotsJson = Array.isArray(failureScreenshots)
         ? JSON.stringify(failureScreenshots)
         : null;
@@ -3596,7 +4247,9 @@ async function updateTaskLog(jobKey, { status, message, rawOutput, cdkCode, phon
              gpt_api_order_id = COALESCE(?, gpt_api_order_id),
              gpt_api_task_id = COALESCE(?, gpt_api_task_id),
              gpt_api_raw = COALESCE(?, gpt_api_raw),
-             gpt_api_topup_code = COALESCE(?, gpt_api_topup_code)
+             gpt_api_topup_code = COALESCE(?, gpt_api_topup_code),
+             gpt_api_card_id = COALESCE(?, gpt_api_card_id),
+             gpt_api_card_last4 = COALESCE(?, gpt_api_card_last4)
          WHERE job_key = ?`,
         [
             String(status),
@@ -3611,6 +4264,8 @@ async function updateTaskLog(jobKey, { status, message, rawOutput, cdkCode, phon
             gptApiTaskId || null,
             gptApiRaw || null,
             gptApiTopupCode || null,
+            (gptApiCardId == null || gptApiCardId === '') ? null : Number(gptApiCardId),
+            gptApiCardLast4 || null,
             String(jobKey)
         ]
     );
@@ -4424,7 +5079,8 @@ async function listRecentGptApiOrders(limit = 10) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 10, 50));
     return runQuery(
         `SELECT job_key, cdk_code, status, message, progress, updated_at,
-                gpt_api_order_id, gpt_api_task_id, gpt_api_topup_code, gpt_api_raw
+                gpt_api_order_id, gpt_api_task_id, gpt_api_topup_code, gpt_api_raw,
+                gpt_api_card_id, gpt_api_card_last4
          FROM task_logs
          WHERE (gpt_api_order_id IS NOT NULL OR gpt_api_task_id IS NOT NULL)
            AND status = 'failed'
@@ -4465,6 +5121,7 @@ module.exports = {
     getStuckTasks,
     recordCdkFailure,
     resetCdkFailure,
+    getDirectOrderByCdk,
     getActivationAttemptLimit,
     recordActivationAttemptFailure,
     resetActivationAttemptFailure,
@@ -4550,6 +5207,31 @@ module.exports = {
     deleteBillingRecord,
     deleteFailedBillingRecords,
     getSessionByJobKey,
+    insertAuditLog,
+    listAuditLogs,
+    createPasswordReset,
+    consumePasswordReset,
+    listPasswordResets,
+    backfillOrderBizType,
+    PERMISSION_POINTS,
+    listAdminMenus,
+    getAdminMenuByKey,
+    upsertAdminMenu,
+    deleteAdminMenu,
+    listAdminRoles,
+    getAdminRoleByCode,
+    upsertAdminRole,
+    deleteAdminRole,
+    listAdminUsers,
+    getAdminUserByEmail,
+    getAdminUserAuthRowByEmail,
+    getAdminUserById,
+    createAdminUser,
+    updateAdminUserFields,
+    setAdminUserPassword,
+    setAdminUserTempPassword,
+    touchAdminUserLastLogin,
+    countAdminUsersByRole,
     PLAN_NAME_MAP,
     resolvePlanName,
     connectionInfo: {

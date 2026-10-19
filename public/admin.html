@@ -1774,107 +1774,11 @@
             <span class="brand-name">KC GPT自动充值系统</span>
         </div>
 
-        <nav class="nav-menu">
-            <div class="nav-item active" onclick="switchPage('dashboard', this)">
+        <!-- v2.6.0 批次4：导航改为数据驱动（由 renderAdminNav 依据 /api/admin/menus 渲染；保留 switchPage 契约）-->
+        <nav class="nav-menu" id="nav-menu">
+            <div class="nav-item active" onclick="switchPage('dashboard', this)" data-page="dashboard">
                 <i data-lucide="layout-dashboard"></i>
                 <span>概览中心</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('config', this)">
-                <i data-lucide="settings"></i>
-                <span>系统配置</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('proxies', this)">
-                <i data-lucide="globe"></i>
-                <span>代理池</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('browser_pool', this)">
-                <i data-lucide="monitor-dot"></i>
-                <span>浏览器池</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('tax_addresses', this)" data-page="tax_addresses">
-                <i data-lucide="map-pin"></i>
-                <span>免税地址</span>
-            </div>
-
-            <div class="nav-group" id="nav_group_business">
-                <div class="nav-item nav-group-toggle" onclick="toggleNavGroup('nav_group_business', event)">
-                    <i data-lucide="layers"></i>
-                    <span>支付与资产</span>
-                    <i data-lucide="chevron-down" class="nav-chevron"></i>
-                </div>
-                <div class="nav-subitems">
-                    <div class="nav-item nav-subitem" onclick="switchPage('checkout_debug', this)" data-page="checkout_debug">
-                        <span>支付链接调试</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('cards', this)" data-page="cards">
-                        <span>银行卡池</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('cdks', this)" data-page="cdks">
-                        <span>CDK 管理</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('sessions', this)" data-page="sessions">
-                        <span>Session 管理</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('billing', this)" data-page="billing">
-                        <span>账单记录</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="nav-item" onclick="switchPage('cancel_renewal', this)" data-page="cancel_renewal">
-                <i data-lucide="rotate-ccw"></i>
-                <span>续费管理</span>
-            </div>
-
-            <div class="nav-group" id="nav_group_tasks">
-                <div class="nav-item nav-group-toggle" onclick="toggleNavGroup('nav_group_tasks', event)">
-                    <i data-lucide="activity"></i>
-                    <span>任务与日志</span>
-                    <i data-lucide="chevron-down" class="nav-chevron"></i>
-                </div>
-                <div class="nav-subitems">
-                    <div class="nav-item nav-subitem" onclick="switchPage('logs', this)" data-page="logs">
-                        <span>任务管理</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('automation_tasks', this)" data-page="automation_tasks">
-                        <span>自动化任务</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('runtime_logs', this)" data-page="runtime_logs">
-                        <span>运行日志</span>
-                    </div>
-                    <div class="nav-item nav-subitem" onclick="switchPage('admin_login_logs', this)" data-page="admin_login_logs">
-                        <span>登录日志</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="nav-item" onclick="switchPage('sitecfg', this)" data-page="sitecfg">
-                <i data-lucide="settings-2"></i>
-                <span>站点与定价</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('products', this)" data-page="products">
-                <i data-lucide="shopping-bag"></i>
-                <span>商品管理</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('entitlements', this)" data-page="entitlements">
-                <i data-lucide="ticket-percent"></i>
-                <span>权益</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('entitlement_prices', this)" data-page="entitlement_prices">
-                <i data-lucide="badge-dollar-sign"></i>
-                <span>权益报价</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('upstreams', this)" data-page="upstreams">
-                <i data-lucide="server-cog"></i>
-                <span>上游管理</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('api_clients', this)" data-page="api_clients">
-                <i data-lucide="plug"></i>
-                <span>API 客户</span>
-            </div>
-            <div class="nav-item" onclick="switchPage('tenants', this)" data-page="tenants">
-                <i data-lucide="building-2"></i>
-                <span>租户</span>
             </div>
         </nav>
 
@@ -2045,6 +1949,7 @@
             <!-- 第三方代充 API 设置 -->
             <div class="panel">
                 <h2 class="panel-title">第三方代充 API（协议对接）</h2>
+                <div id="gpt_api_mode_badge" style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;"></div>
                 <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
                     開啟後，前台兌換開通將呼叫第三方 GPT 代充平台提交訂單並輪詢狀態；將不再使用本地開通流程。
                     銀行卡與代理會從「銀行卡池」「代理池」自動取得並隨訂單提交。
@@ -2099,6 +2004,61 @@
                         <i data-lucide="save"></i>
                         保存 API 配置
                     </button>
+                </div>
+            </div>
+
+            <!-- 代充卡池（选卡策略 / 余额看板 / 选卡预览 / 审计） -->
+            <div class="panel">
+                <h2 class="panel-title">代充卡池（选卡策略 · 余额 · 审计）</h2>
+                <div id="gpt_cp_badge" style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;"></div>
+                <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
+                    針對平台託管卡（ZovoCard 卡池）的選卡策略與餘額維護。建單仍由平台依此策略自動選卡；
+                    本區僅做「策略下發 / 選卡預覽 / 餘額補足 / 事後審計」，不會單獨鎖定某張卡下單。
+                </p>
+
+                <div style="margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg-secondary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <strong>① 當前選卡策略（GPT）</strong>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-secondary" onclick="loadGptCardRules()"><i data-lucide="refresh-cw"></i>讀取策略</button>
+                            <button type="button" class="btn btn-primary" onclick="applyRecommendedCardRules()"><i data-lucide="wand-2"></i>一鍵套用推薦策略</button>
+                        </div>
+                    </div>
+                    <div id="gpt_cp_rules" style="margin-top: 12px; font-size: 13px;">點擊「讀取策略」載入當前策略。</div>
+                    <p style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">
+                        推薦策略：<code>select_mode=lowest_usage</code>（分散使用）、<code>count_failures=false</code>（失敗不計次）、
+                        <code>auto_switch_on_fail=true</code>（保留自動換卡）、<code>max_auto_switches=2</code>、
+                        <code>strict_select=false</code>（保留平台級聯兜底）。
+                    </p>
+                </div>
+
+                <div style="margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg-secondary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <strong>② 選卡預覽（不建單、不扣費）</strong>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <select id="gpt_cp_plan" class="asset-input" style="width: 160px">
+                                <option value="plus">ChatGPT Plus</option>
+                                <option value="pro_5x">ChatGPT Pro (5x)</option>
+                                <option value="pro_20x">ChatGPT Pro (20x)</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary" onclick="previewCardPool()"><i data-lucide="search"></i>預覽將選中的卡</button>
+                        </div>
+                    </div>
+                    <div id="gpt_cp_preview" style="margin-top: 12px; font-size: 13px;">尚未預覽。</div>
+                </div>
+
+                <div style="margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg-secondary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <strong>③ 卡餘額看板（低餘額優先）</strong>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-secondary" onclick="loadCardPoolBoard({ withUsage: true })"><i data-lucide="refresh-cw"></i>同步餘額並重新整理</button>
+                            <button type="button" class="btn btn-secondary" onclick="loadCardPoolBoard({ withUsage: false })"><i data-lucide="list"></i>僅看餘額（不查剩餘次數）</button>
+                        </div>
+                    </div>
+                    <div id="gpt_cp_board" style="margin-top: 12px; font-size: 13px; overflow-x: auto;">尚未載入。</div>
+                    <p style="font-size: 12px; color: var(--text-dim); margin-top: 10px;">
+                        「同步餘額並重新整理」會帶上游同步每張卡的可用餘額並按餘額升序展示；餘額為 0 或低於 $5 / 低於該卡最低充值下限的會標紅或標黃。
+                    </p>
                 </div>
             </div>
 
@@ -3374,6 +3334,123 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             </div>
         </div>
 
+        <!-- 顾客管理（v2.3.0 批次1 · 顾客管理域）-->
+        <div id="customers" class="page-view">
+            <div class="page-header">
+                <h1>顾客管理</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">前台注册顾客账号的账号 / 余额 / 权益 / 订单 / 账单统一入口。<strong>含资金与资产信息，仅本平台可见</strong>；代理商后台另有其租户作用域内的镜像视图，且不展示成本与上游信息。</p>
+            </div>
+
+            <div class="panel">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">顾客列表</h2>
+                    <span style="flex:1;"></span>
+                    <input id="cust-q" class="asset-input" style="width:200px;" placeholder="邮箱 / 昵称" onkeydown="if(event.key==='Enter')customerSearch()">
+                    <select id="cust-status" class="asset-input" style="width:120px;">
+                        <option value="">全部状态</option>
+                        <option value="active">正常</option>
+                        <option value="disabled">已冻结</option>
+                    </select>
+                    <input id="cust-tenant" class="asset-input" style="width:160px;" placeholder="租户 client_id" onkeydown="if(event.key==='Enter')customerSearch()">
+                    <button type="button" class="btn" onclick="customerSearch()">搜索</button>
+                    <button type="button" class="btn" onclick="customerRefresh()">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openCustomerCreateDialog()">+ 新建顾客</button>
+                </div>
+                <div id="customers-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div></div>
+                <div id="customers-pager" class="table-footer"></div>
+            </div>
+
+            <!-- 新建顾客 -->
+            <div id="customer-create-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:520px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 style="margin:0 0 14px; font-size:18px;">新建顾客</h3>
+                    <div style="display:grid; gap:12px;">
+                        <label style="font-size:12px; color:var(--text-dim);">租户 client_id *<input id="cust-new-tenant" class="asset-input" style="width:100%; margin-top:4px;" placeholder="cli_xxx"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">邮箱 *<input id="cust-new-email" class="asset-input" style="width:100%; margin-top:4px;" placeholder="user@example.com"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">昵称（可选）<input id="cust-new-name" class="asset-input" style="width:100%; margin-top:4px;" placeholder="展示名称"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">初始密码（可选，留空自动生成临时密码）<input id="cust-new-pass" class="asset-input" style="width:100%; margin-top:4px;" type="text" placeholder="留空则系统生成"></label>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeCustomerCreateDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="customer-create-ok" onclick="confirmCreateCustomer()">创建</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 编辑备注 / 昵称 -->
+            <div id="customer-meta-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:480px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 style="margin:0 0 14px; font-size:18px;">编辑顾客</h3>
+                    <div style="display:grid; gap:12px;">
+                        <label style="font-size:12px; color:var(--text-dim);">昵称<input id="cust-meta-name" class="asset-input" style="width:100%; margin-top:4px;"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">备注<textarea id="cust-meta-note" class="asset-input" style="width:100%; margin-top:4px; min-height:72px;"></textarea></label>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeCustomerMetaDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="customer-meta-ok" onclick="saveCustomerMeta()">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 一次性临时密码 -->
+            <div id="customer-temp-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1100; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:460px; width:92%; box-shadow:var(--shadow-lg);">
+                    <h3 style="margin:0 0 10px; font-size:18px;">临时密码</h3>
+                    <p id="customer-temp-hint" style="color:var(--text-dim); font-size:12.5px; margin:0 0 12px;">此密码仅显示一次，请立即复制并安全转交；顾客下次登录须强制修改。</p>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <code id="customer-temp-value" style="flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; background:var(--surface-soft); border:1px solid var(--glass-border); border-radius:8px; padding:10px 12px; word-break:break-all;">—</code>
+                        <button type="button" class="btn" onclick="copyTempPassword()">复制</button>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+                        <button type="button" class="btn btn-primary" onclick="closeTempPasswordDialog()">我已保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 顾客详情抽屉 -->
+            <div id="customer-detail-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:flex-start; justify-content:center; overflow:auto;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:880px; width:94%; margin:40px 0; box-shadow:var(--shadow-lg);">
+                    <h3 id="customer-detail-title" style="margin:0 0 14px; font-size:18px;">顾客详情</h3>
+                    <div id="customer-detail-tabs" style="display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;">
+                        <button type="button" class="btn" data-ctab="overview" onclick="switchCustomerTab('overview')">概览</button>
+                        <button type="button" class="btn" data-ctab="entitlements" onclick="switchCustomerTab('entitlements')">权益</button>
+                        <button type="button" class="btn" data-ctab="orders" onclick="switchCustomerTab('orders')">订单</button>
+                        <button type="button" class="btn" data-ctab="wallet" onclick="switchCustomerTab('wallet')">账单</button>
+                    </div>
+                    <div id="customer-detail-body" style="min-height:200px;"></div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeCustomerDetail()">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- v2.9.0 客服人工补录充值（链上认单失败时，客服核对到账后手工入账）-->
+        <div id="cust-credit-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1100; align-items:flex-start; justify-content:center; overflow:auto;">
+            <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:540px; width:94%; margin:60px 0; box-shadow:var(--shadow-lg);">
+                <h3 style="margin:0 0 6px; font-size:18px;">人工补录充值</h3>
+                <p id="cc-sub" style="color:var(--text-dim); font-size:13px; margin:0 0 14px;"></p>
+                <div style="background:rgba(220,38,38,.06); border:1px solid #f0c9c9; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:12.5px; color:#b91c1c; line-height:1.6;">
+                    仅在链上钱包确认该笔转账确实到账后再补录。<br>
+                    认单依据是精确金额的小数尾数，客户未输小数会导致扫链漏单，此处为人工兜底。<br>
+                    同一链上交易哈希只能补录一次（防重复入账）。
+                </div>
+                <label style="font-size:12px; color:var(--text-dim);">补录金额（$）</label>
+                <input id="cc-amount" type="number" min="1" step="0.01" placeholder="例如 100" style="width:100%; margin:4px 0 12px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text);">
+                <label style="font-size:12px; color:var(--text-dim);">链上交易哈希（必填）</label>
+                <input id="cc-tx" type="text" placeholder="例如 0x… / TRON 交易 ID" style="width:100%; margin:4px 0 12px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text);">
+                <label style="font-size:12px; color:var(--text-dim);">关联充值单号（可选，填了会把该单置为已到账）</label>
+                <input id="cc-recharge" type="text" placeholder="rc_xxx（可留空）" style="width:100%; margin:4px 0 12px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text);">
+                <label style="font-size:12px; color:var(--text-dim);">补录原因（可选）</label>
+                <input id="cc-reason" type="text" placeholder="例如：客户未输小数，链上已核对到账" style="width:100%; margin:4px 0 8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text);">
+                <div id="cc-err" style="color:#e05252; font-size:12.5px; min-height:18px; margin:6px 0;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:6px;">
+                    <button type="button" class="btn" onclick="closeManualCredit()">取消</button>
+                    <button type="button" class="btn primary" id="cc-submit" onclick="submitManualCredit()">确认补录</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 租户（v1.38.0 Stage 1.3）-->
         <div id="tenants" class="page-view">
             <div class="page-header">
@@ -3682,10 +3759,147 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             </div>
         </div>
 
+        <!-- 后台账号（v2.4.0 批次2 · 平台管理员账号域）-->
+        <div id="admins" class="page-view">
+            <div class="page-header">
+                <h1>后台账号</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">平台后台管理员账号与角色分配。<strong>仅超级管理员可新增账号 / 改角色 / 禁用 / 重置他人密码</strong>；所有写操作均落「操作审计」。</p>
+            </div>
+            <div class="panel">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">管理员列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadAdminUsers()">刷新</button>
+                    <button type="button" class="btn btn-primary" id="admin-user-create-btn" onclick="openAdminUserDialog()">+ 新增管理员</button>
+                </div>
+                <div id="admins-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div></div>
+            </div>
+
+            <!-- 新增 / 编辑管理员 -->
+            <div id="admin-user-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:520px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="admin-user-dialog-title" style="margin:0 0 14px; font-size:18px;">新增管理员</h3>
+                    <div style="display:grid; gap:12px;">
+                        <label style="font-size:12px; color:var(--text-dim);">邮箱 *<input id="admin-user-email" class="asset-input" style="width:100%; margin-top:4px;" placeholder="admin@example.com"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">角色 *<select id="admin-user-role" class="asset-input" style="width:100%; margin-top:4px;"></select></label>
+                        <label id="admin-user-pass-wrap" style="font-size:12px; color:var(--text-dim);">初始密码（可选，留空自动生成临时密码并在创建后展示一次）<input id="admin-user-pass" class="asset-input" style="width:100%; margin-top:4px;" type="text" placeholder="留空则系统生成"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">备注<input id="admin-user-note" class="asset-input" style="width:100%; margin-top:4px;" placeholder="可选"></label>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeAdminUserDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="admin-user-ok" onclick="saveAdminUser()">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 一次性临时密码（复用顾客页样式，独立 id 避免冲突）-->
+            <div id="admin-temp-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1100; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:460px; width:92%; box-shadow:var(--shadow-lg);">
+                    <h3 style="margin:0 0 10px; font-size:18px;">临时密码</h3>
+                    <p style="color:var(--text-dim); font-size:12.5px; margin:0 0 12px;">此密码仅显示一次，请立即复制并安全转交；对方下次登录须强制修改密码。</p>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <code id="admin-temp-value" style="flex:1; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; background:var(--surface-soft); border:1px solid var(--glass-border); border-radius:8px; padding:10px 12px; word-break:break-all;">—</code>
+                        <button type="button" class="btn" onclick="copyAdminTempPassword()">复制</button>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+                        <button type="button" class="btn btn-primary" onclick="closeAdminTempDialog()">我已保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 角色与权限（v2.4.0 批次2 · RBAC 三段式）-->
+        <div id="admin_roles" class="page-view">
+            <div class="page-header">
+                <h1>角色与权限</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">角色 → 权限点 → 端点校验。内置角色（超级管理员 / 运营 / 只读 / 财务）不可删除；超级角色恒为全权，不可修改。</p>
+            </div>
+            <div class="panel">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">角色列表</h2>
+                    <span style="flex:1;"></span>
+                    <button type="button" class="btn" onclick="loadAdminRoles()">刷新</button>
+                    <button type="button" class="btn btn-primary" id="role-create-btn" onclick="openRoleDialog()">+ 新增角色</button>
+                </div>
+                <div id="roles-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div></div>
+            </div>
+
+            <!-- 新增 / 编辑角色（权限点勾选矩阵）-->
+            <div id="role-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:640px; width:94%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="role-dialog-title" style="margin:0 0 14px; font-size:18px;">新增角色</h3>
+                    <div style="display:grid; gap:12px;">
+                        <label style="font-size:12px; color:var(--text-dim);">角色代号 *（小写字母/数字/下划线）<input id="role-code" class="asset-input" style="width:100%; margin-top:4px;" placeholder="e.g. support"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">显示名 *<input id="role-name" class="asset-input" style="width:100%; margin-top:4px;" placeholder="e.g. 客服"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">备注<input id="role-note" class="asset-input" style="width:100%; margin-top:4px;" placeholder="可选"></label>
+                        <div>
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                                <span style="font-size:12px; color:var(--text-dim);">权限点</span>
+                                <span style="flex:1;"></span>
+                                <button type="button" class="btn" onclick="rolePermSelectAll()">全选</button>
+                                <button type="button" class="btn" onclick="rolePermClearAll()">清空</button>
+                            </div>
+                            <div id="role-perm-matrix" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px; border:1px solid var(--glass-border); border-radius:8px; padding:12px; background:var(--surface-soft);"></div>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeRoleDialog()">取消</button>
+                        <button type="button" class="btn btn-primary" id="role-ok" onclick="saveRole()">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 强制首改（v2.5.0 批次3）：临时密码登录后不可关闭的遮挡层 -->
+        <div id="force-pwd-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:2000; align-items:center; justify-content:center;">
+            <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:440px; width:92%; box-shadow:var(--shadow-lg);">
+                <h3 style="margin:0 0 8px; font-size:18px;">请先修改初始密码</h3>
+                <p style="color:var(--text-dim); font-size:12.5px; margin:0 0 14px;">你正在使用一次性临时密码（30 分钟有效）。为账号安全，修改密码前无法进行任何写操作。</p>
+                <div style="display:grid; gap:12px;">
+                    <label style="font-size:12px; color:var(--text-dim);">原密码（临时密码）<input id="force-pwd-current" class="asset-input" style="width:100%; margin-top:4px;" type="password" autocomplete="current-password"></label>
+                    <label style="font-size:12px; color:var(--text-dim);">新密码（至少 8 位，含字母与数字）<input id="force-pwd-new" class="asset-input" style="width:100%; margin-top:4px;" type="password" autocomplete="new-password"></label>
+                    <label style="font-size:12px; color:var(--text-dim);">确认新密码<input id="force-pwd-confirm" class="asset-input" style="width:100%; margin-top:4px;" type="password" autocomplete="new-password"></label>
+                </div>
+                <div id="force-pwd-msg" style="color:var(--error); font-size:12.5px; margin-top:10px; min-height:16px;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px;">
+                    <button type="button" class="btn btn-primary" id="force-pwd-ok" onclick="submitForcedPasswordChange()">确认修改</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作审计（v2.5.0 批次3 · 谁改了什么；与「运行日志/登录日志」严格区分）-->
+        <div id="audit_logs" class="page-view">
+            <div class="page-header">
+                <h1>操作审计</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">记录「谁在何时对什么做了什么」：改价 / 发权益 / 删卡 / 冻结解冻 / 改账号 / 重置密码等写操作自动落库，含操作前后的值。</p>
+            </div>
+            <div class="panel">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+                    <input id="audit-filter-actor" class="asset-input" style="width:200px;" placeholder="操作人邮箱（模糊）">
+                    <input id="audit-filter-action" class="asset-input" style="width:200px;" placeholder="动作（如 pricing.update）">
+                    <input id="audit-filter-target" class="asset-input" style="width:180px;" placeholder="目标类型（如 customer）">
+                    <button type="button" class="btn" onclick="loadAuditLogs(1)">查询</button>
+                    <button type="button" class="btn" onclick="resetAuditFilters()">重置</button>
+                    <span style="flex:1;"></span>
+                    <span id="audit-meta" style="color:var(--text-dim); font-size:12.5px;"></span>
+                </div>
+                <div id="audit-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div></div>
+                <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:14px;">
+                    <button type="button" class="btn" id="audit-prev" onclick="loadAuditLogs(auditPage-1)">上一页</button>
+                    <span id="audit-page-info" style="color:var(--text-dim); font-size:12.5px;"></span>
+                    <button type="button" class="btn" id="audit-next" onclick="loadAuditLogs(auditPage+1)">下一页</button>
+                </div>
+            </div>
+        </div>
+
         <div id="entitlements" class="page-view">
             <div class="page-header">
                 <h1>权益</h1>
-                <p>v1.28.2 权益功能：配置折扣规则后，符合条件的用户下单自动享受优惠（与活动折扣比价取低）；支持手动发放给指定用户，也可按用户购买自动触发。</p>
+                <p>v1.28.2 权益功能：仅管理「权益包定义（名称 / 次数 / 有效期）」与「发放」。<b>本页的折扣字段已不参与定价</b>，权益价一律按「权益报价」页维护的（权益包 × 商品）一口价结算。</p>
+            </div>
+            <div class="card" style="border-left:4px solid #e6a23c; background:rgba(230,162,60,.08); padding:12px 16px; margin-bottom:14px;">
+                <b style="color:#e6a23c;">⚠️ 定价请勿在本页修改</b>
+                <div style="font-size:13px; margin-top:6px; color:var(--text-dim);">本页规则的「折扣类型 / 折扣值」为历史字段，改了<b>不生效</b>。权益价（每个商品单独报价，未配置 = 按原价）请到 <a href="javascript:void(0)" style="color:var(--brand,#00a862);" onclick="switchPage('entitlement_prices', document.querySelector('[data-page=entitlement_prices]'))">权益报价</a> 页维护。</div>
             </div>
 
             <div class="card">
@@ -3733,12 +3947,90 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 <div id="ep_list"><p style="color:var(--text-dim);">请选择权益包后点「加载」。</p></div>
             </div>
         </div>
+
+        <!-- 菜单管理（v2.6.0 批次4 · 数据驱动）-->
+        <div id="menus" class="page-view">
+            <div class="page-header">
+                <h1>菜单管理</h1>
+                <p style="color:var(--text-dim); margin:8px 0 16px;">后台左侧导航由数据驱动：改「显示名 / 图标 / 所属分组 / 排序 / 可见 / 所需权限」即时作用于菜单（<strong>下次登录或刷新后生效</strong>）。是否渲染 = 「可见」开关 × 当前角色是否具备所需权限点；<strong>内置菜单与页面契约绑定，不可删除</strong>。</p>
+            </div>
+            <div class="panel">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:14px;">
+                    <h2 class="panel-title" style="margin:0;">菜单项列表</h2>
+                    <span style="flex:1;"></span>
+                    <span id="menu-editor-msg" style="color:var(--text-dim); font-size:13px;"></span>
+                    <button type="button" class="btn" onclick="loadAdminMenus(true)">刷新</button>
+                    <button type="button" class="btn btn-primary" onclick="openMenuEditor('')">+ 新增菜单</button>
+                </div>
+                <div id="menus-list"><div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div></div>
+            </div>
+
+            <!-- 新增 / 编辑菜单 -->
+            <div id="menu-editor-backdrop" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:var(--card-bg); border-radius:12px; padding:24px; max-width:560px; width:92%; max-height:90vh; overflow:auto; box-shadow:var(--shadow-lg);">
+                    <h3 id="menu-editor-title" style="margin:0 0 14px; font-size:18px;">新增菜单</h3>
+                    <div style="display:grid; gap:12px;">
+                        <label style="font-size:12px; color:var(--text-dim);">Key（页面 id，须与页面容器一致；组行建议 g_xxx）*<input id="menu-editor-key" class="asset-input" style="width:100%; margin-top:4px;" placeholder="如 dashboard / g_business"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">显示名 *<input id="menu-editor-label" class="asset-input" style="width:100%; margin-top:4px;" placeholder="如 概览中心"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">图标（lucide 图标名，可空）<input id="menu-editor-icon" class="asset-input" style="width:100%; margin-top:4px;" placeholder="如 layout-dashboard"></label>
+                        <label style="font-size:12px; color:var(--text-dim);">所属分组<select id="menu-editor-group" class="asset-input" style="width:100%; margin-top:4px;"><option value="">（无 · 顶级平铺）</option></select></label>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <label style="font-size:12px; color:var(--text-dim);">排序（小在前）<input id="menu-editor-sort" class="asset-input" style="width:100%; margin-top:4px;" type="number" value="100"></label>
+                            <label style="font-size:12px; color:var(--text-dim);">可折叠组行<select id="menu-editor-isgroup" class="asset-input" style="width:100%; margin-top:4px;"><option value="0">否（菜单项）</option><option value="1">是（组行）</option></select></label>
+                        </div>
+                        <label style="font-size:12px; color:var(--text-dim);">所需权限点（留空=不限制）<select id="menu-editor-permission" class="asset-input" style="width:100%; margin-top:4px;"><option value="">（不限制）</option></select></label>
+                        <label style="font-size:12px; color:var(--text-dim);">可见<select id="menu-editor-visible" class="asset-input" style="width:100%; margin-top:4px;"><option value="1">可见</option><option value="0">隐藏</option></select></label>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                        <button type="button" class="btn" onclick="closeMenuEditor()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="saveMenuEditor()">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
         const TOKEN_KEY = 'plus_admin_token';
         let adminLoginPath = '/admin-login';
-        const BUSINESS_PAGES = new Set(['checkout_debug', 'cards', 'cdks', 'sessions', 'billing']);
+        // v2.6.0 批次4：导航数据驱动（/api/admin/menus）失败时的兜底结构（= 后端种子副本，保证后台可用）
+        const NAV_MENU_FALLBACK = [
+            { key: 'dashboard', label: '概览中心', icon: 'layout-dashboard', group: '', is_group: false, sort: 10, permission: '', visible: true },
+            { key: 'g_business', label: '业务运营', icon: 'briefcase', group: '', is_group: true, sort: 20, permission: '', visible: true },
+            { key: 'customers', label: '顾客管理', icon: 'users', group: 'g_business', is_group: false, sort: 21, permission: 'customer.read', visible: true },
+            { key: 'entitlements', label: '权益', icon: 'ticket-percent', group: 'g_business', is_group: false, sort: 22, permission: 'entitlement.read', visible: true },
+            { key: 'entitlement_prices', label: '权益报价', icon: 'badge-dollar-sign', group: 'g_business', is_group: false, sort: 23, permission: 'pricing.read', visible: true },
+            { key: 'products', label: '商品管理', icon: 'shopping-bag', group: 'g_business', is_group: false, sort: 24, permission: 'pricing.read', visible: true },
+            { key: 'sitecfg', label: '站点与定价', icon: 'settings-2', group: 'g_business', is_group: false, sort: 25, permission: 'system.config', visible: true },
+            { key: 'upstreams', label: '上游管理', icon: 'server-cog', group: 'g_business', is_group: false, sort: 27, permission: 'pricing.read', visible: true },
+            { key: 'g_assets', label: '支付与资产', icon: 'layers', group: '', is_group: true, sort: 30, permission: '', visible: true },
+            { key: 'checkout_debug', label: '支付链接调试', icon: '', group: 'g_assets', is_group: false, sort: 31, permission: 'order.read', visible: true },
+            { key: 'cards', label: '银行卡池', icon: '', group: 'g_assets', is_group: false, sort: 32, permission: 'system.config', visible: true },
+            { key: 'cdks', label: 'CDK 管理', icon: '', group: 'g_assets', is_group: false, sort: 33, permission: 'entitlement.issue', visible: true },
+            { key: 'sessions', label: 'Session 管理', icon: '', group: 'g_assets', is_group: false, sort: 34, permission: 'system.config', visible: true },
+            { key: 'billing', label: '开通账单', icon: '', group: 'g_assets', is_group: false, sort: 35, permission: 'order.read', visible: true },
+            { key: 'cancel_renewal', label: '续费管理', icon: 'rotate-ccw', group: 'g_assets', is_group: false, sort: 36, permission: 'order.read', visible: true },
+            { key: 'tax_addresses', label: '免税地址', icon: 'map-pin', group: 'g_assets', is_group: false, sort: 37, permission: 'admin.write', visible: true },
+            { key: 'g_tasks', label: '自动化与任务', icon: 'activity', group: '', is_group: true, sort: 40, permission: '', visible: true },
+            { key: 'logs', label: '任务管理', icon: '', group: 'g_tasks', is_group: false, sort: 41, permission: 'order.read', visible: true },
+            { key: 'automation_tasks', label: '自动化任务', icon: '', group: 'g_tasks', is_group: false, sort: 42, permission: 'order.read', visible: true },
+            { key: 'runtime_logs', label: '运行日志', icon: '', group: 'g_tasks', is_group: false, sort: 43, permission: 'audit.read', visible: true },
+            { key: 'proxies', label: '代理池', icon: 'globe', group: 'g_tasks', is_group: false, sort: 44, permission: 'system.config', visible: true },
+            { key: 'browser_pool', label: '浏览器池', icon: 'monitor-dot', group: 'g_tasks', is_group: false, sort: 45, permission: 'system.config', visible: true },
+            { key: 'g_tenants', label: '租户与客户', icon: 'building-2', group: '', is_group: true, sort: 50, permission: '', visible: true },
+            { key: 'tenants', label: '租户', icon: '', group: 'g_tenants', is_group: false, sort: 51, permission: 'tenant.read', visible: true },
+            { key: 'api_clients', label: 'API 客户', icon: 'plug', group: 'g_tenants', is_group: false, sort: 52, permission: 'tenant.read', visible: true },
+            { key: 'g_security', label: '系统与安全', icon: 'shield-check', group: '', is_group: true, sort: 60, permission: 'admin.write', visible: true },
+            { key: 'admins', label: '后台账号', icon: '', group: 'g_security', is_group: false, sort: 61, permission: 'admin.write', visible: true },
+            { key: 'admin_roles', label: '角色与权限', icon: '', group: 'g_security', is_group: false, sort: 62, permission: 'admin.write', visible: true },
+            { key: 'menus', label: '菜单管理', icon: '', group: 'g_security', is_group: false, sort: 63, permission: 'admin.write', visible: true },
+            { key: 'audit_logs', label: '操作审计', icon: '', group: 'g_security', is_group: false, sort: 64, permission: 'audit.read', visible: true },
+            { key: 'config', label: '系统配置', icon: '', group: 'g_security', is_group: false, sort: 65, permission: 'system.config', visible: true },
+            { key: 'tax_addresses', label: '免税地址', icon: 'map-pin', group: 'g_security', is_group: false, sort: 66, permission: 'admin.write', visible: true },
+            { key: 'admin_login_logs', label: '登录日志', icon: '', group: 'g_security', is_group: false, sort: 67, permission: 'audit.read', visible: true }
+        ];
+        let adminMenusCache = null;
+        let adminMenusRaw = null;
         const ADMIN_LOGIN_EVENT_LABELS = {
             login_success: '登录成功',
             login_failed: '登录失败',
@@ -4145,6 +4437,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             }
 
             const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+            // v2.12.0 修复：JSON 字符串 body 若不显式带 Content-Type，浏览器会按 text/plain 发送，
+            // 服务端 express.json() 会跳过解析 → req.body 为空（表现为「界面提示已保存，实则 400 / 无动作」）。
+            // 仅在「字符串 body 且调用方未指定 Content-Type」时兜底；FormData / Blob 不受影响。
+            if (typeof options.body === 'string' && options.body && !headers['Content-Type']) {
+                headers['Content-Type'] = 'application/json';
+            }
             const response = await fetch(url, { ...options, headers });
             if (response.status === 401) {
                 redirectToLogin();
@@ -4339,6 +4637,427 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             } catch (error) {
                 showMessage(error.message || '加载登录日志失败', 'error');
             }
+        }
+
+        // ============================================================
+        // v2.4.0 · 后台账号 + 角色与权限（平台管理员账号域 / RBAC）
+        // ============================================================
+        let adminUsersCache = [];
+        let adminRolesCache = [];
+        let permissionPointsCache = null;
+        let roleEditorCode = null;
+
+        async function fetchPermissionPoints() {
+            if (permissionPointsCache) return permissionPointsCache;
+            const res = await authFetch('/api/admin/permissions');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || '加载权限点失败');
+            permissionPointsCache = (data.data && data.data.points) || [];
+            return permissionPointsCache;
+        }
+
+        function adminRoleBadge(code, name) {
+            const cls = code === 'super' ? 'status-success' : (code === 'viewer' ? '' : 'status-running');
+            return `<span class="status-badge ${cls}">${escapeHtml(name || code || '')}</span>`;
+        }
+
+        async function loadAdminUsers() {
+            const box = document.getElementById('admins-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div>';
+            try {
+                await fetchPermissionPoints().catch(() => []);
+                const res = await authFetch('/api/admin/admins');
+                const data = await res.json();
+                if (!res.ok) {
+                    box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(data.message || '加载失败')}</div>`;
+                    return;
+                }
+                adminUsersCache = data.data.admins || [];
+                renderAdminUsers(adminUsersCache);
+            } catch (error) {
+                box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(error.message || '加载失败')}</div>`;
+            }
+        }
+
+        function renderAdminUsers(admins) {
+            const box = document.getElementById('admins-list');
+            if (!box) return;
+            if (!admins.length) {
+                box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无管理员账号</div>';
+                return;
+            }
+            const superOnly = adminIsSuper();
+            const me = (window.__adminMe && window.__adminMe.email) || '';
+            const rows = admins.map((a) => {
+                const isSelf = me && a.email === me;
+                const statusBadge = a.status === 'active'
+                    ? '<span class="status-badge status-success">启用</span>'
+                    : '<span class="status-badge status-failed">已禁用</span>';
+                const actions = superOnly
+                    ? `<button type="button" class="btn" style="padding:4px 10px;" onclick="openAdminUserDialog(${a.id})">编辑</button>
+                       <button type="button" class="btn" style="padding:4px 10px;" onclick="resetAdminPassword(${a.id})">重置密码</button>
+                       <button type="button" class="btn" style="padding:4px 10px;" ${isSelf ? 'disabled title="不能禁用当前登录账号"' : ''} onclick="toggleAdminUserStatus(${a.id}, '${a.status === 'active' ? 'disabled' : 'active'}')">${a.status === 'active' ? '禁用' : '启用'}</button>`
+                    : '<span style="color:var(--text-dim); font-size:12px;">仅可查看</span>';
+                return `<tr>
+                    <td>${escapeHtml(a.email || '')}${isSelf ? ' <span style="color:var(--text-dim);font-size:12px;">(当前登录)</span>' : ''}</td>
+                    <td>${adminRoleBadge(a.role_code, a.role_name || a.role_code)}</td>
+                    <td>${statusBadge}</td>
+                    <td>${a.must_change_password ? '<span class="status-badge status-warning">待首改</span>' : '—'}</td>
+                    <td>${escapeHtml(String(a.last_login_at || '—'))}</td>
+                    <td>${escapeHtml(String(a.note || ''))}</td>
+                    <td style="white-space:nowrap;">${actions}</td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `<div class="table-wrap" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead><tr><th>邮箱</th><th>角色</th><th>状态</th><th>首改</th><th>最近登录</th><th>备注</th><th>操作</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+            lucide.createIcons();
+        }
+
+        async function openAdminUserDialog(id) {
+            const backdrop = document.getElementById('admin-user-backdrop');
+            const select = document.getElementById('admin-user-role');
+            if (!backdrop || !select) return;
+            try {
+                await fetchPermissionPoints();
+                const roles = adminRolesCache.length ? adminRolesCache : ((await (await authFetch('/api/admin/roles')).json()).data.roles || []);
+                adminRolesCache = roles;
+                select.innerHTML = roles.map((r) => `<option value="${escapeHtml(r.code)}">${escapeHtml(r.name || r.code)}（${escapeHtml(r.code)}）</option>`).join('');
+            } catch (error) {
+                showMessage(error.message || '加载角色失败', 'error');
+            }
+            document.getElementById('admin-user-dialog-title').innerText = id ? '编辑管理员' : '新增管理员';
+            document.getElementById('admin-user-email').value = '';
+            document.getElementById('admin-user-pass').value = '';
+            document.getElementById('admin-user-note').value = '';
+            document.getElementById('admin-user-email').disabled = Boolean(id);
+            document.getElementById('admin-user-pass-wrap').style.display = id ? 'none' : '';
+            backdrop.dataset.editId = id || '';
+            backdrop.style.display = 'flex';
+        }
+
+        function closeAdminUserDialog() {
+            const backdrop = document.getElementById('admin-user-backdrop');
+            if (backdrop) { backdrop.style.display = 'none'; backdrop.dataset.editId = ''; }
+        }
+
+        async function saveAdminUser() {
+            const backdrop = document.getElementById('admin-user-backdrop');
+            const editId = backdrop && backdrop.dataset.editId;
+            const email = String(document.getElementById('admin-user-email').value || '').trim();
+            const roleCode = String(document.getElementById('admin-user-role').value || '').trim();
+            const password = String(document.getElementById('admin-user-pass').value || '');
+            const note = String(document.getElementById('admin-user-note').value || '').trim();
+            if (!editId && !email) { showMessage('请填写邮箱', 'error'); return; }
+            if (!roleCode) { showMessage('请选择角色', 'error'); return; }
+            try {
+                const url = editId ? `/api/admin/admins/${editId}` : '/api/admin/admins';
+                const payload = editId ? { role_code: roleCode, note } : { email, role_code: roleCode, password, note };
+                const res = await authFetch(url, {
+                    method: editId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) { showMessage(data.message || '保存失败', 'error'); return; }
+                closeAdminUserDialog();
+                showMessage(editId ? '管理员已更新' : '管理员已创建', 'success');
+                if (data.data && data.data.temp_password) openAdminTempDialog(data.data.temp_password);
+                await loadAdminUsers();
+            } catch (error) { showMessage(error.message || '保存失败', 'error'); }
+        }
+
+        async function toggleAdminUserStatus(id, status) {
+            const target = adminUsersCache.find((a) => Number(a.id) === Number(id));
+            const label = status === 'disabled' ? '禁用' : '启用';
+            if (!window.confirm(`确认${label}管理员 ${target ? target.email : '#' + id}？`)) return;
+            try {
+                const res = await authFetch(`/api/admin/admins/${id}/status`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status })
+                });
+                const data = await res.json();
+                if (!res.ok) { showMessage(data.message || '操作失败', 'error'); return; }
+                showMessage(`已${label}`, 'success');
+                await loadAdminUsers();
+            } catch (error) { showMessage(error.message || '操作失败', 'error'); }
+        }
+
+        async function resetAdminPassword(id) {
+            const target = adminUsersCache.find((a) => Number(a.id) === Number(id));
+            if (!window.confirm(`确认为 ${target ? target.email : '#' + id} 生成一次性临时密码？该管理员下次登录须强制改密。`)) return;
+            try {
+                const res = await authFetch(`/api/admin/admins/${id}/reset-password`, { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) { showMessage(data.message || '重置失败', 'error'); return; }
+                openAdminTempDialog(data.data.temp_password);
+                await loadAdminUsers();
+            } catch (error) { showMessage(error.message || '重置失败', 'error'); }
+        }
+
+        function openAdminTempDialog(password) {
+            const backdrop = document.getElementById('admin-temp-backdrop');
+            document.getElementById('admin-temp-value').textContent = password || '—';
+            if (backdrop) backdrop.style.display = 'flex';
+        }
+
+        function closeAdminTempDialog() {
+            const backdrop = document.getElementById('admin-temp-backdrop');
+            if (backdrop) backdrop.style.display = 'none';
+        }
+
+        function copyAdminTempPassword() {
+            const text = document.getElementById('admin-temp-value').textContent || '';
+            if (!text || text === '—') return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => showMessage('已复制', 'success'))
+                    .catch(() => { fallbackCopy(text); });
+                return;
+            }
+            fallbackCopy(text);
+        }
+
+        async function loadAdminRoles() {
+            const box = document.getElementById('roles-list');
+            if (!box) return;
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div>';
+            try {
+                await fetchPermissionPoints().catch(() => []);
+                const res = await authFetch('/api/admin/roles');
+                const data = await res.json();
+                if (!res.ok) {
+                    box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(data.message || '加载失败')}</div>`;
+                    return;
+                }
+                adminRolesCache = data.data.roles || [];
+                renderAdminRoles(adminRolesCache, data.data.counts || {});
+            } catch (error) {
+                box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(error.message || '加载失败')}</div>`;
+            }
+        }
+
+        function renderAdminRoles(roles, counts) {
+            const box = document.getElementById('roles-list');
+            if (!box) return;
+            const superOnly = adminIsSuper();
+            const points = permissionPointsCache || [];
+            const labelOf = (key) => { const p = points.find((x) => x.key === key); return p ? p.label : key; };
+            const rows = roles.map((r) => {
+                const perms = r.permissions || [];
+                const permText = perms.includes('*') ? '全部权限' : (perms.length ? perms.map(labelOf).join('、') : '无');
+                const ops = superOnly && !r.builtin
+                    ? `<button type="button" class="btn" style="padding:4px 10px;" onclick="openRoleDialog('${escapeHtml(r.code)}')">编辑</button>
+                       <button type="button" class="btn" style="padding:4px 10px; color:var(--error);" onclick="deleteAdminRole('${escapeHtml(r.code)}')">删除</button>`
+                    : (r.builtin ? '<span style="color:var(--text-dim); font-size:12px;">内置角色</span>' : '<span style="color:var(--text-dim); font-size:12px;">仅可查看</span>');
+                return `<tr>
+                    <td>${escapeHtml(r.name || '')}<div style="color:var(--text-dim); font-size:12px;">${escapeHtml(r.code)}</div></td>
+                    <td>${escapeHtml(String(counts[r.code] || 0))}</td>
+                    <td style="font-size:12.5px; color:var(--text-dim);">${escapeHtml(permText)}</td>
+                    <td>${escapeHtml(r.note || '')}</td>
+                    <td style="white-space:nowrap;">${ops}</td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `<div class="table-wrap" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead><tr><th>角色</th><th>在用账号</th><th>权限点</th><th>备注</th><th>操作</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+            lucide.createIcons();
+        }
+
+        // ===== 操作审计（v2.5.0 批次3）=====
+        let auditPage = 1;
+        const AUDIT_PAGE_SIZE = 30;
+
+        async function loadAuditLogs(page) {
+            const box = document.getElementById('audit-list');
+            if (!box) return;
+            auditPage = Math.max(1, Number(page) || 1);
+            const actor = (document.getElementById('audit-filter-actor')?.value || '').trim();
+            const action = (document.getElementById('audit-filter-action')?.value || '').trim();
+            const target = (document.getElementById('audit-filter-target')?.value || '').trim();
+            box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">加载中…</div>';
+            try {
+                const qs = new URLSearchParams({ page: String(auditPage), page_size: String(AUDIT_PAGE_SIZE) });
+                if (actor) qs.set('actor_email', actor);
+                if (action) qs.set('action', action);
+                if (target) qs.set('target_type', target);
+                const res = await authFetch('/api/admin/audit-logs?' + qs.toString());
+                const data = await res.json();
+                if (!res.ok) {
+                    box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(data.message || data.code || '加载失败')}</div>`;
+                    const meta = document.getElementById('audit-meta');
+                    if (meta) meta.innerText = '';
+                    return;
+                }
+                renderAuditLogs(data.data || {});
+            } catch (error) {
+                box.innerHTML = `<div style="color:var(--error);padding:20px 0;text-align:center;">${escapeHtml(error.message || '加载失败')}</div>`;
+            }
+        }
+
+        function resetAuditFilters() {
+            ['audit-filter-actor', 'audit-filter-action', 'audit-filter-target'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            loadAuditLogs(1);
+        }
+
+        function auditJsonText(v) {
+            if (v == null || v === '') return '—';
+            const s = typeof v === 'string' ? v : JSON.stringify(v);
+            return s.length > 120 ? s.slice(0, 120) + '…' : s;
+        }
+
+        function renderAuditLogs(data) {
+            const box = document.getElementById('audit-list');
+            const meta = document.getElementById('audit-meta');
+            const info = document.getElementById('audit-page-info');
+            const prev = document.getElementById('audit-prev');
+            const next = document.getElementById('audit-next');
+            const items = data.items || [];
+            const total = Number(data.total) || 0;
+            const size = Number(data.page_size) || AUDIT_PAGE_SIZE;
+            const totalPages = Math.max(1, Math.ceil(total / size));
+            if (meta) meta.innerText = `共 ${total} 条`;
+            if (info) info.innerText = `第 ${data.page || 1} / ${totalPages} 页`;
+            if (prev) prev.disabled = (data.page || 1) <= 1;
+            if (next) next.disabled = (data.page || 1) >= totalPages;
+            if (!items.length) {
+                box.innerHTML = '<div style="color:var(--text-dim);padding:24px 0;text-align:center;">暂无审计记录</div>';
+                return;
+            }
+            const rows = items.map((r) => {
+                const when = r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '';
+                return `<tr>
+                    <td style="white-space:nowrap; color:var(--text-dim); font-size:12.5px;">${escapeHtml(when)}</td>
+                    <td><div style="font-size:13px;">${escapeHtml(r.actor_email || '—')}</div><div style="color:var(--text-dim); font-size:12px;">${escapeHtml(r.actor_type || '')}</div></td>
+                    <td><code style="font-size:12.5px;">${escapeHtml(r.action || '')}</code></td>
+                    <td>${escapeHtml(r.target_type || '')}${r.target_id ? ' #' + escapeHtml(String(r.target_id)) : ''}</td>
+                    <td style="font-size:12px; color:var(--text-dim);">${escapeHtml(auditJsonText(r.before))}</td>
+                    <td style="font-size:12px; color:var(--text-dim);">${escapeHtml(auditJsonText(r.after))}</td>
+                    <td style="font-size:12px; color:var(--text-dim);">${escapeHtml(r.ip || '')}</td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `<div class="table-wrap" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>目标</th><th>变更前</th><th>变更后</th><th>IP</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+            lucide.createIcons();
+        }
+
+        // ===== 强制首改（v2.5.0 批次3）：must_change_password 账号登录后必须先改密 =====
+        function maybeForcePasswordChange() {
+            if (!window.__adminMe || !window.__adminMe.must_change_password) return;
+            const backdrop = document.getElementById('force-pwd-backdrop');
+            if (backdrop) backdrop.style.display = 'flex';
+        }
+
+        async function submitForcedPasswordChange() {
+            const cur = document.getElementById('force-pwd-current')?.value || '';
+            const next = document.getElementById('force-pwd-new')?.value || '';
+            const confirm = document.getElementById('force-pwd-confirm')?.value || '';
+            const msg = document.getElementById('force-pwd-msg');
+            if (msg) { msg.style.color = 'var(--error)'; msg.innerText = ''; }
+            if (!cur || !next) { if (msg) msg.innerText = '请填写原密码与新密码'; return; }
+            if (next.length < 8 || !/[A-Za-z]/.test(next) || !/[0-9]/.test(next)) {
+                if (msg) msg.innerText = '新密码至少 8 位，且需同时包含字母与数字'; return;
+            }
+            if (next !== confirm) { if (msg) msg.innerText = '两次输入的新密码不一致'; return; }
+            const btn = document.getElementById('force-pwd-ok');
+            if (btn) { btn.disabled = true; btn.innerText = '提交中…'; }
+            try {
+                const res = await authFetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currentPassword: cur, newPassword: next })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    if (msg) msg.innerText = data.message || '修改失败';
+                    if (btn) { btn.disabled = false; btn.innerText = '确认修改'; }
+                    return;
+                }
+                if (msg) { msg.style.color = 'var(--success)'; msg.innerText = '密码已修改，请重新登录…'; }
+                clearAdminToken();
+                setTimeout(() => window.location.reload(), 900);
+            } catch (error) {
+                if (msg) msg.innerText = error.message || '修改失败';
+                if (btn) { btn.disabled = false; btn.innerText = '确认修改'; }
+            }
+        }
+
+        async function openRoleDialog(code) {
+            const backdrop = document.getElementById('role-backdrop');
+            if (!backdrop) return;
+            try { await fetchPermissionPoints(); } catch (error) { showMessage(error.message || '加载权限点失败', 'error'); return; }
+            const role = code ? adminRolesCache.find((r) => r.code === code) : null;
+            roleEditorCode = code || null;
+            document.getElementById('role-dialog-title').innerText = code ? '编辑角色' : '新增角色';
+            document.getElementById('role-code').value = role ? role.code : '';
+            document.getElementById('role-code').disabled = Boolean(code);
+            document.getElementById('role-name').value = role ? role.name : '';
+            document.getElementById('role-note').value = role ? (role.note || '') : '';
+            const selected = role ? (role.permissions || []) : [];
+            const matrix = document.getElementById('role-perm-matrix');
+            matrix.innerHTML = permissionPointsCache.map((p) => `
+                <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; cursor:pointer;">
+                    <input type="checkbox" class="role-perm-box" value="${escapeHtml(p.key)}" ${selected.includes(p.key) ? 'checked' : ''}>
+                    <span>${escapeHtml(p.label)}<span style="color:var(--text-dim); font-size:11px;"> · ${escapeHtml(p.key)}</span></span>
+                </label>`).join('');
+            backdrop.style.display = 'flex';
+        }
+
+        function closeRoleDialog() {
+            const backdrop = document.getElementById('role-backdrop');
+            if (backdrop) backdrop.style.display = 'none';
+            roleEditorCode = null;
+        }
+
+        function rolePermSelectAll() {
+            document.querySelectorAll('.role-perm-box').forEach((b) => { b.checked = true; });
+        }
+
+        function rolePermClearAll() {
+            document.querySelectorAll('.role-perm-box').forEach((b) => { b.checked = false; });
+        }
+
+        async function saveRole() {
+            const code = String(document.getElementById('role-code').value || '').trim();
+            const name = String(document.getElementById('role-name').value || '').trim();
+            const note = String(document.getElementById('role-note').value || '').trim();
+            const permissions = Array.from(document.querySelectorAll('.role-perm-box')).filter((b) => b.checked).map((b) => b.value);
+            if (!/^[a-z][a-z0-9_]{1,31}$/.test(code)) { showMessage('角色代号须为小写字母/数字/下划线，2-32 位', 'error'); return; }
+            if (!name) { showMessage('请填写显示名', 'error'); return; }
+            try {
+                const res = await authFetch('/api/admin/roles', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code, name, permissions, note })
+                });
+                const data = await res.json();
+                if (!res.ok) { showMessage(data.message || '保存失败', 'error'); return; }
+                closeRoleDialog();
+                showMessage('角色已保存', 'success');
+                await loadAdminRoles();
+            } catch (error) { showMessage(error.message || '保存失败', 'error'); }
+        }
+
+        async function deleteAdminRole(code) {
+            if (!window.confirm(`确认删除角色「${code}」？内置角色与在用角色不可删除。`)) return;
+            try {
+                const res = await authFetch(`/api/admin/roles/${encodeURIComponent(code)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok) { showMessage(data.message || '删除失败', 'error'); return; }
+                showMessage('角色已删除', 'success');
+                await loadAdminRoles();
+            } catch (error) { showMessage(error.message || '删除失败', 'error'); }
         }
 
         async function readJsonResponse(response) {
@@ -5299,8 +6018,201 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         function expandNavGroupForPage(pId) {
-            if (BUSINESS_PAGES.has(pId)) {
-                document.getElementById('nav_group_business')?.classList.add('expanded');
+            const item = document.querySelector(`.nav-item[data-page="${pId}"]`);
+            const group = item && item.closest ? item.closest('.nav-group') : null;
+            if (group) group.classList.add('expanded');
+        }
+
+        // ===== v2.6.0 批次4：导航数据驱动 =====
+        // v2.8.0（批次6）：权限点判定助手，供启动/轮询按当前角色权限跳过无权端点（避免主动请求触发 403）
+        function adminCan(point) {
+            const perms = (window.__adminMe && Array.isArray(window.__adminMe.permissions)) ? window.__adminMe.permissions : ['*'];
+            if (perms.includes('*')) return true;
+            const p = String(point || '');
+            return !p || perms.includes(p);
+        }
+
+        function adminMenuVisible(menu) {
+            if (!menu || menu.visible === false) return false;
+            const perm = String(menu.permission || '');
+            if (!perm) return true;
+            const perms = (window.__adminMe && Array.isArray(window.__adminMe.permissions)) ? window.__adminMe.permissions : ['*'];
+            return perms.includes('*') || perms.includes(perm);
+        }
+
+        function renderAdminNav(menus) {
+            const nav = document.getElementById('nav-menu');
+            if (!nav) return;
+            const list = Array.isArray(menus) && menus.length ? menus : NAV_MENU_FALLBACK;
+            const current = window.__currentPage || 'dashboard';
+            const byKey = {};
+            list.forEach((m) => { if (m && m.key) byKey[m.key] = m; });
+            const topRows = list.filter((m) => !String(m.group || '').trim())
+                .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+            const html = [];
+            topRows.forEach((row) => {
+                if (!adminMenuVisible(row) || !byKey[row.key]) return;
+                if (row.is_group) {
+                    const children = list
+                        .filter((m) => String(m.group || '') === row.key && adminMenuVisible(m))
+                        .sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+                    if (!children.length) return;
+                    const groupId = `nav_group_${row.key}`;
+                    const iconHtml = row.icon ? `<i data-lucide="${escapeHtml(row.icon)}"></i>` : '';
+                    html.push(`<div class="nav-group" id="${groupId}">`
+                        + `<div class="nav-item nav-group-toggle" onclick="toggleNavGroup('${groupId}', event)">`
+                        + iconHtml + `<span>${escapeHtml(row.label)}</span><i data-lucide="chevron-down" class="nav-chevron"></i>`
+                        + `</div><div class="nav-subitems">`
+                        + children.map((c) => `<div class="nav-item nav-subitem" onclick="switchPage('${escapeHtml(c.key)}', this)" data-page="${escapeHtml(c.key)}"><span>${escapeHtml(c.label)}</span></div>`).join('')
+                        + `</div></div>`);
+                    return;
+                }
+                const iconHtml = row.icon ? `<i data-lucide="${escapeHtml(row.icon)}"></i>` : '';
+                html.push(`<div class="nav-item" onclick="switchPage('${escapeHtml(row.key)}', this)" data-page="${escapeHtml(row.key)}">`
+                    + iconHtml + `<span>${escapeHtml(row.label)}</span></div>`);
+            });
+            nav.innerHTML = html.join('');
+            resolveNavItem(current, null)?.classList.add('active');
+            expandNavGroupForPage(current);
+            if (window.lucide && typeof window.lucide.createIcons === 'function') lucide.createIcons();
+        }
+
+        async function loadAdminMenus(forceReload) {
+            if (!adminMenusCache || forceReload) {
+                try {
+                    const res = await authFetch('/api/admin/menus');
+                    const data = await res.json();
+                    if (res.ok && data.success && Array.isArray(data.data && data.data.menus)) {
+                        adminMenusRaw = data.data.menus;
+                        adminMenusCache = data.data.menus;
+                    }
+                } catch (e) {
+                    console.warn('菜单加载失败，使用内置兜底结构', e);
+                }
+            }
+            renderAdminNav(adminMenusCache || NAV_MENU_FALLBACK);
+            if (document.getElementById('menus') && document.getElementById('menus').classList.contains('active')) {
+                renderMenusTable();
+            }
+        }
+
+        // ===== v2.6.0 批次4：菜单管理页 =====
+        async function renderMenusTable() {
+            const box = document.getElementById('menus-list');
+            if (!box) return;
+            const list = Array.isArray(adminMenusRaw) ? adminMenusRaw : [];
+            if (!list.length) {
+                box.innerHTML = '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">暂无菜单数据</div>';
+                return;
+            }
+            const sorted = list.slice().sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
+            const rows = sorted.map((m) => {
+                const parent = m.group ? (sorted.find((x) => x.key === m.group) || {}).label || m.group : '（顶级）';
+                const type = m.is_group ? '<span class="status-badge status-running">可折叠组</span>' : '<span class="status-badge">菜单项</span>';
+                const vis = m.visible ? '<span class="status-badge status-success">可见</span>' : '<span class="status-badge">隐藏</span>';
+                const perm = m.permission ? escapeHtml(m.permission) : '<span style="color:var(--text-dim);">不限制</span>';
+                const builtin = m.builtin ? '<span class="status-badge">内置</span>' : '';
+                const del = m.builtin ? ''
+                    : `<button type="button" class="btn btn-sm btn-danger" onclick="deleteMenuRow('${escapeHtml(m.key)}')">删除</button>`;
+                return `<tr>
+                    <td>${escapeHtml(String(m.sort))}</td>
+                    <td>${escapeHtml(m.label)}</td>
+                    <td><code>${escapeHtml(m.key)}</code></td>
+                    <td>${escapeHtml(parent)}</td>
+                    <td>${escapeHtml(m.icon || '')}</td>
+                    <td>${perm}</td>
+                    <td>${vis}</td>
+                    <td>${type} ${builtin}</td>
+                    <td><button type="button" class="btn btn-sm" onclick="openMenuEditor('${escapeHtml(m.key)}')">编辑</button> ${del}</td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `<div style="overflow:auto;">
+                <table class="data-table">
+                    <thead><tr><th>排序</th><th>显示名</th><th>Key</th><th>所属分组</th><th>图标</th><th>所需权限</th><th>可见</th><th>类型</th><th>操作</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+            if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        }
+
+        function menuEditorMsg(text, ok) {
+            const el = document.getElementById('menu-editor-msg');
+            if (!el) return;
+            el.textContent = text || '';
+            el.style.color = ok ? 'var(--success)' : 'var(--error)';
+        }
+
+        async function openMenuEditor(key) {
+            const backdrop = document.getElementById('menu-editor-backdrop');
+            if (!backdrop) return;
+            const list = Array.isArray(adminMenusRaw) ? adminMenusRaw : [];
+            const row = key ? list.find((m) => m.key === key) : null;
+            document.getElementById('menu-editor-title').textContent = row ? `编辑菜单：${row.label}` : '新增菜单';
+            document.getElementById('menu-editor-key').value = row ? row.key : '';
+            document.getElementById('menu-editor-key').disabled = Boolean(row);
+            document.getElementById('menu-editor-label').value = row ? row.label : '';
+            document.getElementById('menu-editor-icon').value = row ? (row.icon || '') : '';
+            document.getElementById('menu-editor-sort').value = row ? row.sort : 100;
+            document.getElementById('menu-editor-isgroup').value = row && row.is_group ? '1' : '0';
+            document.getElementById('menu-editor-visible').value = row && row.visible === false ? '0' : '1';
+            const groupSel = document.getElementById('menu-editor-group');
+            groupSel.innerHTML = '<option value="">（无 · 顶级平铺）</option>'
+                + list.filter((m) => m.is_group && (!row || m.key !== row.key))
+                    .map((m) => `<option value="${escapeHtml(m.key)}">${escapeHtml(m.label)}（${escapeHtml(m.key)}）</option>`).join('');
+            groupSel.value = row ? (row.group || '') : '';
+            const permSel = document.getElementById('menu-editor-permission');
+            let points = [];
+            try { points = await fetchPermissionPoints(); } catch (e) { points = []; }
+            permSel.innerHTML = '<option value="">（不限制）</option>'
+                + points.map((p) => `<option value="${escapeHtml(p.key)}">${escapeHtml(p.key)}${p.name ? ` · ${escapeHtml(p.name)}` : ''}</option>`).join('');
+            permSel.value = row ? (row.permission || '') : '';
+            menuEditorMsg('', true);
+            backdrop.style.display = 'flex';
+        }
+
+        function closeMenuEditor() {
+            const backdrop = document.getElementById('menu-editor-backdrop');
+            if (backdrop) backdrop.style.display = 'none';
+        }
+
+        async function saveMenuEditor() {
+            const key = String(document.getElementById('menu-editor-key').value || '').trim();
+            const label = String(document.getElementById('menu-editor-label').value || '').trim();
+            if (!key || !label) { menuEditorMsg('Key 与显示名必填', false); return; }
+            try {
+                const res = await authFetch('/api/admin/menus', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        key,
+                        label,
+                        icon: document.getElementById('menu-editor-icon').value,
+                        group: document.getElementById('menu-editor-group').value,
+                        is_group: document.getElementById('menu-editor-isgroup').value,
+                        sort: Number(document.getElementById('menu-editor-sort').value || 100),
+                        permission: document.getElementById('menu-editor-permission').value,
+                        visible: document.getElementById('menu-editor-visible').value
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok || data.success === false) throw new Error(data.message || '保存失败');
+                closeMenuEditor();
+                await loadAdminMenus(true);
+                await renderMenusTable();
+            } catch (error) {
+                menuEditorMsg(error.message || '保存失败', false);
+            }
+        }
+
+        async function deleteMenuRow(key) {
+            if (!window.confirm(`确认删除菜单「${key}」？`)) return;
+            try {
+                const res = await authFetch(`/api/admin/menus/${encodeURIComponent(key)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (!res.ok || data.success === false) throw new Error(data.message || '删除失败');
+                await loadAdminMenus(true);
+                await renderMenusTable();
+            } catch (error) {
+                menuEditorMsg(error.message || '删除失败', false);
             }
         }
 
@@ -5313,6 +6225,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         function switchPageInternal(pId, el) {
+            window.__currentPage = pId;
             document.querySelectorAll('.nav-item.active').forEach((i) => i.classList.remove('active'));
             const page = document.getElementById(pId);
             if (!page) {
@@ -5398,9 +6311,37 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 });
             }
 
+            if (pId === 'customers') {
+                loadCustomers(1).catch(() => { });
+            }
+
             if (pId === 'tenants') {
                 loadTenants().catch((error) => {
                     console.error('Failed to load tenants', error);
+                });
+            }
+
+            if (pId === 'admins') {
+                loadAdminUsers().catch((error) => {
+                    console.error('Failed to load admin users', error);
+                });
+            }
+
+            if (pId === 'admin_roles') {
+                loadAdminRoles().catch((error) => {
+                    console.error('Failed to load admin roles', error);
+                });
+            }
+
+            if (pId === 'audit_logs') {
+                loadAuditLogs(1).catch((error) => {
+                    console.error('Failed to load audit logs', error);
+                });
+            }
+
+            if (pId === 'menus') {
+                loadAdminMenus(true).catch((error) => {
+                    console.error('Failed to load admin menus', error);
                 });
             }
 
@@ -5778,8 +6719,35 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (data.refreshed && data.token) {
                 setAdminToken(data.token);
             }
+            // v2.4.0：记录当前管理员身份（角色/权限），供「后台账号」「角色与权限」页做按钮显隐
+            window.__adminMe = {
+                email: data.email || '',
+                role: data.role || 'super',
+                permissions: Array.isArray(data.permissions) ? data.permissions : ['*'],
+                must_change_password: Boolean(data.must_change_password)
+            };
+            await loadAdminMenus();
+            applyAdminPermissionGate();
+            maybeForcePasswordChange();
             scheduleSessionRefresh(data.expiresAt);
             return data;
+        }
+
+        function adminIsSuper() {
+            return !window.__adminMe || window.__adminMe.role === 'super';
+        }
+
+        function applyAdminPermissionGate() {
+            const superOnly = adminIsSuper();
+            ['admin-user-create-btn', 'role-create-btn'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = superOnly ? '' : 'none';
+            });
+            // 操作审计：无 audit.read 权限的角色不显示入口（避免点进去 403）
+            const perms = (window.__adminMe && Array.isArray(window.__adminMe.permissions)) ? window.__adminMe.permissions : ['*'];
+            const canAudit = perms.includes('*') || perms.includes('audit.read');
+            const auditNav = document.querySelector('.nav-item[data-page="audit_logs"]');
+            if (auditNav) auditNav.style.display = canAudit ? '' : 'none';
         }
 
         async function reloadSystemConfigFromServer() {
@@ -5837,7 +6805,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
 
                 if (isInitial) {
                     applySystemConfigFromData(data);
-                    loadCardPoolList();
+                    if (adminCan('system.config')) {
+                        loadCardPoolList();
+                    }
                 }
 
                 window.__adminRuntime = data.runtime || { active_activation_jobs: 0 };
@@ -5850,10 +6820,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 renderLogTable(window.__adminLogs);
                 renderAutomationTable(window.__adminLogs);
 
-                try {
-                    await loadCdkList();
-                } catch (cdkError) {
-                    console.error('Failed to load CDK list in loadData', cdkError);
+                if (adminCan('entitlement.issue')) {
+                    try {
+                        await loadCdkList();
+                    } catch (cdkError) {
+                        console.error('Failed to load CDK list in loadData', cdkError);
+                    }
                 }
 
                 lucide.createIcons();
@@ -8338,10 +9310,15 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             try {
                 await ensureAdminSession();
                 await loadData(true);
-                await loadRegionConfig();
-                await loadGptApiConfig();
-                await loadIntegrationConfig();
-                await loadCardConfig();
+                // v2.8.0（批次6）：按权限点跳过无权端点，避免低权限角色启动即触发 403
+                if (adminCan('system.config')) {
+                    await loadRegionConfig();
+                    await loadGptApiConfig();
+                    await loadIntegrationConfig();
+                }
+                if (adminCan('pricing.read')) {
+                    await loadCardConfig();
+                }
                 if (adminDataRefreshTimer) {
                     clearInterval(adminDataRefreshTimer);
                 }
@@ -8729,6 +9706,27 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         // ─── 第三方代充 API 配置 ─────────────────────────────────────────────
+        let gptApiCurrentConfig = null;
+
+        function renderGptApiModeBadge(cfg) {
+            const box = document.getElementById('gpt_api_mode_badge');
+            if (!box) return;
+            const isMock = cfg.effective_mock === true || cfg.mock === true;
+            const lock = cfg.mock_lock === true;
+            if (isMock) {
+                const cls = lock ? 'status-failed' : 'status-warning';
+                const label = lock ? '当前模式：MOCK（安全锁生效）' : '当前模式：MOCK（后台模拟开关）';
+                const note = lock
+                    ? 'REQUIRE_ZOVOCARD_MOCK=1 安全锁生效：所有 ZovoCard 调用均为本地模拟，你填写的 API Key 与 Base URL 不会真的被使用，也不会真实连通 ZovoCard。'
+                    : '后台「模拟模式」已开启：仅本地模拟，未真实调用 ZovoCard。';
+                box.innerHTML = '<span class="status-badge ' + cls + '" style="font-size: 12px; padding: 6px 12px;">' + escapeHtml(label) + '</span>'
+                    + '<span style="font-size: 12.5px; color: var(--text-dim);">' + escapeHtml(note) + '</span>';
+            } else {
+                box.innerHTML = '<span class="status-badge status-success" style="font-size: 12px; padding: 6px 12px;">当前模式：真实</span>'
+                    + '<span style="font-size: 12.5px; color: var(--text-dim);">将使用下方 Base URL 与 API Key 真实调用 ZovoCard（会产生扣费）。</span>';
+            }
+        }
+
         async function loadGptApiConfig() {
             try {
                 const res = await authFetch('/api/admin/gpt-api');
@@ -8737,6 +9735,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     throw new Error(data.message || '加载 API 配置失败');
                 }
                 const cfg = data.config || {};
+                gptApiCurrentConfig = cfg;
+                renderGptApiModeBadge(cfg);
+                renderCardRulesBadge(cfg.effective_mock === true, cfg.mock_lock === true);
                 const enabledEl = document.getElementById('gpt_api_enabled');
                 if (enabledEl) enabledEl.checked = Boolean(cfg.enabled);
                 const mockEl = document.getElementById('gpt_api_mock');
@@ -8751,6 +9752,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     : 'gptk_...';
                 if (keyHint) {
                     keyHint.textContent = cfg.api_key_saved ? '✓ API Key 已保存' : '尚未配置 API Key';
+                    if (cfg.mock_lock) {
+                        keyHint.textContent += '（安全锁 MOCK 生效，该 Key 不会被真实使用）';
+                    }
                 }
                 if (cfg.api_key_saved) refreshGptApiStatus();
             } catch (e) {
@@ -9314,7 +10318,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 : '尚無失敗的第三方代充訂單';
             document.getElementById('gpt_api_status_hint').textContent = data.balance_error
                 ? `積分查詢失敗：${data.balance_error}`
-                : '資料來自供應商 /plans 與 /balance；完整卡密不會由接口回傳。';
+                : (data.mock
+                    ? (data.mock_lock
+                        ? '當前為安全鎖 MOCK 模式，以上資料為本地模擬樣本，未真實連接 ZovoCard。'
+                        : '當前為 MOCK 模式，以上資料為本地模擬樣本，未真實連接 ZovoCard。')
+                    : '資料來自供應商 /plans 與 /balance；完整卡密不會由接口回傳。');
         }
 
         async function readApiJson(response, fallbackMessage) {
@@ -9346,7 +10354,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         async function testGptApiConnection() {
             const payload = buildGptApiPayload();
             const hasSavedKey = Boolean(document.getElementById('gpt_api_key_hint')?.textContent.includes('已保存'));
-            if (!payload.api_key && !hasSavedKey) {
+            const mockActive = Boolean(gptApiCurrentConfig && (gptApiCurrentConfig.effective_mock === true || gptApiCurrentConfig.mock === true));
+            if (!payload.api_key && !hasSavedKey && !mockActive) {
                 showMessage('請先填寫並保存 API Key', 'warning');
                 return;
             }
@@ -9358,10 +10367,211 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 });
                 const data = await readApiJson(res, 'API 連線測試失敗');
                 if (!res.ok || !data.success) throw new Error(data.message || '連線失敗');
-                showMessage(data.message, 'success');
+                if (data.mock) {
+                    showMessage(data.message, 'warning');
+                } else {
+                    showMessage(data.message, 'success');
+                }
                 await refreshGptApiStatus();
             } catch (error) {
                 showMessage(error.message || 'API 連線測試失敗', 'error');
+            }
+        }
+
+        // ─── 代充卡池（選卡策略 / 選卡預覽 / 餘額看板 / 審計）─────────────
+        function gptCardPoolNote(mock, lock) {
+            if (mock) {
+                return lock
+                    ? '當前為安全鎖 MOCK 模式：以下卡池資料為本地模擬樣本，未真實連接 ZovoCard，不會扣費。'
+                    : '當前為 MOCK 模式：以下卡池資料為本地模擬樣本，未真實連接 ZovoCard。';
+            }
+            return '資料來自 ZovoCard 卡池介面；卡號僅顯示末四位（上游回傳完整 PAN 時已於服務端脫敏）。';
+        }
+
+        function renderCardRulesBadge(mock, lock) {
+            const box = document.getElementById('gpt_cp_badge');
+            if (!box) return;
+            box.innerHTML = mock
+                ? `<span style="padding:2px 10px;border-radius:999px;background:#7c5cff22;color:#7c5cff;font-size:12px;font-weight:600">MOCK${lock ? ' · 安全鎖生效' : ''}</span>
+                   <span style="font-size:12px;color:var(--text-dim)">${escapeHtml(gptCardPoolNote(true, lock))}</span>`
+                : `<span style="padding:2px 10px;border-radius:999px;background:#12b76a22;color:#12b76a;font-size:12px;font-weight:600">真實</span>
+                   <span style="font-size:12px;color:var(--text-dim)">${escapeHtml(gptCardPoolNote(false, false))}</span>`;
+        }
+
+        function cardRuleRow(label, value) {
+            return `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--text-dim)">${escapeHtml(label)}</span><span style="font-weight:600">${escapeHtml(String(value))}</span></div>`;
+        }
+
+        function cardOnOff(v) {
+            return v === true ? '開' : (v === false ? '關' : '—');
+        }
+
+        async function loadGptCardRules() {
+            try {
+                const res = await authFetch('/api/admin/gpt-api/card-rules?product=gpt');
+                const data = await readApiJson(res, '選卡策略讀取失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '選卡策略讀取失敗');
+                renderCardRulesBadge(data.mock === true, Boolean(gptApiCurrentConfig && gptApiCurrentConfig.mock_lock));
+                const rule = (data.list || [])[0] || {};
+                document.getElementById('gpt_cp_rules').innerHTML = `
+                    ${cardRuleRow('選卡模式 select_mode', rule.select_mode ?? '—')}
+                    ${cardRuleRow('失敗/取消是否計次 count_failures', cardOnOff(rule.count_failures))}
+                    ${cardRuleRow('light 每卡上限 light_max_uses', rule.light_max_uses ?? '—')}
+                    ${cardRuleRow('pro20 每卡上限 pro20_max_uses', rule.pro20_max_uses ?? '—')}
+                    ${cardRuleRow('失敗自動換卡 auto_switch_on_fail', cardOnOff(rule.auto_switch_on_fail))}
+                    ${cardRuleRow('最大自動換卡次數 max_auto_switches', rule.max_auto_switches ?? '—')}
+                    ${cardRuleRow('嚴格選擇（不級聯兜底）strict_select', cardOnOff(rule.strict_select))}
+                    ${rule.is_default === true ? '<div style="margin-top:8px;font-size:12px;color:#f79009">當前為上游預設策略（尚未被自訂覆蓋）。</div>' : ''}
+                `;
+            } catch (error) {
+                document.getElementById('gpt_cp_rules').textContent = error.message || '選卡策略讀取失敗';
+            }
+            lucide.createIcons();
+        }
+
+        async function applyRecommendedCardRules() {
+            if (!confirm('將把 GPT 選卡策略覆蓋為「推薦策略」（分散使用 + 失敗不計次 + 保留自動換卡 2 次 + 不嚴格選擇）。確定繼續？')) return;
+            try {
+                const res = await authFetch('/api/admin/gpt-api/card-rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product: 'gpt', use_recommended: true })
+                });
+                const data = await readApiJson(res, '套用推薦策略失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '套用推薦策略失敗');
+                showMessage(data.mock ? '推薦策略已套用（MOCK 本地模擬，未真實下發）' : '推薦選卡策略已下發至 ZovoCard', 'success');
+                await loadGptCardRules();
+            } catch (error) {
+                showMessage(error.message || '套用推薦策略失敗', 'error');
+            }
+        }
+
+        async function previewCardPool() {
+            const plan = document.getElementById('gpt_cp_plan')?.value || 'plus';
+            try {
+                const res = await authFetch(`/api/admin/gpt-api/card-pool/schedule?product=gpt&plan=${encodeURIComponent(plan)}`);
+                const data = await readApiJson(res, '選卡預覽失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '選卡預覽失敗');
+                const p = data.preview || {};
+                const sel = p.selected || {};
+                const cands = Array.isArray(p.candidates) ? p.candidates : [];
+                document.getElementById('gpt_cp_preview').innerHTML = `
+                    <div style="font-size:14px;font-weight:600">套餐 ${escapeHtml(plan)} → 將選中卡 ****${escapeHtml(String(sel.card_last_four || '—'))}（卡ID ${escapeHtml(String(sel.card_id ?? '—'))}，餘額 $${escapeHtml(String(sel.available_amount ?? '—'))}）</div>
+                    ${cands.length ? `<table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr><th style="text-align:left">卡ID</th><th style="text-align:left">後四位</th><th style="text-align:left">可用餘額($)</th><th style="text-align:left">狀態</th></tr></thead><tbody>${cands.map((c) => `<tr><td>${escapeHtml(String(c.card_id ?? '—'))}</td><td>****${escapeHtml(String(c.card_last_four || '—'))}</td><td>${escapeHtml(String(c.available_amount ?? '—'))}</td><td>${escapeHtml(String(c.status || '—'))}</td></tr>`).join('')}</tbody></table>` : ''}
+                `;
+            } catch (error) {
+                document.getElementById('gpt_cp_preview').textContent = error.message || '選卡預覽失敗';
+            }
+            lucide.createIcons();
+        }
+
+        function cardBalanceSeverity(card) {
+            const bal = Number(card.available_amount);
+            const floor = Number(card.min_recharge || 0);
+            if (!Number.isFinite(bal)) return 'none';
+            if (bal <= 0) return 'empty';
+            if (bal < 5 || (floor > 0 && bal < floor)) return 'low';
+            return 'ok';
+        }
+
+        async function loadCardPoolBoard({ withUsage = true } = {}) {
+            const box = document.getElementById('gpt_cp_board');
+            if (!box) return;
+            box.textContent = '正在同步卡池餘額...';
+            try {
+                const res = await authFetch('/api/admin/gpt-api/cards?sync=1&balance_sort=asc&page_size=20');
+                const data = await readApiJson(res, '卡池載入失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '卡池載入失敗');
+                renderCardPoolBoard(data.list || [], { withUsage });
+                if (withUsage) await loadCardUsageInto(data.list || []);
+            } catch (error) {
+                box.textContent = error.message || '卡池載入失敗';
+            }
+            lucide.createIcons();
+        }
+
+        function renderCardPoolBoard(cards, { withUsage }) {
+            const box = document.getElementById('gpt_cp_board');
+            if (!cards.length) { box.textContent = '卡池為空（或當前無可見卡）。'; return; }
+            const rows = cards.map((c) => {
+                const sev = cardBalanceSeverity(c);
+                const color = sev === 'empty' ? '#e5484d' : (sev === 'low' ? '#f79009' : 'inherit');
+                const tag = sev === 'empty' ? '已空' : (sev === 'low' ? '低餘額' : '');
+                const id = Number(c.id) || 0;
+                return `<tr>
+                    <td style="padding:4px 8px">${escapeHtml(String(c.id ?? '—'))}</td>
+                    <td style="padding:4px 8px">****${escapeHtml(String(c.card_last_four || '—'))}</td>
+                    <td style="padding:4px 8px;color:${color};font-weight:600">$${escapeHtml(String(c.available_amount ?? '—'))}${tag ? ` <span style="font-size:11px">${tag}</span>` : ''}</td>
+                    <td style="padding:4px 8px">$${escapeHtml(String(c.min_recharge ?? '—'))}</td>
+                    <td style="padding:4px 8px">${escapeHtml(String(c.status || '—'))}</td>
+                    <td style="padding:4px 8px" id="cp-usage-${id}">${withUsage ? '查詢中…' : '—'}</td>
+                    <td style="padding:4px 8px;white-space:nowrap">
+                        <button type="button" class="btn btn-secondary" style="padding:2px 8px" onclick="rechargeCardFromBoard(${id}, ${Number(c.min_recharge) || 0})">補足</button>
+                        <button type="button" class="btn btn-secondary" style="padding:2px 8px" onclick="showCardFundFlows(${id})">流水</button>
+                    </td>
+                </tr>`;
+            }).join('');
+            box.innerHTML = `<table style="width:100%;border-collapse:collapse"><thead><tr>
+                <th style="text-align:left">卡ID</th><th style="text-align:left">後四位</th><th style="text-align:left">可用餘額($)</th>
+                <th style="text-align:left">充值下限($)</th><th style="text-align:left">狀態</th><th style="text-align:left">GPT剩餘次數</th><th style="text-align:left">操作</th>
+                </tr></thead><tbody>${rows}</tbody></table>
+                <div id="gpt_cp_flows" style="margin-top:10px;font-size:12px;color:var(--text-dim)"></div>`;
+        }
+
+        async function loadCardUsageInto(cards) {
+            await Promise.all(cards.map(async (c) => {
+                const cell = document.getElementById(`cp-usage-${Number(c.id) || 0}`);
+                if (!cell) return;
+                try {
+                    const res = await authFetch(`/api/admin/gpt-api/cards/usage?card_id=${encodeURIComponent(c.id)}&product=gpt`);
+                    const data = await readApiJson(res, '剩餘次數查詢失敗');
+                    if (!res.ok || !data.success) throw new Error(data.message || '查詢失敗');
+                    const u = data.usage || {};
+                    const remain = u.remaining;
+                    cell.textContent = (remain === -1 || remain === '-1') ? '不限次' : (remain != null ? String(remain) : '—');
+                } catch (error) {
+                    cell.textContent = '查詢失敗';
+                    cell.title = error.message || '';
+                }
+            }));
+        }
+
+        async function rechargeCardFromBoard(cardId, minRecharge) {
+            const floor = Number(minRecharge) || 0;
+            const suggested = floor > 0 ? Math.max(floor, 10) : 10;
+            const input = prompt(`為該卡補足金額（美元）。${floor > 0 ? `該卡最低充值下限為 $${floor}，低於此金額會被上游拒絕且不可重試。` : '該卡無最低充值下限。'}`, String(suggested));
+            if (input === null) return;
+            const amount = Number(input);
+            if (!Number.isFinite(amount) || amount <= 0) { showMessage('補足金額必須大於 0', 'warning'); return; }
+            if (floor > 0 && amount < floor) { showMessage(`補足金額低於該卡最低充值下限 $${floor}，請調大後重試`, 'warning'); return; }
+            try {
+                const res = await authFetch('/api/admin/gpt-api/cards/recharge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ card_id: cardId, amount })
+                });
+                const data = await readApiJson(res, '卡補足失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '卡補足失敗');
+                showMessage(data.pending ? '補足已提交，上游確認中' : (data.message || '補足成功'), 'success');
+                await loadCardPoolBoard();
+            } catch (error) {
+                showMessage(error.message || '卡補足失敗', 'error');
+            }
+        }
+
+        async function showCardFundFlows(cardId) {
+            const box = document.getElementById('gpt_cp_flows');
+            if (box) box.textContent = '正在查詢資金流水...';
+            try {
+                const res = await authFetch(`/api/admin/gpt-api/cards/fund-flows?card_id=${encodeURIComponent(cardId)}`);
+                const data = await readApiJson(res, '資金流水查詢失敗');
+                if (!res.ok || !data.success) throw new Error(data.message || '資金流水查詢失敗');
+                const list = data.list || [];
+                if (box) box.innerHTML = list.length
+                    ? `卡 ${escapeHtml(String(cardId))} 資金流水：` + list.map((f) => `${escapeHtml(String(f.type || '—'))} ${escapeHtml(String(f.amount ?? '—'))}`).join(' · ')
+                    : `卡 ${escapeHtml(String(cardId))} 暫無資金流水。`;
+            } catch (error) {
+                if (box) box.textContent = error.message || '資金流水查詢失敗';
             }
         }
 
@@ -10085,6 +11295,10 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 '<label style="grid-column:1 / -1; font-size:12px;color:var(--text-dim);">品牌名<input id="tb-brand_name" class="asset-input" style="' + st + '" value="' + escapeHtml(b.brand_name || '') + '"></label>' +
                 '<label style="font-size:12px;color:var(--text-dim);">主色<input id="tb-primary_color" class="asset-input" style="' + st + '" value="' + escapeHtml(b.primary_color || '') + '" placeholder="#00A862"></label>' +
                 '<label style="font-size:12px;color:var(--text-dim);">点缀色<input id="tb-accent_color" class="asset-input" style="' + st + '" value="' + escapeHtml(b.accent_color || '') + '"></label>' +
+                '<label style="font-size:12px;color:var(--text-dim);">配色方案（前台整体配色）<select id="tb-color_scheme" class="asset-input" style="' + st + '">' +
+                  [['ink', '简约白（默认）'], ['mint', '墨绿'], ['ocean', '深海蓝'], ['violet', '靛紫'], ['ember', '暖橘']].map(function (o) {
+                    return '<option value="' + o[0] + '"' + (((b.color_scheme || 'ink') === o[0]) ? ' selected' : '') + '>' + o[1] + '</option>';
+                  }).join('') + '</select></label>' +
                 '<label style="font-size:12px;color:var(--text-dim);">Logo URL<input id="tb-logo_url" class="asset-input" style="' + st + '" value="' + escapeHtml(b.logo_url || '') + '"></label>' +
                 '<label style="font-size:12px;color:var(--text-dim);">客服联系方式<input id="tb-support_contact" class="asset-input" style="' + st + '" value="' + escapeHtml(b.support_contact || '') + '"></label>' +
                 '<label style="font-size:12px;color:var(--text-dim);">客服链接<input id="tb-support_url" class="asset-input" style="' + st + '" value="' + escapeHtml(b.support_url || '') + '"></label>' +
@@ -10119,7 +11333,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
         async function saveTenantBrand() {
             if (!_tenantDetail) return;
-            const ids = ['brand_name', 'primary_color', 'accent_color', 'logo_url', 'support_contact', 'support_url', 'footer_text'];
+            const ids = ['brand_name', 'primary_color', 'accent_color', 'color_scheme', 'logo_url', 'support_contact', 'support_url', 'footer_text'];
             const payload = {};
             ids.forEach(function (k) { payload[k] = document.getElementById('tb-' + k).value || ''; });
             try {
@@ -10273,21 +11487,32 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 const sel = cur ? (cur.upstream_plan_key === o.k) : (o.k === '');
                 return '<option value="' + o.k + '"' + (sel ? ' selected' : '') + '>' + o.t + '</option>';
             }).join('');
-            const p = cur || { name: '', price: '', period: 'monthly', content: '', subtitle: '', show: true, sell: true, sort: 999, upstream_plan_key: '', api_enabled: false, api_markup_percent: 15, is_topup: false };
+            const p = cur || { name: '', price: '', period: 'monthly', content: '', subtitle: '', show: true, sell: true, sort: 999, upstream_plan_key: '', api_enabled: false, api_markup_percent: 15, upgrade_markup_percent: 0, is_topup: false };
             const inputStyle = 'width:100%; margin-top:4px;';
             document.getElementById('product-dialog-body').innerHTML =
                 '<div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 16px;">' +
                 '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">商品名称 *<input id="pd-name" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.name || '') + '" placeholder="如：ChatGPT Plus 一个月"></label>' +
+                // v2.13.0：商品类型（写 kc_plans.kc_type + 卡片 category，决定前台归到哪个 Tab）
+                '<label style="font-size:12px; color:var(--text-dim);">商品类型 *<select id="pd-type" class="asset-input" style="' + inputStyle + '">' +
+                [['recharge', '代充'], ['account', '成品号'], ['website', '建站服务'], ['entitlement', '权益']].map(function (t) {
+                    return '<option value="' + t[0] + '"' + ((p.kc_type || 'recharge') === t[0] ? ' selected' : '') + '>' + t[1] + '</option>';
+                }).join('') + '</select></label>' +
                 '<label style="font-size:12px; color:var(--text-dim);">计费周期<select id="pd-period" class="asset-input" style="' + inputStyle + '"><option value="monthly"' + (p.period !== 'onetime' ? ' selected' : '') + '>月付</option><option value="onetime"' + (p.period === 'onetime' ? ' selected' : '') + '>一次性</option></select></label>' +
                 '<label style="font-size:12px; color:var(--text-dim);">售价（美元）*<input id="pd-price" class="asset-input" style="' + inputStyle + '" type="number" step="0.01" min="0" value="' + (p.price || '') + '" placeholder="如 15.00"></label>' +
                 '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">货源（上游商品）<select id="pd-upstream" class="asset-input" style="' + inputStyle + '">' + upstreamOptions + '</select></label>' +
                 '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">一句话卖点（商城卡片副标题）<input id="pd-subtitle" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.subtitle || '') + '" placeholder="官方渠道直充，支付后自动发放卡密"></label>' +
                 '<label style="grid-column:1 / -1; font-size:12px; color:var(--text-dim);">商品说明<input id="pd-content" class="asset-input" style="' + inputStyle + '" value="' + escapeHtml(p.content || '') + '" placeholder="如：官方 ChatGPT Plus 代充，1 个月有效期"></label>' +
                 '<label style="font-size:12px; color:var(--text-dim);">排序（越小越靠前）<input id="pd-sort" class="asset-input" style="' + inputStyle + '" type="number" value="' + (p.sort == null ? 999 : p.sort) + '"></label>' +
-                '<div style="font-size:12px; color:var(--text-dim);">状态<div style="display:flex; gap:14px; margin-top:8px;"><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-sell"' + (p.sell ? ' checked' : '') + '> 在售</label><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-show"' + (p.show ? ' checked' : '') + '> 商城显示</label></div></div>' +
+                '<div style="font-size:12px; color:var(--text-dim);">状态<div style="display:flex; gap:14px; margin-top:8px;"><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-sell"' + (p.sell ? ' checked' : '') + '> 在售</label><label style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="pd-show"' + (p.show ? ' checked' : '') + '> 商城显示</label></div>' +
+                '<div style="margin-top:6px; color:var(--text-dim);">商城可见规则（v2.13.0）：勾选「在售」+「商城显示」即出现在前台对应 Tab（按上面的商品类型）。商城价取你填写的「售价」；下方「加价幅度」只用于对外 API 分销报价（= 上游成本 × (1+幅度)）。</div></div>' +
                 '<div style="grid-column:1 / -1; border-top:1px dashed var(--border, #e2e8f0); padding-top:12px; font-size:12px; color:var(--text-dim);">' +
-                '<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pd-api"' + (p.api_enabled ? ' checked' : '') + '> 开启 API 分销定价（仅存配置，对外报价接口后续版本启用）</label>' +
+                '<label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="pd-api"' + (p.api_enabled ? ' checked' : '') + '> 开启 API 分销定价（仅影响对外分销接口，不影响商城上架）</label>' +
                 '<div style="margin-top:8px;">加价幅度：<input id="pd-mkv" class="asset-input" style="width:90px;" type="number" step="0.1" min="0" value="' + (p.api_markup_percent || 15) + '">%（对外报价 = 上游成本 × (1 + 幅度)）</div>' +
+                '</div>' +
+                // v2.20.0：升级加价率（独立配置，不复用上面「加价幅度」）
+                '<div style="grid-column:1 / -1; border-top:1px dashed var(--border, #e2e8f0); padding-top:12px; font-size:12px; color:var(--text-dim);">' +
+                '<div>升级加价率：<input id="pd-upgmkv" class="asset-input" style="width:90px;" type="number" step="0.1" min="0" value="' + (p.upgrade_markup_percent || 0) + '">%（仅「升级代充」适用）</div>' +
+                '<div style="margin-top:6px; color:var(--text-dim);">升级代充零售价 = Zovo 升级差额（按实时汇率折算 USD）× (1 + 升级加价率)。留 0 = 不加价。该值<span style="color:var(--text)">独立于</span>上面的「加价幅度」，后者只用于对外 API 分销报价。</div>' +
                 '</div>' +
                 '</div>';
             document.getElementById('product-dialog-backdrop').setAttribute('data-plan-id', planId ? String(planId) : '');
@@ -10303,6 +11528,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             const body = {
                 plan_id: planId || undefined,
                 name: document.getElementById('pd-name').value.trim(),
+                kc_type: document.getElementById('pd-type').value,
                 period: document.getElementById('pd-period').value,
                 price: Number(document.getElementById('pd-price').value),
                 upstream_plan_key: document.getElementById('pd-upstream').value,
@@ -10313,7 +11539,8 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                 sell: document.getElementById('pd-sell').checked,
                 show: document.getElementById('pd-show').checked,
                 api_enabled: document.getElementById('pd-api').checked,
-                api_markup_percent: Number(document.getElementById('pd-mkv').value) || 0
+                api_markup_percent: Number(document.getElementById('pd-mkv').value) || 0,
+                upgrade_markup_percent: Number(document.getElementById('pd-upgmkv').value) || 0
             };
             if (!body.name) { showMessage('请填写商品名称', 'error'); return; }
             if (!(body.price > 0)) { showMessage('售价必须大于 0', 'error'); return; }
@@ -10742,8 +11969,12 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             try {
                 const status = document.getElementById('ent_status_filter').value;
                 const url = '/api/admin/entitlements/rules' + (status ? '?status=' + encodeURIComponent(status) : '');
-                const r = await authFetch(url);
-                const list = (r && r.data) || [];
+                // v2.12.0 修复：authFetch 返回的是 Response，必须 await .json() 才能拿到数据
+                // （原实现直接读 r.data → 恒为 undefined → 规则列表永远显示「暂无规则」）
+                const res = await authFetch(url);
+                const payload = await res.json();
+                if (!res.ok || !payload.success) throw new Error(payload.message || '加载失败');
+                const list = (payload && payload.data) || [];
                 _entCurrent = list;
                 renderEntitlements(list);
             } catch (e) {
@@ -10826,7 +12057,7 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                         '<h3 id="ent_dialog_title">新建权益规则</h3>' +
                         '<div style="display:grid; gap:8px; grid-template-columns:1fr 1fr; margin-top:10px;">' +
                             '<label>规则代码（code）<input id="ent_f_code" placeholder="plus_member_off20" style="width:100%;"></label>' +
-                            '<label>显示名<input id="ent_f_name" placeholder="Plus 会员 8 折" style="width:100%;"></label>' +
+                            '<label>显示名<input id="ent_f_name" placeholder="Plus 套餐 8 折" style="width:100%;"></label>' +
                             '<label>折扣类型<select id="ent_f_dtype" onchange="entUpdateDvalUnit()" style="width:100%;"><option value="percent">百分比折扣</option><option value="fixed_cents">减固定金额</option><option value="fixed_price_cents">一口价</option></select></label>' +
                             '<label>折扣值（<span id="ent_f_dval_unit">%</span>）<input id="ent_f_dval" type="number" placeholder="20" style="width:100%;"></label>' +
                             '<label>门槛（$，0=不限）<input id="ent_f_min" type="number" step="0.01" min="0" value="0" style="width:100%;"></label>' +
@@ -10956,8 +12187,9 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
             if (/^\d+$/.test(v)) return parseInt(v, 10);
             if (!v.includes('@')) { showMessage('输入格式不对：请填完整邮箱或数字 user_id', 'error'); return 0; }
             try {
-                const r = await authFetch('/api/admin/entitlements/user-lookup?email=' + encodeURIComponent(v));
-                const list = (r && r.data) || [];
+                const res = await authFetch('/api/admin/entitlements/user-lookup?email=' + encodeURIComponent(v));
+                const payload = await res.json();
+                const list = (payload && payload.data) || [];
                 if (!list.length) { showMessage('未找到邮箱为「' + v + '」的用户', 'error'); return 0; }
                 if (list.length > 1) { showMessage('该邮箱匹配到 ' + list.length + ' 个用户，请改用数字 user_id 精确查询', 'error'); return 0; }
                 showMessage('已定位用户：' + list[0].email + '（user_id=' + list[0].user_id + '）', 'success');
@@ -10973,8 +12205,11 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
                     authFetch('/api/admin/entitlements/grants?user_id=' + uid),
                     authFetch('/api/admin/entitlements/actions?user_id=' + uid)
                 ]);
-                const list = (gRes && gRes.data) || [];
-                const actions = (aRes && aRes.data) || [];
+                // v2.12.0 修复：同上，必须 await .json()（原实现读 Res.data → 恒空）
+                const gJson = await gRes.json().catch(() => ({}));
+                const aJson = await aRes.json().catch(() => ({}));
+                const list = (gJson && gJson.data) || [];
+                const actions = (aJson && aJson.data) || [];
                 // grants 表
                 const grantsHtml = !list.length
                     ? '<p style="color:var(--text-dim);">该用户无 grant 记录。</p>'
@@ -11125,6 +12360,655 @@ http://USER-session-{session}:PASS@proxy.example.com:1000"></textarea>
         }
 
         async function onEntitlementPackChange() { await loadEntitlementPrices(true); }
+
+        // ===================== v2.3.0 批次1 · 顾客管理域（顾客账号 / 余额 / 权益 / 订单 / 账单） =====================
+        const CUSTOMER_BIZ_LABELS = { topup: '代充', account: '成品号', website: '建站服务', entitlement: '权益包', other: '其他' };
+        const CUSTOMER_ORDER_STATUS_LABELS = { created: '处理中', delivered: '已完成', failed: '失败' };
+        const CUSTOMER_LEDGER_TYPE_LABELS = { recharge: '充值', consume: '消费', refund: '退款', adjust: '人工补录' };
+        const CUSTOMER_RECHARGE_STATUS_LABELS = { created: '待支付', paid: '已支付', expired: '已过期', failed: '失败', refunded: '已退款' };
+        const CUSTOMER_PAGE_SIZE = 20;
+
+        const _customers = { items: [], total: 0, page: 1, page_size: CUSTOMER_PAGE_SIZE };
+        let _customerDetail = null;
+        let _customerTab = 'overview';
+        let _customerOrders = { items: [], total: 0, page: 1, page_size: CUSTOMER_PAGE_SIZE, biz_type: '', status: '', loading: false, error: '' };
+        let _customerMetaId = null;
+        let _customerTempPwd = '';
+
+        function custMoney(v) {
+            const n = Number(v || 0);
+            return '$' + (n < 0 ? '-' : '') + Math.abs(n).toFixed(2);
+        }
+        function custMoneySigned(v) {
+            const n = Number(v || 0);
+            return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+        }
+        function custText(v) { return escapeHtml(v == null || v === '' ? '—' : String(v)); }
+
+        function custStatusBadge(status) {
+            return status === 'active'
+                ? '<span class="status-badge status-success">正常</span>'
+                : '<span class="status-badge status-failed">已冻结</span>';
+        }
+        function custBizBadge(biz) {
+            const label = CUSTOMER_BIZ_LABELS[biz] || CUSTOMER_BIZ_LABELS.other;
+            const color = biz === 'topup' ? 'rgba(59,130,246,.15);color:#2563eb'
+                : biz === 'account' ? 'rgba(16,185,129,.15);color:#047857'
+                    : biz === 'website' ? 'rgba(139,92,246,.15);color:#7c3aed'
+                        : biz === 'entitlement' ? 'rgba(245,158,11,.15);color:#b45309'
+                            : 'rgba(107,114,128,.15);color:#4b5563';
+            return '<span class="status-badge" style="background:' + color + ';">' + escapeHtml(label) + '</span>';
+        }
+        function custOrderStatusBadge(status) {
+            const label = CUSTOMER_ORDER_STATUS_LABELS[status] || (status || '—');
+            const cls = status === 'delivered' ? 'status-success' : (status === 'failed' ? 'status-failed' : 'status-running');
+            return '<span class="status-badge ' + cls + '">' + escapeHtml(label) + '</span>';
+        }
+        function custLoadingOrEmpty(msg) {
+            return '<div style="color:var(--text-dim);padding:20px 0;text-align:center;">' + escapeHtml(msg) + '</div>';
+        }
+        function custStatCard(label, value) {
+            return '<div style="background:var(--surface-soft); border:1px solid var(--glass-border); border-radius:10px; padding:12px 14px;">' +
+                '<div style="font-size:12px; color:var(--text-dim);">' + escapeHtml(label) + '</div>' +
+                '<div style="font-size:22px; font-weight:700; margin-top:4px;">' + value + '</div></div>';
+        }
+        function custRow(k, v) {
+            return '<div style="display:flex; gap:10px; padding:6px 0; border-bottom:1px solid var(--divider);">' +
+                '<span style="flex:0 0 96px; color:var(--text-dim); font-size:12.5px;">' + escapeHtml(k) + '</span>' +
+                '<span style="flex:1; word-break:break-all;">' + v + '</span></div>';
+        }
+        function customerById(id) {
+            return (_customers.items || []).find(function (c) { return String(c.id) === String(id); }) || null;
+        }
+
+        // ---- 列表 ----
+        function customerFilters() {
+            return {
+                q: (document.getElementById('cust-q')?.value || '').trim(),
+                status: document.getElementById('cust-status')?.value || '',
+                tenant: (document.getElementById('cust-tenant')?.value || '').trim()
+            };
+        }
+
+        async function loadCustomers(page) {
+            page = page || _customers.page || 1;
+            const box = document.getElementById('customers-list');
+            if (box) box.innerHTML = custLoadingOrEmpty('加载中…');
+            const f = customerFilters();
+            const qs = new URLSearchParams();
+            if (f.q) qs.set('q', f.q);
+            if (f.status) qs.set('status', f.status);
+            if (f.tenant) qs.set('tenant', f.tenant);
+            qs.set('page', String(page));
+            qs.set('page_size', String(_customers.page_size || CUSTOMER_PAGE_SIZE));
+            try {
+                const res = await authFetch('/api/admin/customers?' + qs.toString());
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '加载失败');
+                const d = data.data || {};
+                _customers.items = d.items || [];
+                _customers.total = Number(d.total || 0);
+                _customers.page = Number(d.page || page);
+                _customers.page_size = Number(d.page_size || _customers.page_size);
+                renderCustomersTable();
+            } catch (e) {
+                if (box) box.innerHTML = '<div style="color:#e05252;padding:20px 0;">' + escapeHtml(e.message || '加载失败') + '</div>';
+                const pager = document.getElementById('customers-pager');
+                if (pager) pager.innerHTML = '';
+            }
+        }
+
+        function customerSearch() { _customers.page = 1; loadCustomers(1).catch(() => { }); }
+        function customerRefresh() { loadCustomers(_customers.page || 1).catch(() => { }); }
+
+        function renderCustomersTable() {
+            const box = document.getElementById('customers-list');
+            if (!box) return;
+            const items = _customers.items || [];
+            if (!items.length) {
+                box.innerHTML = custLoadingOrEmpty('暂无顾客');
+                renderCustomerPager();
+                return;
+            }
+            const rows = items.map(function (c) {
+                const isActive = c.status === 'active';
+                const toggleLabel = isActive ? '冻结' : '解冻';
+                return '<tr>' +
+                    '<td>' + custText(c.email) + '</td>' +
+                    '<td>' + custText(c.display_name) + '</td>' +
+                    '<td>' + custText(c.tenant_name) + (c.client_id ? '<div style="color:var(--text-dim);font-size:11px;">' + escapeHtml(c.client_id) + '</div>' : '') + '</td>' +
+                    '<td>' + custMoney(c.balance) + '</td>' +
+                    '<td>' + (c.orders_count != null ? c.orders_count : 0) + '</td>' +
+                    '<td>' + custStatusBadge(c.status) + '</td>' +
+                    '<td>' + custText(c.last_login_at) + '</td>' +
+                    '<td><div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+                    '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;" onclick="openCustomerDetail(' + c.id + ')">详情</button>' +
+                    '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;" onclick="toggleCustomerStatus(' + c.id + ')">' + toggleLabel + '</button>' +
+                    '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;" onclick="resetCustomerPassword(' + c.id + ')">重置密码</button>' +
+                    '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;" onclick="editCustomerMeta(' + c.id + ')">编辑</button>' +
+                    '</div></td>' +
+                    '</tr>';
+            }).join('');
+            box.innerHTML = '<div class="table-container"><table><thead><tr>' +
+                '<th>邮箱</th><th>昵称</th><th>租户</th><th>余额</th><th>订单数</th><th>状态</th><th>最近登录</th><th>操作</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+            renderCustomerPager();
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+
+        function renderCustomerPager() {
+            const el = document.getElementById('customers-pager');
+            if (!el) return;
+            const ps = _customers.page_size || CUSTOMER_PAGE_SIZE;
+            const total = _customers.total || 0;
+            const totalPages = Math.max(1, Math.ceil(total / ps));
+            const page = _customers.page || 1;
+            const from = total ? (page - 1) * ps + 1 : 0;
+            const to = Math.min(total, page * ps);
+            el.innerHTML = '<span class="pagination-meta">共 ' + total + ' 位顾客 · 第 ' + page + ' / ' + totalPages + ' 页（' + from + '-' + to + '）</span>' +
+                '<span class="pagination">' +
+                '<button type="button" ' + (page <= 1 ? 'disabled' : '') + ' onclick="customerPage(-1)">上一页</button>' +
+                '<button type="button" ' + (page >= totalPages ? 'disabled' : '') + ' onclick="customerPage(1)">下一页</button>' +
+                '</span>';
+        }
+
+        function customerPage(delta) {
+            const ps = _customers.page_size || CUSTOMER_PAGE_SIZE;
+            const totalPages = Math.max(1, Math.ceil((_customers.total || 0) / ps));
+            const next = Math.min(totalPages, Math.max(1, (_customers.page || 1) + delta));
+            if (next === _customers.page) return;
+            loadCustomers(next).catch(() => { });
+        }
+
+        // ---- 详情抽屉（四 tab）----
+        function closeCustomerDetail() {
+            const b = document.getElementById('customer-detail-backdrop');
+            if (b) b.style.display = 'none';
+            _customerDetail = null;
+            _customerOrders = { items: [], total: 0, page: 1, page_size: CUSTOMER_PAGE_SIZE, biz_type: '', status: '', loading: false, error: '' };
+        }
+
+        async function openCustomerDetail(id) {
+            const backdrop = document.getElementById('customer-detail-backdrop');
+            const body = document.getElementById('customer-detail-body');
+            document.getElementById('customer-detail-title').textContent = '顾客详情';
+            body.innerHTML = custLoadingOrEmpty('加载中…');
+            backdrop.style.display = 'flex';
+            _customerDetail = { id: String(id), detail: null, wallet: null, entitlements: null, walletError: '', entitlementsError: '' };
+            _customerTab = 'overview';
+            _customerOrders = { items: [], total: 0, page: 1, page_size: CUSTOMER_PAGE_SIZE, biz_type: '', status: '', loading: false, error: '' };
+            try {
+                const res = await authFetch('/api/admin/customers/' + id);
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '顾客不存在或加载失败');
+                _customerDetail.detail = data.data || {};
+            } catch (e) {
+                body.innerHTML = '<div style="color:#e05252; padding:20px 0;">' + escapeHtml(e.message || '顾客不存在或加载失败') + '</div>';
+                return;
+            }
+            const c = (_customerDetail.detail && _customerDetail.detail.customer) || {};
+            document.getElementById('customer-detail-title').textContent = '顾客详情 · ' + (c.email || c.client_id || id);
+            renderCustomerTab('overview');
+            await Promise.all([loadCustomerWallet(id), loadCustomerEntitlements(id), loadCustomerOrders(1)]);
+            if (_customerDetail && String(_customerDetail.id) === String(id)) renderCustomerTab(_customerTab);
+        }
+
+        async function loadCustomerWallet(id) {
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/wallet');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '账单加载失败');
+                if (_customerDetail) { _customerDetail.wallet = data.data || {}; _customerDetail.walletError = ''; }
+            } catch (e) {
+                if (_customerDetail) { _customerDetail.wallet = null; _customerDetail.walletError = e.message || '账单加载失败'; }
+            }
+        }
+
+        async function loadCustomerEntitlements(id) {
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/entitlements');
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '权益加载失败');
+                if (_customerDetail) { _customerDetail.entitlements = data.data || {}; _customerDetail.entitlementsError = ''; }
+            } catch (e) {
+                if (_customerDetail) { _customerDetail.entitlements = null; _customerDetail.entitlementsError = e.message || '权益加载失败'; }
+            }
+        }
+
+        async function loadCustomerOrders(page) {
+            if (!_customerDetail) return;
+            const bizEl = document.getElementById('cust-order-biz');
+            const stEl = document.getElementById('cust-order-status');
+            _customerOrders.biz_type = bizEl ? bizEl.value : _customerOrders.biz_type;
+            _customerOrders.status = stEl ? stEl.value : _customerOrders.status;
+            _customerOrders.page = page || 1;
+            _customerOrders.loading = true;
+            _customerOrders.error = '';
+            if (_customerTab === 'orders') renderCustomerTab('orders');
+            const qs = new URLSearchParams();
+            if (_customerOrders.biz_type) qs.set('biz_type', _customerOrders.biz_type);
+            if (_customerOrders.status) qs.set('status', _customerOrders.status);
+            qs.set('page', String(_customerOrders.page));
+            qs.set('page_size', String(_customerOrders.page_size));
+            try {
+                const res = await authFetch('/api/admin/customers/' + _customerDetail.id + '/orders?' + qs.toString());
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '订单加载失败');
+                const d = data.data || {};
+                _customerOrders.items = d.items || [];
+                _customerOrders.total = Number(d.total || 0);
+            } catch (e) {
+                _customerOrders.items = [];
+                _customerOrders.total = 0;
+                _customerOrders.error = e.message || '订单加载失败';
+            }
+            _customerOrders.loading = false;
+            if (_customerTab === 'orders') renderCustomerTab('orders');
+        }
+
+        function switchCustomerTab(tab) { renderCustomerTab(tab); }
+
+        function renderCustomerTab(tab) {
+            _customerTab = tab;
+            document.querySelectorAll('#customer-detail-tabs [data-ctab]').forEach(function (b) {
+                b.classList.toggle('btn-primary', b.getAttribute('data-ctab') === tab);
+            });
+            const body = document.getElementById('customer-detail-body');
+            if (!body || !_customerDetail || !_customerDetail.detail) return;
+            if (tab === 'entitlements') body.innerHTML = renderCustomerEntitlements();
+            else if (tab === 'orders') body.innerHTML = renderCustomerOrders();
+            else if (tab === 'wallet') body.innerHTML = renderCustomerWallet();
+            else body.innerHTML = renderCustomerOverview();
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+
+        function renderCustomerOverview() {
+            const d = _customerDetail.detail || {};
+            const c = d.customer || {};
+            const s = d.stats || {};
+            return '<div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; margin-bottom:16px;">' +
+                custStatCard('充值合计', custMoney(s.recharge_total)) +
+                custStatCard('消费合计', custMoney(s.consume_total)) +
+                custStatCard('当前余额', custMoney(c.balance)) +
+                custStatCard('订单数 / 权益数', (s.orders_count || 0) + ' / ' + (s.entitlements_count || 0)) +
+                '</div><div>' +
+                custRow('邮箱', custText(c.email)) +
+                custRow('昵称', custText(c.display_name)) +
+                custRow('租户', custText(c.tenant_name) + (c.client_id ? ' <span style="color:var(--text-dim);font-size:11px;">' + escapeHtml(c.client_id) + '</span>' : '')) +
+                custRow('状态', custStatusBadge(c.status) + (c.must_change_password ? ' <span class="status-badge" style="background:rgba(245,158,11,.15);color:#b45309;">需改密</span>' : '')) +
+                custRow('最近登录', custText(c.last_login_at)) +
+                custRow('创建时间', custText(c.created_at)) +
+                custRow('备注', custText(c.admin_note)) +
+                '</div>';
+        }
+
+        function renderCustomerEntitlements() {
+            if (_customerDetail.entitlementsError) return custLoadingOrEmpty(_customerDetail.entitlementsError);
+            if (_customerDetail.entitlements === null) return custLoadingOrEmpty('加载中…');
+            const items = (_customerDetail.entitlements && _customerDetail.entitlements.items) || [];
+            if (!items.length) return custLoadingOrEmpty('暂无权益');
+            const rows = items.map(function (e) {
+                const st = e.status === 'active'
+                    ? '<span class="status-badge status-success">有效</span>'
+                    : '<span class="status-badge" style="opacity:.72;">' + custText(e.status) + '</span>';
+                return '<tr><td>' + custText(e.display_name || e.rule_code) + '</td>' +
+                    '<td>' + (e.remaining_uses != null ? e.remaining_uses : '—') + '</td>' +
+                    '<td>' + (e.total_uses != null ? e.total_uses : '—') + '</td>' +
+                    '<td>' + st + '</td>' +
+                    '<td>' + custText(e.source) + '</td>' +
+                    '<td>' + custText(e.expires_at) + '</td></tr>';
+            }).join('');
+            return '<div class="table-container"><table><thead><tr>' +
+                '<th>权益包</th><th>剩余次数</th><th>总次数</th><th>状态</th><th>来源</th><th>到期</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        }
+
+        function renderCustomerOrders() {
+            const o = _customerOrders;
+            const sel = function (v, cur) { return v === cur ? ' selected' : ''; };
+            const bizOpts = '<option value=""' + sel('', o.biz_type) + '>全部类型</option>' +
+                Object.keys(CUSTOMER_BIZ_LABELS).map(function (k) {
+                    return '<option value="' + k + '"' + sel(k, o.biz_type) + '>' + escapeHtml(CUSTOMER_BIZ_LABELS[k]) + '</option>';
+                }).join('');
+            const stOpts = '<option value=""' + sel('', o.status) + '>全部状态</option>' +
+                Object.keys(CUSTOMER_ORDER_STATUS_LABELS).map(function (k) {
+                    return '<option value="' + k + '"' + sel(k, o.status) + '>' + escapeHtml(CUSTOMER_ORDER_STATUS_LABELS[k]) + '</option>';
+                }).join('');
+            let html = '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;">' +
+                '<select id="cust-order-biz" class="asset-input" style="width:130px;" onchange="loadCustomerOrders(1)">' + bizOpts + '</select>' +
+                '<select id="cust-order-status" class="asset-input" style="width:130px;" onchange="loadCustomerOrders(1)">' + stOpts + '</select>' +
+                '<button type="button" class="btn" onclick="loadCustomerOrders(1)">刷新</button>' +
+                '<span style="margin-left:auto; color:var(--text-dim); font-size:12px;">共 ' + (o.total || 0) + ' 笔</span></div>';
+            if (o.loading) return html + custLoadingOrEmpty('加载中…');
+            if (o.error) return html + custLoadingOrEmpty(o.error);
+            if (!o.items.length) return html + custLoadingOrEmpty('暂无订单');
+            const rows = o.items.map(function (it) {
+                return '<tr><td>' + custBizBadge(it.biz_type) + '</td>' +
+                    '<td><span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; word-break:break-all;">' + custText(it.no) + '</span>' + (it.client_order_no ? '<div style="color:var(--text-dim);font-size:11px;">' + escapeHtml(it.client_order_no) + '</div>' : '') + '</td>' +
+                    '<td>' + custText(it.sku_name || it.sku) + '</td>' +
+                    '<td>' + (it.qty != null ? it.qty : '—') + '</td>' +
+                    '<td>' + custMoney(it.amount) + '</td>' +
+                    '<td>' + custOrderStatusBadge(it.status) + '</td>' +
+                    '<td>' + custText(it.source) + '</td>' +
+                    '<td>' + (it.cdk ? '<span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; word-break:break-all;">' + escapeHtml(it.cdk) + '</span>' : '—') + '</td></tr>';
+            }).join('');
+            return html + '<div class="table-container"><table><thead><tr>' +
+                '<th>类型</th><th>订单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>来源</th><th>卡密</th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        }
+
+        function renderCustomerWallet() {
+            if (_customerDetail.walletError) return custLoadingOrEmpty(_customerDetail.walletError);
+            if (_customerDetail.wallet === null) return custLoadingOrEmpty('加载中…');
+            const w = _customerDetail.wallet || {};
+            const s = w.summary || {};
+            const ledger = w.ledger || [];
+            const recharges = w.recharges || [];
+            let html = '<div style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; margin-bottom:16px;">' +
+                custStatCard('充值合计', custMoney(s.recharge_total)) +
+                custStatCard('人工补录合计', custMoney(s.adjust_total)) +
+                custStatCard('消费合计', custMoney(s.consume_total)) +
+                custStatCard('退款合计', custMoney(s.refund_total)) +
+                custStatCard('当前余额', custMoney(s.balance)) +
+                '</div>';
+            html += '<h4 style="margin:0 0 8px; font-size:13px;">余额流水</h4>';
+            if (!ledger.length) {
+                html += custLoadingOrEmpty('暂无流水');
+            } else {
+                const lrows = ledger.map(function (x) {
+                    const typeLabel = CUSTOMER_LEDGER_TYPE_LABELS[x.type] || x.type || '—';
+                    const changeColor = Number(x.change || 0) < 0 ? '#b91c1c' : '#047857';
+                    return '<tr><td>' + custText(x.created_at) + '</td>' +
+                        '<td>' + escapeHtml(typeLabel) + '</td>' +
+                        '<td style="color:' + changeColor + ';">' + custMoneySigned(x.change) + '</td>' +
+                        '<td>' + custMoney(x.balance_after) + '</td>' +
+                        '<td>' + custText(x.ref) + '</td>' +
+                        '<td>' + custText(x.note) + '</td></tr>';
+                }).join('');
+                html += '<div class="table-container"><table><thead><tr>' +
+                    '<th>时间</th><th>类型</th><th>变动</th><th>变动后余额</th><th>关联单号</th><th>备注</th>' +
+                    '</tr></thead><tbody>' + lrows + '</tbody></table></div>';
+            }
+            html += '<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin:16px 0 8px;">' +
+                '<h4 style="margin:0; font-size:13px;">充值单</h4>' +
+                (adminCan('customer.write') ? '<button type="button" class="btn" style="padding:3px 10px; font-size:12px;" onclick="openManualCredit()">人工补录充值</button>' : '') +
+                '</div>';
+            if (!recharges.length) {
+                html += custLoadingOrEmpty('暂无充值单');
+            } else {
+                const rrows = recharges.map(function (r) {
+                    const st = CUSTOMER_RECHARGE_STATUS_LABELS[r.status] || r.status || '—';
+                    return '<tr><td><span style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;">' + custText(r.recharge_no) + '</span></td>' +
+                        '<td>' + custMoney(r.amount) + (r.currency ? ' <span style="color:var(--text-dim);font-size:11px;">' + escapeHtml(r.currency) + '</span>' : '') + '</td>' +
+                        '<td>' + custText(r.channel) + '</td>' +
+                        '<td>' + escapeHtml(st) + '</td>' +
+                        '<td>' + custText(r.paid_at || r.created_at) + '</td></tr>';
+                }).join('');
+                html += '<div class="table-container"><table><thead><tr>' +
+                    '<th>充值单号</th><th>金额</th><th>渠道</th><th>状态</th><th>时间</th>' +
+                    '</tr></thead><tbody>' + rrows + '</tbody></table></div>';
+            }
+            return html;
+        }
+
+        // ---- v2.9.0：客服人工补录充值（链上认单漏单的人工兜底）----
+        function openManualCredit() {
+            const detail = _customerDetail || {};
+            const c = (detail.detail && detail.detail.customer) || {};
+            if (!detail.id || !c.email) return;
+            const sub = document.getElementById('cc-sub');
+            if (sub) sub.textContent = '顾客 ' + c.email + ' · 当前余额 ' + custMoney(c.balance);
+            ['cc-amount', 'cc-tx', 'cc-recharge', 'cc-reason'].forEach(function (k) {
+                const el = document.getElementById(k); if (el) el.value = '';
+            });
+            const err = document.getElementById('cc-err'); if (err) err.textContent = '';
+            const bd = document.getElementById('cust-credit-backdrop'); if (bd) bd.style.display = 'flex';
+        }
+        function closeManualCredit() {
+            const bd = document.getElementById('cust-credit-backdrop'); if (bd) bd.style.display = 'none';
+        }
+        async function submitManualCredit() {
+            const detail = _customerDetail || {};
+            const c = (detail.detail && detail.detail.customer) || {};
+            const id = detail.id;
+            const errEl = document.getElementById('cc-err');
+            const setErr = function (m) { if (errEl) errEl.textContent = m || ''; };
+            setErr('');
+            const amount = Number((document.getElementById('cc-amount') || {}).value);
+            const txHash = String((document.getElementById('cc-tx') || {}).value || '').trim();
+            const rechargeNo = String((document.getElementById('cc-recharge') || {}).value || '').trim();
+            const reason = String((document.getElementById('cc-reason') || {}).value || '').trim();
+            if (!isFinite(amount) || amount <= 0) return setErr('请输入有效的补录金额（大于 0）');
+            if (!txHash) return setErr('链上交易哈希必填（人工补录须留链上凭证）');
+            const msg = '确认为顾客 ' + (c.email || id) + ' 人工补录充值 $' + amount.toFixed(2) + '？'
+                + '\n链上交易哈希：' + txHash
+                + (rechargeNo ? '\n关联充值单：' + rechargeNo : '')
+                + '\n\n补录后余额立即增加，同一哈希不可重复补录。';
+            if (!confirm(msg)) return;
+            const btn = document.getElementById('cc-submit');
+            try {
+                if (btn) btn.disabled = true;
+                const res = await authFetch('/api/admin/customers/' + id + '/wallet/credit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount_cents: Math.round(amount * 100), tx_hash: txHash, recharge_no: rechargeNo, reason: reason })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '补录失败');
+                closeManualCredit();
+                showMessage('已补录 ' + custMoney(data.data.amount) + '，当前余额 ' + custMoney(data.data.balance), 'success');
+                await openCustomerDetail(id);
+                switchCustomerTab('wallet');
+            } catch (e) {
+                setErr(e.message || '补录失败');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+        window.openManualCredit = openManualCredit;
+        window.closeManualCredit = closeManualCredit;
+        window.submitManualCredit = submitManualCredit;
+
+        // ---- 写操作：冻结 / 解冻 / 重置密码 / 编辑 / 开号 ----
+        async function fetchCustomerPendingOrders(id) {
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/orders?status=created&page=1&page_size=1');
+                const data = await res.json();
+                if (!res.ok || !data.success) return null;
+                return Number((data.data && data.data.total) || 0);
+            } catch (_) { return null; }
+        }
+
+        async function toggleCustomerStatus(id) {
+            const c = customerById(id) || {};
+            const email = c.email || ('顾客 ' + id);
+            const currentStatus = c.status || 'active';
+            const target = currentStatus === 'active' ? 'disabled' : 'active';
+            const isFreeze = target === 'disabled';
+            const action = isFreeze ? '冻结' : '解冻';
+            let extra = '';
+            if (isFreeze) {
+                const pending = await fetchCustomerPendingOrders(id);
+                extra = '\n当前余额：' + custMoney(c.balance);
+                if (pending != null) extra += '\n未完成订单：' + pending + ' 笔';
+                extra += '\n冻结后该顾客将无法登录与下单，已有余额与订单保留。';
+            } else {
+                extra = '\n解冻后该顾客将立即恢复登录与下单。';
+            }
+            if (!confirm('确定' + action + '顾客 ' + email + ' 吗？' + extra)) return;
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: target })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '操作失败');
+                showMessage('已' + action + '顾客 ' + email, 'success');
+                if (_customerDetail && String(_customerDetail.id) === String(id)) closeCustomerDetail();
+                await loadCustomers(_customers.page);
+            } catch (e) {
+                showMessage(e.message || '操作失败', 'error');
+            }
+        }
+
+        async function resetCustomerPassword(id) {
+            const c = customerById(id) || {};
+            const email = c.email || ('顾客 ' + id);
+            if (!confirm('确定为顾客 ' + email + ' 重置密码吗？\n将生成一次性临时密码（仅显示一次），顾客下次登录须强制修改密码。')) return;
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '重置失败');
+                const pwd = (data.data && data.data.temp_password) || '';
+                if (!pwd) { showMessage('已重置（未返回临时密码，请让顾客走找回流程）', 'warning'); return; }
+                showTempPasswordDialog(pwd, '顾客 ' + email);
+            } catch (e) {
+                showMessage(e.message || '重置失败', 'error');
+            }
+        }
+
+        function showTempPasswordDialog(pwd, subject) {
+            _customerTempPwd = pwd || '';
+            const hint = document.getElementById('customer-temp-hint');
+            if (hint) hint.textContent = (subject ? subject + '：' : '') + '此密码仅显示一次，请立即复制并安全转交；顾客下次登录须强制修改。';
+            const val = document.getElementById('customer-temp-value');
+            if (val) val.textContent = pwd || '—';
+            const b = document.getElementById('customer-temp-backdrop');
+            if (b) b.style.display = 'flex';
+        }
+        function closeTempPasswordDialog() {
+            _customerTempPwd = '';
+            const b = document.getElementById('customer-temp-backdrop');
+            if (b) b.style.display = 'none';
+        }
+        function copyTempPassword() {
+            const pwd = _customerTempPwd;
+            if (!pwd) return;
+            const done = function () { showMessage('已复制到剪贴板', 'success'); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(pwd).then(done).catch(function () { fallbackCopy(pwd, done); });
+            } else {
+                fallbackCopy(pwd, done);
+            }
+        }
+        function fallbackCopy(text, cb) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+                if (cb) cb();
+            } catch (_) { showMessage('复制失败，请手动选择复制', 'error'); }
+        }
+
+        function openCustomerCreateDialog() {
+            ['cust-new-tenant', 'cust-new-email', 'cust-new-name', 'cust-new-pass'].forEach(function (id) {
+                const el = document.getElementById(id); if (el) el.value = '';
+            });
+            const tEl = document.getElementById('cust-new-tenant');
+            const f = customerFilters();
+            if (tEl && f.tenant) tEl.value = f.tenant;
+            const b = document.getElementById('customer-create-backdrop');
+            if (b) b.style.display = 'flex';
+        }
+        function closeCustomerCreateDialog() {
+            const b = document.getElementById('customer-create-backdrop');
+            if (b) b.style.display = 'none';
+        }
+        async function confirmCreateCustomer() {
+            const client_id = (document.getElementById('cust-new-tenant').value || '').trim();
+            const email = (document.getElementById('cust-new-email').value || '').trim();
+            const display_name = (document.getElementById('cust-new-name').value || '').trim();
+            const password = (document.getElementById('cust-new-pass').value || '').trim();
+            if (!client_id) { showMessage('请填写租户 client_id', 'error'); return; }
+            if (!email) { showMessage('请填写邮箱', 'error'); return; }
+            const payload = { client_id: client_id, email: email };
+            if (display_name) payload.display_name = display_name;
+            if (password) payload.password = password;
+            const ok = document.getElementById('customer-create-ok');
+            if (ok) ok.disabled = true;
+            try {
+                const res = await authFetch('/api/admin/customers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '创建失败');
+                closeCustomerCreateDialog();
+                showMessage('已创建顾客 ' + email, 'success');
+                const temp = data.data && data.data.temp_password;
+                if (temp) showTempPasswordDialog(temp, '新顾客 ' + email);
+                await loadCustomers(1);
+            } catch (e) {
+                showMessage(e.message || '创建失败', 'error');
+            } finally {
+                if (ok) ok.disabled = false;
+            }
+        }
+
+        async function editCustomerMeta(id) {
+            const nameEl = document.getElementById('cust-meta-name');
+            const noteEl = document.getElementById('cust-meta-note');
+            if (nameEl) nameEl.value = '';
+            if (noteEl) noteEl.value = '';
+            _customerMetaId = String(id);
+            const cached = (_customerDetail && String(_customerDetail.id) === String(id) && _customerDetail.detail && _customerDetail.detail.customer) || null;
+            if (cached) {
+                if (nameEl) nameEl.value = cached.display_name || '';
+                if (noteEl) noteEl.value = cached.admin_note || '';
+            } else {
+                try {
+                    const res = await authFetch('/api/admin/customers/' + id);
+                    const data = await res.json();
+                    if (res.ok && data.success && data.data && data.data.customer) {
+                        const c = data.data.customer;
+                        if (nameEl) nameEl.value = c.display_name || '';
+                        if (noteEl) noteEl.value = c.admin_note || '';
+                    }
+                } catch (_) { }
+            }
+            const b = document.getElementById('customer-meta-backdrop');
+            if (b) b.style.display = 'flex';
+        }
+        function closeCustomerMetaDialog() {
+            _customerMetaId = null;
+            const b = document.getElementById('customer-meta-backdrop');
+            if (b) b.style.display = 'none';
+        }
+        async function saveCustomerMeta() {
+            if (!_customerMetaId) return;
+            const id = _customerMetaId;
+            const display_name = (document.getElementById('cust-meta-name').value || '').trim();
+            const admin_note = (document.getElementById('cust-meta-note').value || '').trim();
+            const ok = document.getElementById('customer-meta-ok');
+            if (ok) ok.disabled = true;
+            try {
+                const res = await authFetch('/api/admin/customers/' + id + '/note', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ display_name: display_name, admin_note: admin_note })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error((data && data.message) || '保存失败');
+                closeCustomerMetaDialog();
+                showMessage('已保存', 'success');
+                await loadCustomers(_customers.page);
+                if (_customerDetail && String(_customerDetail.id) === String(id) && _customerDetail.detail && _customerDetail.detail.customer) {
+                    _customerDetail.detail.customer.display_name = display_name;
+                    _customerDetail.detail.customer.admin_note = admin_note;
+                    renderCustomerTab(_customerTab);
+                }
+            } catch (e) {
+                showMessage(e.message || '保存失败', 'error');
+            } finally {
+                if (ok) ok.disabled = false;
+            }
+        }
 
         bootAdmin();
     </script>

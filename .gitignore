@@ -134,3 +134,14 @@ logs/v125-ux/
 logs/v126-ui/
 logs/v126-verify/
 logs/ff-trial-report*.json
+
+# --- Local IDE / assistant tooling data (never committed) ---
+.trae/
+.workbuddy/
+
+# --- Verification screenshots under logs/ are one-off debug artefacts ---
+# Report JSONs stay tracked; PNG walkthrough evidence stays local.
+logs/**/*.png
+
+# --- Runtime status snapshot written by tools/xboard-patch-check.js ---
+data/xboard-patch-status.json

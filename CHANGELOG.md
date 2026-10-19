@@ -9,6 +9,518 @@
 
 ---
 
+## v2.17.1 · 2026-10-18 · 前台弹层生命周期收口：修「购买卡密弹层压住兑换页」+「后开的弹层被先开的盖住」
+
+**一句话概括**：用户报真实缺陷 ——「在**购买卡密**弹层点『**去兑换**』，页面已切到「兑换卡密」，但**购买卡密弹层仍压在最前面**把新页面遮住了」。**根因两条**：① `go(view)` 切换视图时**从不收弹层**；② 全站 `.modal` 的 z-index **同为 100**，同值时按 **DOM 顺序**绘制 —— `#ckModal` 在 DOM 中排在 `#rcModal`/`#authModal` **之后**，所以在 ckModal 里点「去充值」唤起的充值弹层、点登录唤起的登录弹层，都会被 ckModal 反过来盖住。本版把弹层生命周期收口为两条铁律：**① 切页必收全部弹层；② 后开的弹层一定压在前一个之上**。
+
+### 变更
+
+- **弹层生命周期统一（`public/site/index.html`）**：
+  - 新增 **`openModal(id)`**：打开弹层前登记 **z-index 堆叠**（无弹层展示时归位 101，否则 +1），保证「后开的弹层」永远压在前一个之上 —— 修复 ckModal 内「去充值 → rcModal 被盖住」「401 → 登录弹层被盖住」两类层级残留。
+  - 新增 **`closeAllModals()`**：收掉 8 个业务弹层（help/auth/rc/rcLeave/guide/order/ck/as）并调 `closeRecharge()` 一并停掉充值倒计时与链上轮询；**`go(view)` 首行调用它** —— 修复「弹层里点『去兑换』跳页后遮罩残留」。
+  - **例外**：`#fpModal`（强制首改密码闸门）**不参与自动关闭**，避免切页绕过改密；全站弹层展示统一改走 `openModal()`（不再直接 `classList.add('show')`）。
+- **同类问题排查结论（全站）**：主站前台 `public/site/index.html` 共 **4 处**（① 购买卡密弹层「去兑换」留下遮罩 ← 用户上报；② **订单详情卡密单「去兑换」** 留下遮罩；③ **购买卡密弹层「去充值」** → 充值弹层被购买弹层盖住；④ **购买卡密弹层会话失效(401)唤起登录** → 登录弹层被盖住）。其余前台 **0 处**：租户白标前台 `public/tenant/index.html`（仅 1 个登录弹层，且 `closeAuth()` 先于 `go()`）、`public/api-portal.html`（弹层内无跳页入口）、旧落地页 `public/index.html`（无弹层）。
+- **购买卡密「去充值 → 到账」回流（`public/site/index.html`）**：`confirmRecharge` 到账成功时，若 `#ckModal` 仍展示则调 `ckRefreshBill()` 刷新账单（余额/还差/可购买）—— 使「从购买卡密弹层去充值、到账后关掉充值弹层即可继续购买」闭环（不刷新会残留「余额不足」旧账单）。
+- **测试基建补强（`tools/_v2190_modal_layer_verify.js`，新增）**：9 条用例 / 16 项断言（功能 F1~F5 + 体验 U1~U3），含**源码守卫**（除 `fpModal` 外禁止直接 `classList.add('show')` 开弹层；`go()` 首行必须 `closeAllModals()`）与**命中测试**（`document.elementFromPoint` 证明弹层内按钮真能被点到，而非被透明遮罩挡住）。
+
+### 验证
+
+- **验收 `tools/_v2190_modal_layer_verify.js`（Playwright + MySQL）16 PASS / 0 FAIL / 0 SKIP**：**F1 购买卡密弹层「去兑换」→ 切到兑换页且弹层全收**（`modals=[]`，页面上 0 遮罩）；**F2 订单详情「去兑换」→ 切页 + 弹层全收**（并带卡密直入向导、跳过手输步）；**F3 购买卡密弹层「去充值」→ 充值弹层压在最上层**（`rcModal:102 > ckModal:101`）且「生成收款码」按钮**可被命中**；**F4 购买卡密弹层会话失效唤起登录**（401 分支同一路径 `clearSession()+openAuth('login')`）→ 登录弹层在最上层、邮箱框可输入；**F5 源码守卫**（弹层展示统一走 `openModal()` + `go()` 首行 `closeAllModals()`）；**U1 跳页后顶部导航可被命中**（无不可见遮罩）；**U1.2 落点不丢失**；**U2 关掉充值弹层后回到购买卡密弹层**（上下文不丢、仍可继续购买）；**U2.2 购买卡密弹层「去充值」并真的充到账** → 充值弹层自动收起 + **账单同步刷新**（「还差」消失、恢复可购买）；**U3 嵌套弹层不回归**（充值弹层内「看教程」→ 教程压最上层 → 关掉后回到充值弹层）。截图 `logs/v2190-modal-layer/`。脚本自清理（顾客/订单/卡密/流水/充值单）。
+- **回归（未回退）**：代充双轨 `tools/_v2170_dual_topup_verify.js` **22 PASS / 0 FAIL / 0 SKIP**（直接代充冻结→核销/解冻、卡密代充 N 卡、幂等 + UX U1~U5）。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+
+### 下一步
+
+- **旧用例的假阳性需一并纠正（本轮只补新脚本）**：`tools/_v2170_dual_topup_verify.js` 第 259 行用 `#ck-done .btn.primary:last-of-type` 点「去兑换」，实际命中的是**「一键复制全部卡密」**（`:last-of-type` 按元素类型判定，同屏两个 primary 按钮时先命中的那个），随后又手工 `closeCdkBuy()` 收场 —— **这正是该缺陷长期漏检的原因**（详见 v2.17.1 排查结论：用例只断言「入口存在」、从不点它，且用「手工收弹层」掩盖了残留）。
+- **✅ 规范沉淀（2026-10-19 已落地）**：两条铁律已写入 [`docs/开发规范.md` §5.1「前端弹层生命周期（两条铁律 · v2.17.1 起强制）」](docs/开发规范.md) —— ①**切页必收弹层**（`go(view)` 首行 `closeAllModals()`）②**弹层展示必须走 `openModal(id)`**（禁止直接 `classList.add('show')`），并写清**唯一例外** `#fpModal`、**新增弹层的连带动作**（id 必须进 `AUTO_CLOSE_MODALS`；带倒计时/轮询的弹层要在 `closeAllModals()` 里一并清副作用）、**怎么验证**（跑 `tools/_v2190_modal_layer_verify.js` 的 F5 源码守卫 + 浏览器断言），以及本次漏检的血泪教训；`§9 自检清单` 同步新增一条「动了前台弹层必须跑该脚本」。属纯文档修订（不动代码）故不升版本号。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.17.0 · 2026-10-18 · 代充双轨：直接代充（冻结→核销/解冻）与卡密代充（即扣→发 N 张卡密凭证）彻底分轨
+
+**一句话概括**：把「代充」拆成**两条互不干扰的业务路径** —— **直接代充**＝顾客输入 Session 下单，平台**先冻结**该单金额，向上游发起开通，**成功才扣款、失败即解冻**；**卡密代充**＝顾客选数量下单，平台**立即扣款并发放 N 张卡密凭证**，订单即刻完成，顾客之后**随时**在「兑换卡密」页输入卡密 + Session 完成开通。**铁律：完全不改 KC 原生 CDK 发放/兑换核心**（`cdk_codes` / `integration_cdk_issue` / `store.issueCdkByRef` / `POST /api/verify-cdk` / `POST /api/run-process` 语义与实现一字未改），改动只落在**自有订单层**。
+
+### 变更
+
+- **数据层（`mysql-store.js`）**：
+  - `kc_customers` 加 **`held_cents`**（冻结额，分；`balance_cents` 语义收敛为「**可用**余额」）。容错 ALTER。
+  - `kc_customer_wallet_ledger.type` ENUM 扩 **`hold`/`capture`/`release`**（MODIFY，幂等）。
+  - `kc_api_orders` 加三列（容错 ALTER）：**`fulfill_mode` ENUM('auto','direct','cdk') 默认 `auto`**（`auto`=历史/对外 API/非代充的即时交付口径，**默认值即历史语义，既有单不受影响**）、**`hold_cents`**（该单当前冻结额，0=无冻结，作幂等闸门）、**`cdk_list_json`**（卡密代充的 N 张卡密数组；`cdk` 列保留=首卡，兼容原生开通引用与既有对账）。
+- **后端（`server.js`）**：
+  - 新增冻结三件套 helper：**`holdCustomerFunds`**（可用→冻结，余额不足即拒）、**`captureOrderHold`**（冻结转扣款：可用余额在冻结时已离开，故只减冻结额、记 `capture` 流水 change=0）、**`releaseOrderHold`**（冻结退回可用余额 + `release` 流水）。三者均以「**订单状态原子改判 + `hold_cents>0`**」为准入闸门（`affectedRows=0` 直接跳过），绝不重复加减。
+  - **新增平行下单核心 `createDirectTopupOrderCore`**（不复用 `createApiOrderCore` —— 后者是「即扣+发卡」）：幂等 → 锁价 60s → 3% 漂移拦截 → **冻结** → 落单 `status='created'` → **内部发 1 张「不展示给顾客」的卡密**驱动原生开通（发卡失败则立即解冻并置 failed）。
+  - **新增 `createCdkTopupOrderCore` + `POST /api/tenant/orders/cdk`**：定价与直接线**同源**（复用 `tenantBatchPlan`，含权益分配，保证「账单价=结算价」）→ **立即扣款** → `issueCdkByRef(ourOrderNo#1..#N)` 发 **N 张真实卡密** → 落单 `status='delivered'`、`fulfill_mode='cdk'`、`cdk_list_json`；部分发卡失败则整单退回（`refund` 流水 + 订单 failed）。
+  - **两处 worker 终态挂钩子**：本地 worker（`spawnActivationWorker`）与第三方 worker（`runGptApiWorker`）在 `success`/`failed`/异常落点调 **`settleDirectOrderByCdk(cdk, status, msg)`** → `success` 核销 / `failed` 解冻 / `manual`+`maintenance`+进行中**保持冻结**。
+  - **周期对账改造（`reconcileFailedActivationsOnce`）**：①**直接代充在途桶**（`fulfill_mode='direct' AND status='created' AND hold_cents>0`）按任务终态核销/解冻，**无任务且账龄 > `ACTIVATION_HOLD_UNSTARTED_TIMEOUT_MS`（默认 30 分钟）→ 超时解冻**（money 不长期挂起）；②已核销却事后失败的单沿用既有 `refundOrderOnActivationFailure`；③**卡密代充（`fulfill_mode='cdk'`）不参与退款对账**（卡密是顾客买到的凭证，兑换失败会回滚为未使用、顾客可重试）。
+  - `GET /api/tenant/orders` 增加下发 **`fulfill_mode` / `hold_cents` / `cdk_list`**；`GET /api/tenant/wallet` 增加下发 **`held` / `held_cents`**。
+- **前台（`public/site/index.html`）**：
+  - **详情页（代充品类）二选一**：新增 `#d-mode` 两张并列入口卡 —— **⚡ 直接代充**（输入 Session，说明「下单先冻结、开通成功才扣款、失败自动解冻」）/ **🎟️ 购买卡密**（先买凭证，之后随时兑换，可一次买多张）；不再默认直接进呈递向导，**两条流程各自独立**。
+  - **购买卡密弹层 `#ckModal`**：选数量（1~100）→ 账单（单价/权益抵扣/应付总额/当前余额，余额不足内联「去充值」）→ 下单 → **展示 N 张卡密凭证**（逐张复制 + 一键复制全部 + 「去兑换」）。
+  - **订单中心按 `fulfill_mode` 分支**：direct＝「已冻结·处理中 / 开通中（已冻结） / 已开通·已扣款 / 失败（已解冻）」，时间线改为「已下单 → 金额已冻结 / 已扣款 → 已提交开通 → 开通完成」；cdk＝详情展示 **卡密凭证列表**（N 张 + 去兑换），时间线「卡密已发放 → 待兑换」；auto 口径不变。
+  - **钱包**：新增「冻结中」区块（有冻结才出现）；流水类型标签扩 `冻结/扣款/解冻`。
+
+### 验证
+
+- **验收 `tools/_v2170_dual_topup_verify.js`（Playwright + MySQL）22 PASS / 0 FAIL / 0 SKIP**：**F1 直接代充下单＝冻结**（返回 `status=created` + 内部卡密；DB `fulfill_mode=direct`/`hold_cents=amount`；可用余额 `$200→$185`、冻结额 `0→$15`；流水 `hold`）；**F2 上游成功＝核销**（真跑 `POST /api/run-process` 到 `success`；订单 `delivered`、`hold_cents=0`、冻结归零、**可用余额不再变化**、流水 `capture`）；**F3 上游失败＝解冻**（构造 `failed` 任务 + 账龄 15 分钟，经启动首轮对账：订单 `failed`、冻结归零、**可用余额回补 +$15**、流水 `release(+amount)`）；**F4 卡密代充**（一次发 **N=2** 张、回溯 `cdk_list_json`、**即扣** $30 且**不产生冻结**、`/api/verify-cdk` 认卡）；**F5 幂等**（同单号重放 `reused=true`、卡密列表一致、余额不再减少）；**UX U1 二选一入口可辨 + 选「直接代充」进向导、U2 卡密弹层账单与 N 张凭证、U3 卡密订单详情凭证列表 +「去兑换」/直接单「已开通·已扣款」+ 时间线、U4 钱包流水含冻结/扣款/解冻、U5 全程 0 业务 console error**。截图 `logs/v2170-dual/`。脚本自清理（顾客/订单/卡密/流水/充值单）。
+- **回归（全绿）**：批量代充 `tools/_v2160_batch_topup_verify.js` **40 PASS / 0 FAIL / 0 SKIP**（已按新流程在详情页点「直接代充」后进向导；F5.5 仍证明「账单展示价=结算价」）；向导+匿名兑换 `tools/_v2150_wizard_verify.js` **19 PASS / 0 FAIL**（B3 已按新口径 `已开通 · 已扣款`）；订单中心 `tools/_v2163_order_activation_verify.js` **20 PASS / 0 FAIL**（auto 口径未回退）；版式 `tools/_v2161_detail_layout_verify.js` **21 PASS / 0 FAIL**；功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL**；`node --check server.js / mysql-store.js` 通过。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+- **数据核对**：新列已落库（`kc_api_orders.fulfill_mode/hold_cents/cdk_list_json`、`kc_customers.held_cents`、流水 ENUM 含 `hold/capture/release`）。
+
+### 下一步
+
+- **权益扣次时机**：直接线与卡密线目前仍在**下单成功即扣 1 次权益**（沿用既有口径）；若希望「开通成功才扣次、失败退回」，需把 grant/rule 快照落到订单上并在核销/解冻钩子里做退次（另案）。
+- **`manual`/`maintenance` 在途冻结**：目前保持冻结待人工，未接客服工单流（处置清单 §三 外链方案可复用）。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.16.3 · 2026-10-18 · 订单中心「开通状态」校准：流程已走完（账号已开通）不再显示「继续开通」
+
+**一句话概括**：用户报真实缺陷 ——「流程已经结束了，查看订单还显示**继续开通**，点击继续开通就进入到 CDK 兑换流程」。**根因**：KC 订单状态 `delivered` 的真实语义是「**已发放内部卡密**」，**不等于开通成功**（开通是另一条任务链）；而订单详情对代充单**无条件**按 `status==='delivered'` 渲染「继续开通」按钮 —— 于是**批量流程已把 3 个账号都开通成功后**，订单里仍显示「继续开通」，点下去还会把人送进「兑换卡密」向导（该卡密其实已被消费）。本版把**订单状态与开通状态分开表达**：订单接口随单下发该卡密的**最近一次开通任务状态**，前台据此渲染。
+
+### 变更
+
+- **后端（`server.js` · `GET /api/tenant/orders`）**：为每笔订单补三个字段 —— **`activation_status`**（`none` 从未启动 / `running` / `success` / `failed` / `maintenance` / `manual`）、`activation_message`、`activation_at`；取数用**一条 JOIN 查询**（`task_logs` 按 `cdk_code` 取 `MAX(id)` 的最近任务）覆盖全部订单，**不做 N+1**；同时补下发 **`biz_type`**（订单落库口径，让前台判定「是否代充单」不依赖目录是否已加载）。**未改 KC 原生 CDK 发放/兑换链路，未新增表。**
+- **前端（`public/site/index.html`）**：
+  - **订单详情「开通」列按真实开通状态渲染**（`topupActivationHtml`）：`success` → **「已开通」徽标（不渲染按钮）**；`running` → 「开通中…」；`failed` → 「开通失败（费用已退回）」；`maintenance`/`manual` → 维护中/需人工处理；**只有 `none`（确实没启动过开通，如批量流程里「未启动」的账号）才给「继续开通」按钮**，并附一行「该系统尚未启动开通，可在此手动继续」。
+  - **副标题由「订单状态 + 开通状态」合成**：`订单已完成 · 账号已开通` / `· 正在开通中` / `· 开通失败（款项已退回）` / `· 待开通（可手动继续开通）`。
+  - **列表页签计数与状态徽标同步归位**：`orderBucket`/`orderPill` 改为按订单对象判定（原 `statusPill(o.status)` 已删除）—— 已开通记「已完成」、开通失败记「失败」、未开通记「处理中」并显示「待开通」徽标。
+  - **订单进度时间线**（`timelineHtml`）按开通状态给 3/4 节点：已开通 → 「卡密已发放 → **开通完成**（账号权益已开通到你的 ChatGPT 账号）」；开通中 → 「开通中」；失败 → 「开通失败（含失败原因）→ 退款处理中」；未开通 → 「待开通（可在上方继续开通）」。**删除原误导性文案**「开通结果以订单状态与账号实际权益为准」。
+  - **代充单判定改为 `isTopupOrder(o)`**：优先 `biz_type==='topup'`，回落目录分类兜底（历史单兼容）。
+
+### 验证
+
+- **验收 `tools/_v2163_order_activation_verify.js`（Playwright + MySQL）20 PASS / 0 FAIL / 0 SKIP** —— 用**真实三种状态**跑：①真跑开通（`POST /api/run-process` 实测跑到 `success`）；②不建任务（未开通）；③构造一条 `failed` 任务。断言：接口 `activation_status` = success/none/failed 与 `biz_type` 均为 topup、**订单自身 status 仍为 delivered**（证明「订单状态」这一层没被改坏）；列表徽标 = 已完成 / 待开通 / 开通失败，页签计数 `全部3 · 处理中1 · 已完成1 · 失败1`；**已开通单详情 =「已开通」徽标且无「继续开通」按钮**、副标题「订单已完成 · 账号已开通」、时间线末节点「开通完成」；未开通单仍给「继续开通」+「尚未启动开通」说明、时间线末节点「待开通」、**点击仍能进兑换向导（手动补开通路径保留）**；开通失败单 = 「开通失败（费用已退回）」且无按钮、时间线含「退款处理中」；0 业务 console error。截图 `logs/v2163-order/`（含列表页与已开通单详情）。
+- **回归**：向导 + 匿名兑换 `tools/_v2150_wizard_verify.js` **19 PASS / 0 FAIL**（B3 断言随新口径同步）；批量代充 `tools/_v2160_batch_topup_verify.js` **40 PASS / 0 FAIL / 0 SKIP**；功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL**（自清理生效）；版式 `tools/_v2161_detail_layout_verify.js` 21 PASS（未受本轮影响）。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+
+### 下一步
+
+- **同一根因的下一处（待做）**：第 ⑤ 步（批量进度）里「未启动」的账号文案已指向「兑换卡密」页；若希望直接在订单页完成补开通（不走兑换页），可把「继续开通」做成**服务端排队补跑**（复用 `/api/run-process` + 订单里的 Session 已不存于服务端，故需要用户重新提供 Session —— 属产品选择）。
+- **`manual`/`maintenance` 态**目前只给文案提示，未接客服工单流（原处置清单 §三 的外链方案可复用）。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.16.2 · 2026-10-18 · 代充呈递向导版式精修：第 ① 步退役伪浏览器大框 + 地址独立成栏 + 标题与价签同行
+
+**一句话概括**：用户第二次反馈「页面还是很丑、布局很不均衡，例如第一步登录 ChatGPT，链接所占用的空间为什么那么大」。**先量化再改**：用 Playwright 量出每一步的实际渲染高度，确认根因是**装饰过度 + 信息密度过低** —— 第 ① 步的伪浏览器大框（`.wiz-browser`）**独占 208px、占整步高度 42%**，却只承载「地址栏 + 一行字 + 一个按钮」；面板顶部还被「标题 / 价签 / 说明」三行（121px）压着。本版按数据把每一步从「沉浸式大组件」改为「紧凑信息块」，**不动单列/两栏骨架**。
+
+### 变更
+
+- **量化（改前实测 · Playwright）**：步骤 ① panel **719px**（向导 495px，其中伪浏览器 208px）；步骤 ② panel 588px（向导 364px，ol 114px）；步骤 ③ panel 589px；面板顶部「标题+价签+说明」固定 **121px**。
+- **第 ① 步退役伪浏览器大框（`public/site/index.html`）**：改为 **「一句说明（左） + 主按钮『打开 ChatGPT ↗』（右）同排」** —— 宽度被真正用起来，纵向不留空；保留 🔒 安全提示（amber）与「查看视频教程」入口；文案里仍给出 `chatgpt.com` 站点名（不重复整条 https 地址栏）。整步高度 **495 → 283px（-43%）**、panel **719 → 437px（-39%）**。
+- **第 ② 步把地址从 `ol` 里提出来做独立「地址 + 复制地址」栏**（`.wiz-urlbar`）：地址一眼可见、复制按钮就在旁边；指引由 3 条纵列压成 **2 条单行**（去掉重复的「回到本页点下一步」）。ol **114 → 49px**。
+- **面板头部：商品名与价签同行**（`.d-head`）：`ChatGPT Plus 一个月  $9.00 ~~$15.00~~ /账号  用 1 次权益 · 省 $6.00` 一行读完（原为标题一行 + 价签一行 + 虚线分隔）；顶部 121 → **84px**。
+- **全局收紧间距**：`.wiz` 内边距 `18/16 → 16/14`、`.wiz-top` 下间距 `14 → 12`、`.wiz-p` `12 → 10`、`.wiz-note` `10 → 8`、`.wiz-acts` `12 → 10`、`.wiz-ol li` `8 → 6`；单列面板限宽 `960 → 880px`（把 ~100 字符的长行压回可读行宽）。
+- **文案去重**：详情页 `d-hint` 压成一行（不再重复 ①②③④⑤、不再重复「不需要账号密码」）；「支持批量」移到第 ② 步（粘贴前的决策点）。
+- **清理**：伪浏览器相关 CSS（`.wiz-browser/.wiz-bbar/.wiz-dot/.wiz-url/.wiz-bbody/.wiz-ai/.wiz-btxt`）与试用中的 `.wiz-ol.cols` 一并删除，不留死代码。
+
+### 验证
+
+- **版式验收 `tools/_v2161_detail_layout_verify.js`（Playwright）21 PASS / 0 FAIL / 0 SKIP**：U3.1 **第 ① 步装饰块计数 = 0**、「说明+按钮」行高 42px（≤70）；U3.2 第 ① 步 panel **437px ≤ 480**（原 719）；F2.3 第 ② 步地址独立成栏（`https://chatgpt.com/api/auth/session` + 复制地址）；F2.4 **2 条指引各占单行（h=21/21）**；U2.2 第 ② 步向导 345px；U1.1 商品名与价签**同一基线同行**（nameY=195 / priceY=198，priceX-nameX=243）；F3.x 价签口径「$9.00 $15.00/账号 用 1 次权益 · 省 $6.00」；F4.1 第 ④ 步账单仍含单价/总额/余额；**非代充仍是两栏**（临时建成品号实测后删除）；0 业务 console error。截图 `logs/v2161-detail-layout/`。
+- **回归**：向导 + 匿名兑换 `tools/_v2150_wizard_verify.js` **19 PASS / 0 FAIL**（断言随新 UI 同步：第 ① 步标题/站点入口、第 ② 步 2 条指引）；批量代充 `tools/_v2160_batch_topup_verify.js` **40 PASS / 0 FAIL / 0 SKIP**；功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL**（自清理生效）。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+
+### 下一步
+
+- **改后尺寸（供下次评审对照）**：步骤 ① panel **437**（原 719）· 步骤 ② **498**（原 588）· 步骤 ③ **529**（原 589）；向导 ① 283 / ② 345 / ③ 376。
+- **未做（等你定）**：第 ③ 步空态仍偏高（textarea 7 行占 ~150px），可缩到 5 行；第 ⑤ 步「已完成」态只有一行标题 + 表格，可考虑并入一步；移动端（≤768px）未跑自动化截图。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.16.1 · 2026-10-18 · 代充详情页版式修正：进入呈递向导后收起右栏价格盒 + 列表 CTA 按品类给意图
+
+**一句话概括**：用户反馈「代充商品页应该显示立即购买」「进入购买流程后右侧为什么一直有价格，这个布局非常丑」。复查确认 **v2.16.0 的改动已生效**（向导已展示、`立即购买`/数量已隐藏、批量提示已在），问题出在 **收尾没收干净**：右侧 `.buybox` 在代充场景下只剩「可购买 + 价格 + 小字」，成为一个**与左侧向导重复、大面积留白的半空盒子**；同时列表卡 CTA 写「查看」，与「代充点进去就是购买流程」的意图不匹配。本版把代充详情页收为**单列聚焦版式**（价格并入向导上方价签行），并把列表 CTA 按品类改为**表达意图**的文案。
+
+### 变更
+
+- **代充详情页收为单列聚焦（`public/site/index.html`）**：`openDetail()` 在代充（`category=recharge`）时给 `.detail` 加 `single` 类（`grid-template-columns:1fr`）、隐藏整块右栏 `.buybox` —— 右侧不再残留重复的价格盒；`.detail.single .panel` 限宽 `960px` 居中，向导内容从 ~700px 变为 ~900px，步骤 ③ 的账号清单表更舒展。
+- **价格并入向导上方「价签行」（不丢价格，也不出现两个价格入口）**：左侧商品名下方新增 `#d-priceInline`（`.d-priceInline`，虚线分隔），复用**同一个渲染函数 `detailPriceHtml(item, perUnit)`**（右侧购买箱与价签行共用，避免两处口径漂移），代充额外带 `/账号` 单位；有权益时保留既定口径「用 1 次权益 · 省 $X」。非代充商品该行保持隐藏。
+- **列表卡 CTA 按品类给意图**：`cardHtml()` 中 **可售的代充商品 → 「立即购买」**（点进去即进入呈递向导，文案与落点一致）；**成品号 / 建站服务 → 「查看」**（先看详情再决定）；缺货商品一律「查看」（避免在缺货品上写「立即购买」）。
+- **去掉详情页顶部信息冗余**：`d-hint` 不再重复罗列「① 登录 ChatGPT → ② 获取 Session → …」（下方步骤条已表达流程），也不再重复「不需要账号密码」（第 1 步已有醒目安全提示），只留「Session 去向 / 交付口径 / 批量口径」三条不重复信息。
+- **测试数据治理（`tools/check-functional-suite.js`）**：该套件每跑一次都会在**真实货架**留下一个 `功能测试商品 <uid>`（历史已因此清理过 6 行，本轮又见 `xplan_31`）—— 补上**自清理**（跑完按商品名精确删除 `kc_plans` + `kc_listing_cards`，有订单则保留并打印告警），并清理本轮产生的残留行。
+
+### 验证
+
+- **版式验收 `tools/_v2161_detail_layout_verify.js`（Playwright）16 PASS / 0 FAIL / 0 SKIP**：F1.1 代充列表卡 CTA 全为「立即购买」；F1.2 列表无「功能测试商品」污染；F2.1/F2.2 代充详情右栏 `display:none` 且版式收为单列（`grid 列数=1`）；F3.1~F3.3 价签行可见且为「$9.00 $15.00/账号 用 1 次权益 · 省 $6.00」；U1.1 价格与商品名同列（左边缘 x 均为 123、价格在其下方）；U2.1 向导宽度 902px（≥780）；F4.1 走到第 ④ 步账单仍含「单价 / 应付总额 / 当前余额」（价格未随右栏一起丢失）；**U3.1/U3.2 非代充回归**（临时建 `kc_type=account` 商品后实测：仍是两栏、`#d-buybox` 可见、`立即购买` 与数量选择在位、内联价签隐藏、列表 CTA 为「查看」，跑完删除临时商品）；U4 0 业务 console error。截图 `logs/v2161-detail-layout/`。
+- **回归**：批量代充 `tools/_v2160_batch_topup_verify.js` **40 PASS / 0 FAIL / 0 SKIP**；向导 + 匿名兑换 `tools/_v2150_wizard_verify.js` **19 PASS / 0 FAIL**（含 C3 匿名兑换实测开通成功）；功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL** 且新增自清理实测生效（`已清理测试商品 xplan_31`）。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+
+### 下一步
+
+- **待用户确认**：列表卡「立即购买」目前仍**先落详情页再进向导**（保持「详情页能看到流程与批量说明」）；若希望点卡片**直接进入向导第 1 步**（跳过详情页），可再调整 —— 两种都合理，取决于是否要让顾客先看到「支持批量 / Session 不落库」的说明。
+- **移动端**：`.detail` 在窄屏本就单列（`@media` 已有规则），本轮 `single` 版式与其一致；实机窄屏（≤768px）未跑自动化截图。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.16.0 · 2026-10-18 · 批量代充：同一个流程既收 1 段也收 N 段 Session → 一张账单 → 逐账号开通
+
+**一句话概括**：用户上传 sukai 的代充流程截图（同一流程中既可粘贴一行 Session、也可粘贴多行，最后按数量生成账单），要求以**交互专家**身份优化我们的代充流程。经确认按「**真批量**」落地：第 ③ 步一个输入框**既收 1 段也收 N 段 Session**，自动切成账号清单（去重 + 无效行指引 + 勾选）；第 ④ 步出一张**按账号数结算的账单**（含权益抵扣行）；第 ⑤ 步**逐账号进度**（已开通 / 失败已退款 / 未启动）。**保留 5 步骨架**与既有导航口径，`兑换卡密` 分支一字未动。
+
+### 变更
+
+- **后端（`server.js`）**：
+  - 新增 **`POST /api/tenant/batch/preview`**（`authenticateCustomer`，**无副作用**：不建单、不扣款、不扣次、不锁价）—— 返回 `count / unit_price / entitlement_unit_price / entitlement_uses / total / total_base / entitlement_discount / balance / shortfall(_cents)`。
+  - 新增 **`POST /api/tenant/orders/batch`**（`authenticateCustomer`）—— 入参 `{ sku, count, client_order_no_prefix }`；**总额前置校验**（余额 < 应扣合计 → **402 `INSUFFICIENT_BALANCE`**，回 `shortfall`，**整批不建单**）；**幂等键 = `<批次号>_<序号>`**（同批次重放：已建单不计入余额需求、返回 `reused`、不重复扣款扣次）；逐账号复用 **`createApiOrderCore`**（每账号 1 quote + 1 order + `qty=1`），交付后逐条 `entitlementConsume` 扣次；返回 `results[{index, client_order_no, unit_price, entitlement_applied, order_id, cdk, status, error, reused}]` + `total/total_base/entitlement_discount`。
+  - **定价单一事实源**：抽出 `tenantBatchPlan()`（预览与下单**共用**），账单单价/权益抵扣/总额与实扣**逐分一致**（守住「展示价 ＝ 结算价」红线）；权益按各 grant 的**剩余可用次数逐个分配**（本地预扣），权益次数 < 账号数时**前 N 个按权益价、其余按原价**，与下单扣次口径同源。
+- **口径（关键约束）**：**1 订单 = 1 内部 CDK = 1 次开通**，故「批量」= **每账号一单**（复用 `qty` 只会乘价、不会多发卡）；批量不新增任何表、不改 KC 原生 CDK 发放/兑换链路。
+- **前端（`public/site/index.html`）**：
+  - **第 ③ 步 → 账号清单工作台**：`textarea#wiz-sess-topup` 支持粘贴 1 段或 N 段；**按大括号配平切分**（`wizSplitBlobs`，字符串内括号不计）→ 兼容「一行一段」与「整段 JSON 跨多行、一次粘多份」；解析结果表 = 账号邮箱 / 目标商品 / 状态（可办理 · 无效 · 重复）/ 说明 + 勾选框 + 行内「×」删除 + 「全选可办理 / 清空选择 / 清空清单」；**同邮箱自动去重**、**一次最多 100 个**、切不出来的内容以「另有 N 行内容无法识别为 Session，已忽略」提示（复用 `wizTokenHint` 的可执行指引，不暴露 `accessToken` 技术措辞）；汇总句「共 N 个账号 · M 个可办理」+「已勾选 N 个账号，将按此数量出账单」。
+  - **第 ④ 步 → 确认账单**：充值账号（>3 折叠为「… 等 N 个账号」）/ 账号数量 / 商品 / 单价（权益次数 < 账号数时按「N 个按权益价 $X · 其余 $Y」分别展示）/ **权益抵扣行「用 N 次权益 · 省 $X」** / 应付总额 / 当前余额；**余额不足 → 红框「余额不足，还差 $X」+「立即充值」+ 支付按钮置灰 + 「充值到账后金额会自动刷新，无需重新提交账号」**；余额不足或账单未取到时**每 5s 静默重取**（拿到充足账单即停），到账后差额消失、按钮启用、**清单不丢**。
+  - **第 ⑤ 步 → 逐账号进度**：进度条（按已结算账号数推进）+ 汇总「共 N 个 · 已开通 M（· 失败 K · 未启动 U · 下单失败 D）」+ 逐行账号邮箱与状态徽标（排队中 / 启动中 / 开通中 x% / 已开通 / 失败 / 未启动 / 下单失败）；失败账号提示「费用会由系统自动退回余额（周期对账，通常几分钟内到账）」、未启动提示卡密已保留可继续开通、下单失败明确「未扣费」。**严格顺序启动**（服务端并发上限默认 1，`429` 自动退避重试），**部分失败不回滚整批**。
+  - **WebSocket 升级为多任务订阅**（`server.js` 的连接改为 `Set<jobKey>`；前端 `rdEnsureSocket`/`wizBatchJobs` 按 `jobKey` 路由到对应账号行）—— 单账号/兑换流程行为不变，批量可在**同一条连接**上看 N 个任务；断线自动重连并重发订阅，另有 60s 心跳式补拉快照兜底。
+  - **详情页**：代充商品隐藏「数量」选择器（数量改由清单决定，避免两个数量入口打架）；流程提示补「批量充值：第 ③ 步可只粘贴 1 份，也可一次粘贴多份」；**第 ② 步**补「要给多个账号充值？请每个账号各自登录一次，各取一份 Session」。
+  - 新增 `wizNote()`（提示写入 state，重渲染后仍在）；批量相关内联 `onclick` 入口全部显式挂 `window`。
+
+### 验证
+
+- **批量代充验收 `tools/_v2160_batch_topup_verify.js`（Playwright + MySQL）40 PASS / 0 FAIL / 0 SKIP**，按步覆盖：
+  - 第 ③ 步：粘 1 段 → 1 个可办理；粘 3 段（多行）→ 3 个可办理且邮箱顺序一致；混入非法行 → 「另有 1 行内容无法识别」提示且无技术措辞；同邮箱重复 → 自动去重（`dup=1`）；行内「×」删除后清单与输入框同步。
+  - 第 ④ 步：账单含账号数量/单价/应付总额/当前余额；**注入「剩余 2 次」权益 → 3 个账号时账单为「用 2 次权益 · 省 $12.00」且「2 个按权益价 $9.00 · 其余 $15.00」**，总额 $33.00 与预览一致；余额压到 $0.30 → 还差 $32.70 + 按钮置灰 + **未建单**（订单数仍 0）+「立即充值」可开弹层；余额恢复 → **差额自动消失、按钮启用、清单仍 3 个**；「上一步」返回清单不丢。
+  - 第 ⑤ 步：只发 1 次 `POST /api/tenant/orders/batch` 即进入逐账号进度；**DB 实存 3 单、每单恰好 1 个唯一 CDK**；3 个账号全部「已开通」；**实扣 $33.00 == 预览 total**（展示价=结算价）；权益 grant 剩余 2 次被扣完（`exhausted`，使用记录 2 条）；**同批次号重放 → 全部 `reused`、余额不变**；「查看我的订单」可见 3 笔；0 业务 console error。截图 `logs/v2160-batch/*.png`；脚本自清理（含同前缀遗留顾客兜底清扫）。
+- **回归 `tools/_v2150_wizard_verify.js` 19 PASS / 0 FAIL**（代充 5 步向导按新 UI 更新断言 + **匿名兑换 4 步分支全绿** —— 证明 WS 多订阅改造未影响单账号/兑换链路）。
+- **语法**：`node --check server.js` 通过；`public/site/index.html` 内联脚本语法 0 fail。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 全绿。
+- **处置**：`tools/_v2120_topup_flow_verify.js` 断言的是 v2.12.0 旧 UI（v2.15.0 改向导时即已过期），本轮**弃用删除**。
+
+### 下一步
+
+- **补记（v2.15.0~v2.15.2 已交付但此前未写入本 CHANGELOG，本轮一并登记）**：①**v2.15.0 代充 5 步呈递向导**（详情页 ①登录 → ②获取 Session → ③提交 Session → ④支付 → ⑤自动开通；下单即发卡并直接进开通；`tools/_v2150_wizard_verify.js`）；②**v2.15.1 开通失败周期对账退款兜底**（订单层 `reconcileFailedActivationsOnce` + `startActivationRefundReconciler`，`ACTIVATION_REFUND_*` 可调，默认 5 分钟扫、账龄 > 12 分钟；幂等双闸门）；③**v2.15.2 代充卡池选卡策略**（`zovocard-client` 选卡控制面 + 后台「代充卡池（选卡策略·余额·审计）」面板 + 卡号脱敏 + 订单/任务日志记 `card_id/card_last_four`；`tools/_v2152_cardpool_verify.js` 22 PASS / 0 FAIL）。
+- **待运维确认**：`kc_entitlement_prices` 里保留的示例报价 `pack_light_off40 × xplan_1 = 900`（$9.00）仍是验收用示例，上线前请确认真实运营口径（可在后台「权益报价」页调整或清除）。
+- **未启动态的钱**：若某账号的 `run-process` 长时间未能启动（并发上限持续占满），其订单**不会自动退款**（退款对账要求该 CDK 有开通任务）；该单卡密仍有效，顾客可在「兑换卡密」页继续开通 —— 已在第 ⑤ 步文案如实说明。
+- **未 git commit**（`git push` 因 No anonymous write access 不可用，勿重试）。
+
+---
+
+## v2.14.0 · 2026-10-17 · 前台布局对齐设计原型 + 租户级配色方案（5 套可选）+ 修复权益商品订单 biz_type 映射
+
+**一句话概括**：按用户指令完成两件事 + 一处 bug 修复 —— ①**前台布局迁移**（`public/site/index.html`）：结构对齐设计原型 `design/前台整体设计-v1.0.0.html`（单行大标题 Hero、发光 CTA 卡、三列信任条、三张能力卡、热门商品双价卡网格、权益包网格、下单三步、`<details>` FAQ 手风琴、多列页脚），并把原浅色硬编码全部改走 token；②**租户级配色方案**：`kc_tenant_brand` 新增 `color_scheme`（容错 ALTER + 默认 `ink`），5 套方案（`mint`/`ocean`/`violet`/`ember`/`ink`）以 `:root[data-scheme=…]` token 块落在前台，前台 `applyBrand()` 按租户配置下发 `<html data-scheme>`；**前台顾客不提供配色切换入口**；三个品牌接口均读写 `color_scheme` 并做白名单校验，两个后台 UI 都加「配色方案」下拉；**平台默认 = `ink`「简约白」亮色**（平台租户 `primary_color`/`accent_color` 已清空），租户自定义 `primary_color` 仍优先覆盖 `--brand`。③**修 bug**：`server.js` 的 `bizTypeFromCategory()` 缺 `'entitlement'` 映射，导致权益商品订单 `biz_type` 落到 `other` —— 已补。
+
+### 变更
+
+- **前台布局迁移（`public/site/index.html`）**：结构对齐设计原型 `design/前台整体设计-v1.0.0.html` —— 单行大标题 Hero（去掉原双行）、发光 CTA 卡、三列信任条（用真实口径文案，非编造数字）、三张能力卡、热门商品双价卡网格、权益包网格、下单三步、`<details>` FAQ 手风琴、多列页脚；同时把原浅色硬编码全部改走 token。
+- **租户级配色方案（`mysql-store.js` + `server.js` + `public/site/index.html` + `public/admin.html` + `public/tenant-admin.html`）**：`kc_tenant_brand` 新增 `color_scheme`（容错 ALTER + 默认 `ink`）；5 套方案（`mint`/`ocean`/`violet`/`ember`/`ink`）以 `:root[data-scheme=…]` token 块落在前台；前台 `applyBrand()` 按租户配置下发 `<html data-scheme>`；三个品牌接口（`/api/tenant/brand`、`/api/tenant-admin/brand`、`/api/admin/tenants/:id/brand`）均读写 `color_scheme` 并做白名单校验；两个后台 UI 都加「配色方案」下拉。**前台顾客不提供配色切换入口。**
+- **平台默认配色 = `ink`「简约白」亮色**：平台租户 `primary_color` / `accent_color` 已清空（避免钉死强调色）；租户自定义 `primary_color` 仍优先覆盖 `--brand`。
+- **修 bug · `bizTypeFromCategory()` 缺 `'entitlement'`（`server.js`）**：权益（entitlement）商品订单 `biz_type` 原落到 `other`，现补 `if (key === 'entitlement' || key === 'pack') return 'entitlement';`。
+
+### 验证
+
+- **C11 商品类型同口径 E2E `tools/_v2140_cat_e2e.js`（无头浏览器 + 管理员真实登录 + 真实顾客下单）15 PASS / 0 FAIL**：website（建站服务）/ entitlement（权益）两条同口径链路（后台建 → 前台可见 → 顾客可买 → 交付正确）；脚本自清理无残留；截图 `logs/v2140-cat-e2e/`。
+- **亮色默认生效实测**：页面底 `rgb(247,248,250)`、主按钮 `rgb(59,108,246)`、标题单行、首页无深色残留、0 console error。
+- **亮色下登录态实测**：代充列表、商品详情、我的钱包、充值弹层（白底；红色精确金额区醒目；「我已支付」初始 disabled，勾选后激活）均正常，0 console error。
+- **配色切换链路实测**：把平台租户切到 `ocean` 时前台底色变 `rgb(7,11,20)`、主按钮变 `#4D9BFF`（「后台配置 → 接口 → 前台」链路通）。
+- **门禁**：`check-docs-sync.js`（15 通过）/ `check-currency.js` / `check-root-hygiene.js`（7 通过）三门禁全绿。
+
+### 下一步
+
+- **待产品决策**：前台分类 Tab 只有 代充/成品号/建站服务，**没有「权益」Tab** → `kc_type='entitlement'` 的商品在前台无法从分类导航进入（首页推荐命中时才可见）。
+- **待修（轻微 UI 不一致）**：非代充类（website/account）商品下单后，订单页按钮文案仍是「去开通（粘贴 Session）」，应随商品类型改写。
+- **环境/数据遗留（非本轮产生）**：`.env` 的 `ADMIN_TRIAL_EMAIL`（kcbugtest@example.com）在 `kc_admin_users` 里不存在，校验脚本登录 401、需回落 `ADMIN_EMAIL`；历史孤立充值单 `rc_mvc0w2fz`（customer_id=100，顾客已删）未处理。
+
+---
+
+## v2.13.0 · 2026-10-17 · 商品全链路修复：新增商品可选类型 + 商城可见性口径纠偏（上架即售）+ 商城价取运营售价
+
+**一句话概括**：用户反馈「新增商品没有让选商品类型」「新增了的代充商品在前台看不到」「要走整个业务流程，不是只看后台」。根因有两处并全部修复 —— ①后台「新增商品」对话框**没有商品类型选择**，代码还把卡片 category 写死 `recharge`，等于所有商品永远只能是代充；②前台目录用 **`api_enabled=1` +「绑定白名单货源」+「上游成本>0」** 做过滤与可售判定 —— 这三项本是「对外 API 分销」口径，却被当成了**商城上架门槛**：运营勾了「在售 + 商城显示」的商品只要没开 API 分销就**在前台彻底看不到**；即使开了，货源成本为 0（如 pro_5x/pro_20x）也会被判「不可售（缺货）」。同时商城价只认「租户零售价 / 上游成本×(1+加价)」，**运营填写的「售价」被无视**。本版把口径纠正为：**商城可见 = 在售 + 商城显示 + 状态 active；商城价 = 运营售价；「加价幅度」只用于对外 API 分销报价**，并补齐商品类型四选（代充/成品号/建站服务/权益）。
+
+### 变更
+
+- **商品类型可选（`public/admin.html` + `server.js` + `mysql-store.js`）**：新增商品/编辑对话框增加「**商品类型** *」下拉（代充 `recharge` / 成品号 `account` / 建站服务 `website` / 权益 `entitlement`），写 `kc_plans.kc_type` 并同步卡片 `card_json.category`（前台按此分 Tab）；`kc_plans.kc_type` ENUM 扩容补 `website`（容错 ALTER）；`planTypeNorm()` 白名单同步；编辑分支此前**完全没更新 kc_type**，现补齐；后台商品列表接口回吐 `kc_type` 供编辑预选。
+- **前台可见性口径纠偏（`server.js`）**：主站目录与代理商后台商品接口的过滤条件由 `api_enabled=1` 改为 **`show_flag=1 AND sell_flag=1 AND status='active'`**；`tenantSkuAvailable()` 改为「可见 + 在售 + active + 有价格」，**移除** `api_enabled / upstream_plan_key 白名单 / 上游成本>0` 三处门槛（对外分销口径仍由独立的 `openApiSkuAvailable()` 承担，未改动 —— `POST /api/open/v1/*` 语义不变）。副作用修正：paused（已暂停）商品不再出现在前台（原来会以「缺货」卡片露出）。
+- **商城价取运营售价（`server.js`）**：新增 `planListPriceCents()`，`tenantSkuPrice()` 优先级改为 **租户零售价 → 运营售价（`prices_json`，即商品管理「售价（美元）」）→ 上游成本×(1+加价幅度)**。原实现只有后两者，导致不绑货源的商品售价恒为 0（被判不可售）、且绑了货源时运营填写的售价被忽略。
+- **前台分类来源改为商品类型（`server.js`）**：目录的 `category` 以 `kc_plans.kc_type` 为准（`cardParse()` 归一卡片时会丢弃 `category`，原先一律回落 `recharge`，导致「成品号」商品被归到代充 Tab）。
+- **对话框文案（`public/admin.html`）**：补「商城可见规则」说明（勾「在售 + 商城显示」即出现在前台对应 Tab；商城价取你填的售价；加价幅度只用于对外 API）；「API 分销定价」勾选项文案改为「仅影响对外分销接口，不影响商城上架」，消除「不勾就看不到」的误导。
+
+### 验证
+
+- **商品全链路 E2E `tools/_v2130_product_e2e.js` 10 PASS / 0 FAIL**（无头浏览器 + 管理员真实登录 + 真实顾客下单）：F1 对话框含商品类型四选且可选「代充」→ F1b 保存成功并出现在商品列表；**F2 前台目录出现新建商品（`available=true`、商城价 = 填写的 $9.99）**；**F3 前台「代充」Tab 真实渲染出该商品卡片**（卡片列表含新建商品）；**F4 顾客下单成功 → 交付卡密（`KC-CMR29PQRSA7`）→ 自动进兑卡（Session 开通链路）**；**F5 再建「成品号」类型商品 → 前台 `category=account`、商城价 $19.90**；F6 后台 + 前台全程 **0 业务 console error**；F7 清理后前台目录不再包含测试 SKU。截图 `logs/v2130-product-e2e/*.png`。
+- **回归**：功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL**（含买代充/买权益/兑卡）；核心业务流程用户场景 **29 PASS / 0 FAIL / 0 GAP**；代充 Session 流程（v2.12.0）**10 PASS / 0 FAIL**；`node --check server.js / mysql-store.js` 通过。
+- **附带清理**：STEP0 清掉历史遗留测试商品 `功能测试商品*` 6 行与孤儿卡片/资费；修正后前台目录只剩真实商品（ChatGPT Plus 一个月 / GPT Pro100 菲区 ×3 / GPT Pro200）。
+- **门禁**：`check-docs-sync.js`（15 通过）/ `check-currency.js` / `check-root-hygiene.js`（7 通过）三门禁全绿。
+
+### 下一步
+
+- **⚠️ 需要你确认的价格侧影响**：口径改为「商城价 = 运营售价」后，**`ChatGPT Plus 一个月`（xplan_1）的前台价将由 $11.50 变为 $15.00**（= 后台「售价（美元）」里填的 15；原 $11.50 是「上游成本 $10 × (1+15%)」算出来的）。若 $11.50 才是本意，请把该商品售价改回 11.50 即可（改完前台立即生效）。
+- **待确认**：「四位类型里的『权益』（`entitlement`）商品目前不会出现在前台商品 Tab**（前台只有 代充/成品号/建站服务 三个 Tab，权益包走「权益包」入口与「权益」页维护）；若希望权益类商品也进商品 Tab，需要新增前台 Tab 与对应筛选。
+- **运营操作提示**：上架商品只需勾「在售 + 商城显示」并填好售价即出现在前台；对外分销才需要开「API 分销定价」并绑货源。
+
+---
+
+## v2.12.0 · 2026-10-16 · 后台逐菜单走查并修复 3 个真实缺陷 + 菜单归组 + 代充 Session 流程恢复 + 前台展示方案
+
+**一句话概括**：按用户指令完成三件事 —— ①**后台逐菜单走查**（跳开「支付与资产 / 自动化与任务」两组）：走查 17 个菜单 **0 console error / 0 个 ≥400 请求**，并实测「创建商品 / 创建权益包 / 配置前台商品 / 权益报价」四大流程；走查**发现并修复 3 个真实缺陷**（新建商品必 500、权益规则保存静默失败、权益列表恒空）；同时把**「续费管理」「免税地址」迁入「支付与资产」组**。②**前台展示方案**（`docs/方案/前台展示方案-v1.0.0.md`）：拆解参考站 `ezsub` 的配色/布局，并以**用户体验专家身份给出独立判断**（可借鉴 4 点、明确不照搬 5 点、分两步落地）。③**恢复「代充购买 → 输入并校验 Session → 开通」流程**（退场时被切断）：新增详情页 Session 收集与下单前强制校验、下单成功自动进兑卡预填并提交开通、订单详情「去开通」入口（**Session 仅存内存、不落库**）。
+
+### 变更
+
+- **菜单归组（`mysql-store.js` + `public/admin.html`）**：`BUILTIN_ADMIN_MENUS` 把 `cancel_renewal`（原 业务运营）与 `tax_addresses`（原 系统与安全）迁入 `g_assets`（sort 36/37，权限点不变：`order.read` / `admin.write`）；新增 **一次性幂等迁移** `ADMIN_MENU_GROUP_MIGRATIONS`（`UPDATE … WHERE group_key = 旧组`，仅在仍处旧组时迁移，不覆盖运维手工调整）；`NAV_MENU_FALLBACK` 同步（兜底菜单与接口菜单一致）。
+- **缺陷 D1 · 新建商品必失败（`server.js`）**：新建商品分支写入 `kc_type='subscription'`，而 `kc_plans.kc_type` ENUM 仅 `recharge/account/entitlement` → `Data truncated for column 'kc_type'` → **500**。改用既有归一函数 `planTypeNorm(b.kc_type)`（沿用项目约定 R2 阶段统一 `recharge`）。
+- **缺陷 D2 · 权益规则保存静默失败（`public/admin.html`）**：`authFetch()` **从不设置 `Content-Type`** —— 字符串 body 被按 `text/plain` 发送，`express.json()` 跳过解析 → `req.body={}` → 服务端 400「code 必填」，而前端仍提示「已保存」。修复：`authFetch` 在「字符串 body 且调用方未指定 Content-Type」时兜底补 `application/json`（FormData / Blob 不受影响）。**一处修复覆盖全部同类调用**（权益规则新建/启停等）。
+- **缺陷 D3 · 权益页三处把 Response 当数据（`public/admin.html`）**：`loadEntitlementsList` / `_entResolveUserId`（用户持有权益查询）/ `loadEntitlementGrants` 直接读 `authFetch()` 返回的 `r.data`（恒 `undefined`）→ 规则列表恒显示「暂无规则」、邮箱定位恒失败。三处改为 `await res.json()` 后再取 `data`。
+- **代充流程恢复（`public/site/index.html`）**：①代充商品详情页新增流程提示（① 下单 ② 获得卡密 ③ 粘贴 Session 开通）+ 显式声明「不需要账号密码、Session 不落库」，按钮改「**购买并去开通**」；②**下单前强制收并校验 Session**（复用 `rdCheckSession` 结构校验：JWT 头/签发方/aud/账号信息/`model.request`/有效期），不通过则拦截下单（避免为无效账号付款）；③下单成功交付卡密后**自动进入兑卡视图、预填卡密与已校验 Session 并自动提交开通**（新增 `goRedeem(cdk, auto)` + `state.pendingSession`，Session 仅存内存）；④**我的订单 → 订单详情**卡密旁新增「**去开通**」按钮；⑤非代充商品不出现 Session 区、按钮仍为「立即购买」。
+- **前台展示方案（新增 `docs/方案/前台展示方案-v1.0.0.md`）**：参考站实测拆解（底色 `#0D0E12` / 强调色 `#76B900` / 卡片 `rgba(20,24,22,.7)`+`1px #1E2A1E`+`16px` 圆角 / Hero 双行标题 + 单发光 CTA / 信任条 / 3 能力卡 / FAQ 手风琴）；给出可直接落地的 token、首页布局规格（含与现状区块的对应表）、5 条组件规范、响应式与验收口径；**独立判断**：借鉴 4 点、明确不照搬 5 点（客户 logo 墙 / 大数字指标 / 粒子背景 / Cookie 与语言币种切换 / 金额面板用发光），建议**分两步落地**（先 token + 首页重排 + FAQ 手风琴，再评估信任条与深色默认化）。
+
+### 验证
+
+- **后台走查 `tools/_v2120_admin_walkthrough.js`（无头浏览器 + 管理员真实登录）26 PASS / 0 FAIL**：菜单归组 3 项断言（`g_assets=[checkout_debug,cards,cdks,sessions,billing,cancel_renewal,tax_addresses]` 共 7 项且原组已不含二者）；17 个菜单逐页走查**全部 0 业务 console error、0 个 ≥400 的 /api 请求**（概览/顾客/权益/权益报价/商品管理/站点与定价/上游/租户/API 客户/后台账号/角色与权限/菜单管理/操作审计/系统配置/登录日志/**续费管理**/**免税地址**）；流程 ①创建商品 PASS ②创建权益包 PASS（落库 + 列表可见）③配置前台商品 PASS（回执「已保存」）④权益报价页加载 PASS（9 个可售包 + 报价列表）。
+- **缺陷复现与修复证据**：D1 修复前 `POST /api/admin/products/save` → 500 `Data truncated for column 'kc_type'`，修复后 **200**（`plan_id` 正常返回）；D2 修复前 400「code 必填」（抓包显示请求体其实含正确 code —— 证明是 Content-Type 缺失导致服务端未解析），修复后 **200** 且列表出现；D3 修复前 `ent_rules_list` 恒为「暂无规则」，修复后 UI 列表出现新建规则（`apiHas=true && uiList=true`）。
+- **代充流程 `tools/_v2120_topup_flow_verify.js`（真实浏览器 + 真实下单/发卡）10 PASS / 0 FAIL**：F1 详情页提示 + Session 区 + 「购买并去开通」；**F2a 未填 Session 禁止下单（orders 0→0）**；**F2b 非法 Session 禁止下单**；**F3 合法 Session 下单成功 + 交付卡密 + 自动进兑卡并预填 Session**（卡密 `KC-95DA68NBPA6…`、订单数 0→1）；**F3b 已自动发出 `POST /api/run-process`**（链路打通，真实开通结果取决于上游与真实账号）；F4 订单详情「去开通」入口；F6 全程 0 业务 console error。截图 `logs/v2120-topup-flow/*.png`。
+- **参考站实测抓取**：`logs/ref-ezsub/ref_desktop_viewport.png` / `ref_desktop_full.png` / `ref_mobile_full.png`（含取色与区块结构，供方案引用）。
+- **回归**：功能套件 `tools/check-functional-suite.js` **50 PASS / 0 FAIL**；前台 UX 冒烟 **6 PASS / 0 FAIL**；充值体验 UX（v2.10.0）**20 PASS / 0 FAIL**；`node --check server.js / mysql-store.js` 通过。
+- **门禁**：`check-docs-sync.js`（15 通过）/ `check-currency.js` / `check-root-hygiene.js`（7 通过）三门禁全绿。
+- **测试数据已清理**：`kc-topupflow-*` / `kc-rcux-*` / `kc-gwdemo-*` 等测试顾客、订单、卡密、充值单、钱包流水与审计行已删除；走查产生的测试商品（`KC走查测试商品*` / `kcprobe商品*`）、测试权益规则（`walk_off20_*` / `kcprobe*`）与孤立卡片亦已清理。
+
+### 下一步
+
+- **待用户决策**：①前台展示方案是否按「第一步（token + 首页区块重排 + FAQ 手风琴）」开工；②「信任条」需真实运营数据（已交付单量 / 平均开通时长 / 到账率），是否提供；③深色是否设为默认（需先确认收银/充值面板可读性口径，方案 §3.3 已给最低对比度要求）。
+- **运营提醒（本次走查暴露的系统性问题）**：`public/admin.html` 的 `authFetch` 此前不设 `Content-Type`，凡「传 JSON 但未显式带 header」的调用都会被服务端当成空 body —— 本版已一处收口修复，后续新增后台写接口请沿用 `authFetch`（勿再手工拼 header），并以「保存后回读列表」而非「看提示」来验收写入。
+- **代充流程可选增强**：开通失败时的二次重试入口（复用订单卡密）；或按运营口径改为「先付款后粘贴 Session」的两段式（本版两条路径都保留）。
+
+---
+
+## v2.11.0 · 2026-10-16 · 接入 BEpusdt 真实收款：网关下单 + notify 服务端验签入账 + 生产模式关闭顾客自助入账 + 调度兜底对账
+
+**一句话概括**：把「模拟收款」升级为**真实网关收款**——①**发起充值走网关下单**（`POST /api/v1/order/create-transaction`，显式 `fiat=USD` 防 CNY 折算少收款），收款地址/应付金额/收银台地址以网关返回为准（`token`/`actual_amount`/`payment_url`）；②**到账由 `POST /api/wallet/bepusdt/notify` 服务端验签入账**（签名算法拿当前在跑的 BEpusdt 实测通过；**验签只证明来源可信**，仍校验本地订单/金额/状态并**幂等入账**）；③**生产模式关闭顾客自助入账**（`confirm` → 403，防顾客自刷余额）；④**调度兜底对账**（定时 `POST /api/v1/pay/info` 查单，补入账/置过期，覆盖回调丢失）。**未配置网关时行为完全不变**（仍是模拟收款），本地开发环境即为此态。**未改 KC 原生业务逻辑。**
+
+### 变更
+
+- **接入层（新增 `bepusdt.js`）**：`isEnabled()`（`BEPUSDT_API_URL` + `BEPUSDT_API_TOKEN` 同时存在才算已配置）/ `sign(params, token)`（取非空参数、按参数名 ASCII 字典序拼 `k=v&…`、末尾拼 api 认证 token、MD5 转小写）/ `verifyNotify(payload, token)` / `isPaidStatus(status)`（2=成功）/ `fiatAmountUsd(orderId, cents)`（基础金额 + 单号派生 1~99 分认单尾数）/ `createTransaction({orderId, amountUsd, notifyUrl, redirectUrl})` / `queryTransaction(tradeId)`（`POST /api/v1/pay/info` 查单）。
+- **数据层（`mysql-store.js`）**：`kc_customer_recharges` 新增 `trade_id` / `actual_amount` / `payment_url` / `notify_txid` / `notified_at` 五列（`CREATE TABLE` 同步 + 存量库**容错 ALTER** 逐个补列）。
+- **后端（`server.js`）**：`POST /api/tenant/wallet/recharge` 已配置网关时**先落单再网关下单**（`amount` 必须是 JSON number，真实网关按 Go float64 反序列化）、回填 `trade_id`/`actual_amount`/`payment_url`/`pay_address`(/`token`)/`expires_at`（用网关 `expiration_time`），网关失败置 `canceled` 并返 **502 `GATEWAY_ERROR`**；未配置时**原模拟路径一字未改**；新增 `rechargePublicBaseUrl(req)`（`KC_PUBLIC_BASE_URL` 优先，否则回落到请求 Host，适配租户自有域名）；**新增 `POST /api/wallet/bepusdt/notify`**（**无鉴权**，靠签名 + 业务校验：未配置 → `status_code=503`，验签失败 → `400`；仅成功态入账；**金额复核**（链上金额 vs 下单应付，容差 0.01 USDT，不符 → `400` + 落 `recharge.notify_reject` 审计）；**幂等入账**；响应遵循网关约定 `{status_code:200,message:'success'}`）；**新增 `GET /api/tenant/wallet/recharge/:rechargeNo/status`**（状态轮询，任何状态都返 200）；`rechargePayPayload()` 新增 `mode`（`gateway`/`mock`）、`actual_amount`、`payment_url`、`trade_id`，`exact_amount` 在网关模式取 `actual_amount`；抽出 **`applyRechargeCredit(rc, opts)`** 作为**入账唯一实现**（模拟 `confirm` 与真实 `notify` 共用，仅 `pending→paid` 条件更新，天然幂等）；`recharge/confirm` 在**已配置网关时返 403 `SELF_CONFIRM_DISABLED`**；**新增调度兜底对账** `reconcilePendingRechargesOnce()` + `startRechargeReconciler()`（默认 60s，`RECHARGE_RECONCILE_INTERVAL_MS` / `RECHARGE_RECONCILE_LOOKBACK_HOURS` 可调；仅扫 `status='pending' AND trade_id<>''` 的近 2 小时单；网关 `status=2` → 复核金额后 `applyRechargeCredit` 补入账 + 落 `recharge.reconcile` 审计；`status=3` 且已过期 → 置 `expired`；**未配置网关则不启动调度**）。
+- **前端（`public/site/index.html`）**：充值弹层第 2 步按 `mode` 分流 —— **网关模式**显示「**去收银台支付**」（`payment_url` 新窗口）+ 说明「链上自动确认到账、无需手动操作」+ **自动轮询**（`rcStartPoll()` 每 6s 调状态端点，到账即置第 3 步、toast、刷新钱包并关窗），**隐藏**勾选确认闸门与「我已支付」；**模拟模式**保持原有二次确认闸门与自助确认；新增函数已显式挂 `window`（`window.rcOpenPay`）。
+- **配置**：`docker-compose.yml` 注入 `BEPUSDT_API_URL` / `BEPUSDT_API_TOKEN` / `BEPUSDT_TRADE_TYPE`（默认 `usdt.trc20`）/ `KC_PUBLIC_BASE_URL`（**默认空 = 模拟模式**）；新增 `./bepusdt.js:/app/bepusdt.js` bind mount（该容器按文件挂载，漏挂会 `MODULE_NOT_FOUND`）；`.env.example` 补对应说明。
+- **口径**：**认单尾数改由网关给出** —— 我方下单只发「基础金额 + 2 位小数尾数」的法币 `amount`，网关按 `USD` 折算后返回 `actual_amount`（USDT），前台展示与实际应付**一律以 `actual_amount` 为准**；**入账口径始终是用户申请的整数金额（`amount_cents`），链上尾数不额外入账**。
+
+### 验证
+
+- **功能 + UX 验收 `tools/_v2110_bepusdt_notify_verify.js`（自包含：进程内起「网关桩」+ 拉起一个配了网关的 KC 实例 `:3199`，跑完回收）18 PASS / 0 FAIL**：F1 未配置网关实例仍为模拟模式（`mode=mock` + 模拟地址 + 4 位小数尾数）、F1b 未配置时 notify 503 拒收；F2 网关模式下单（`mode=gateway` + 网关地址 + 收银台地址 + 网关折算金额）；**F3 correct-signature notify 入账（余额 +$200）**；**F4 重放同一 notify 幂等（余额不变）**；**F5 错签名拒收（400）**；**F6 金额不符拒收（400）**；**F7 状态非成功（status=1）受理但忽略**；**F8 生产模式 `confirm` → 403 `SELF_CONFIRM_DISABLED`**；**F9 调度兜底：无 notify 也自动补入账（+$50，流水标注「对账补入账」）**；**F10 跨路径幂等（已对账入账的单再收 notify 不再加钱）**；U1 网关模式弹层（收银台入口 + 网关金额/地址 + 隐藏自助闸门 + 本地二维码）；U2 自动轮询到账；U3 模拟模式弹层勾选闸门保留；U4 既有要素回归（教程入口 / 「为什么带小数」/ 网络强警示）。
+- **真实网关联调（非桩）**：用 `bepusdt.js` 直连当前在跑的 BEpusdt（`:8080`，`usdt-trc20`，地址 `TSYdNdbx…`）实测 —— **签名被网关接受**（`create-transaction` 返 `status_code=200` + `trade_id`/`token`/`actual_amount`/`payment_url`/`expiration_time`），`POST /api/v1/pay/info` 查单返 `status`/`actual_amount`；探针订单已清理（归还网关台账）。期间据实测修正两处：`amount` 必须为 JSON number（传字符串报 Go float64 反序列化错误）、必须显式 `fiat=USD`（否则网关按 CNY 折算成约 1/6.7 的 USDT）。
+- **浏览器演示（接真实网关，`tools/_v2110_gateway_demo.js`，临时脚本）12 PASS / 0 FAIL + 7 张截图 `logs/v2110-gateway-demo/*.png`**：另起 `:3199` 实例接**真实** BEpusdt（**不动本地 `:3100` 的模拟环境**），走 钱包 → 充值第 1 步 → **第 2 步（真实钱包地址 `TSYdNdbx…` + 网关折算金额 + 本地二维码 + 「去收银台支付」+ 突出倒计时 + 网络强警示 + 「等待链上到账」）** → **打开真实 BEpusdt 收银台（200.73 USDT / 200.58 USD / Tron / 同一商户订单号）** → 关页引导（不丢单）→ 钱包「待支付充值单」→「继续支付」回到第 2 步；全程 0 业务 console error。**KC 前台展示的金额与网关收银台金额逐字一致**（同一商户订单 `rc_mvb2z7of_7ea724` 两侧均为 200.73 USDT）。
+- **踩坑（已固化到脚本注释）**：网关的 `sqlite.db` 是 WAL 模式且由容器内 Go 进程持有，**第二个进程只能读到主库快照（看不到最新提交），直接写还有损坏风险** —— 后续一律**只用网关 HTTP API**（`create-transaction` / `pay/info`）与之交互，不再直接读写其 sqlite；网关侧演示订单为未支付态、随 `payment_timeout` 自动过期。
+- **回归**：核心业务流程用户场景 **29 PASS / 0 FAIL / 0 GAP**；客服人工补录充值 **14 PASS / 0 FAIL**；前台 UX 冒烟 **6 PASS / 0 FAIL**；充值体验 UX（v2.10.0）**20 PASS / 0 FAIL**（模拟模式全流程未回退）；`node --check server.js / bepusdt.js / mysql-store.js` 通过。
+- **门禁**：`check-docs-sync.js`（15 通过）/ `check-currency.js` / `check-root-hygiene.js`（7 通过）三门禁全绿。
+- **测试数据已清理**：本轮验收/回归产生的 `kc-bepusdt-*` / `kc-gwdemo-*` / `kc-rcux-*` / `kc-e2e-*` / `kc-credit-*` 测试顾客与充值单、钱包流水、订单、CDK、审计行全部清除（KC 侧残留计数 0）。网关侧本轮创建的联调/演示订单**未能从 sqlite 删除**（WAL 第二进程不可见，见上「踩坑」），均为**未支付态**、随 `payment_timeout` 自动过期，不影响账务；此前清理时因 SQLite `LIKE` 大小写不敏感，误删过 2 条既有网关测试单（`KCUSDTEST1791168*`，未支付），已如实记录。
+- **部署面**：`docker compose up -d app` 重建（新增 bind mount 生效）后 `kc-gpt-pay2-app` healthy；本地开发环境**未配置网关**，仍为模拟收款（不破坏现状）。
+
+### 下一步
+
+- **待用户决策**：把本地/生产环境切到真实 BEpusdt（填 `BEPUSDT_API_URL` + `BEPUSDT_API_TOKEN` + 可访问的 `KC_PUBLIC_BASE_URL`）后，顾客自助入账将自动关闭，改由 notify + 调度对账入账；切换前建议先确认网关为**非托管私人钱包**收款（无需私钥、资金直达用户钱包）。
+- **上线前**：可访问的收银台/回调域名（现为内网地址）、BEpusdt 令牌轮换；`kc_entitlement_prices` 示例报价 `pack_light_off40 × xplan_1 = 900` 是否保留待运营确认。
+- 可选增强（未做）：`notify` 到账后的**站内/邮件提醒**；对账结果运营可视化（本轮仅落审计 `recharge.reconcile`）。
+
+---
+
+## v2.10.0 · 2026-10-16 · 充值体验重构：3 步引导 + 扫码收款 + 突出倒计时 + 网络强警示 + 小数位解释 + 关页引导续付 + USDT 新手教程
+
+**一句话概括**：按「用户交互体验专家」视角重构**顾客充值全流程** —— 把原先一屏堆信息、无引导、无扫码、关掉就当丢单的充值弹层，改成 **3 步引导式流程**（① 选金额 → ② **扫码转账** → ③ 确认到账），并为「**客户可能没用过 USDT**」补上**新手教程样例**。关键信息按风险等级重排：**倒计时突出**（剩余 5 分钟内自动转「紧急」脉冲态）、**网络强警示**（只支持 **TRC20**，选成 ERC20/BEP20 资金无法找回）、**精确金额超大字 + 一键复制 + 「为什么带 4 位小数」可展开解释**（认单编号原理）；**便利性**：收款地址**本地生成二维码可直接扫**（vendor 单文件库，无外链依赖）+ 地址/单号一键复制；**防丢单**：关闭充值页时弹「**这笔充值还没支付完**」引导（回显精确金额与剩余时间），并提供「**继续支付**」/「**去待支付充值单**」，钱包页新增「**待支付充值单**」区块可随时续付（含逐秒剩余时间）。**未改 KC 原生业务逻辑**；新增 1 个只读端点 + 钱包响应加 1 个字段。
+
+### 变更
+
+- **后端（`server.js`）**：新增 `GET /api/tenant/wallet/recharge/:rechargeNo`（**续付**：按充值单号取回支付信息；作用域锁 `customer_id + client_id`；已到账 409 `RECHARGE_PAID`、已关闭 409 `RECHARGE_CLOSED`、已过期 409 `RECHARGE_EXPIRED` 并把 pending 置 `expired`）；`GET /api/tenant/wallet` 响应新增 **`pending_recharges`**（本顾客本租户 `pending` 且未过期的充值单，含 `exact_amount` / `pay_address` / `expires_at`，最多 10 条）；抽出 **`rechargePayPayload()`** 统一「支付信息」载荷（POST 发起 / GET 续付共用，杜绝两处口径漂移）。
+- **前端（`public/site/index.html`）**：充值弹层重构为 **3 步引导**（`#rc-steps` 步骤条 + `rcSetStep()`）；**倒计时上提为独立高亮区块**（`#rc-timer`，`rcSetCountdown()` 剩余 ≤5 分钟自动加 `.urgent` 脉冲动画并把文案改为「仅剩 MM:SS」）；**网络警示独立区块**（`#rc-chain`：必须选择网络 TRC20 / 选错无法找回）；**二维码区**（`#rc-qr`：本地 `qrcode` 库渲染 SVG，**内容为 `tron:` + 收款地址**，只带入地址、金额仍需手填，失败才显示「点此重试」）；**精确金额大字 + 复制 + `<details>` 解释「为什么金额后面要带 4 位小数」**；地址/单号均加复制按钮；**关页守卫** `rcGuardClose()`（充值单 pending 未过期时改弹 `#rcLeaveModal` 离页引导，`rcLeaveStay()` 继续 / `rcLeaveGoWallet()` 跳到钱包续付）；**背景点击与 ESC 同样走守卫**（`rcBackdrop()` / `rcStop()`）；钱包页新增「**待支付充值单**」区块（`renderPendingRecharges()` + 逐秒刷新 + 「继续支付」→ `resumeRecharge()` 直接进第 2 步）；新增 **USDT 新手教程弹层** `#guideModal`（3 步 + 两大常见事故警示 + 4 条 FAQ），入口 = 充值弹层「第一次用 USDT 充值？看 3 步图文教程」与钱包页「USDT 充值教程」按钮（**不进顶部导航，导航仍恒 5 项**）；新增函数已在 `window` 上显式暴露（内联 `onclick` 依赖全局名）。
+- **依赖与资产**：**新增本地 vendored 二维码库** `public/js/qrcode.js`（`qrcode-generator` 的 MIT 单文件构建，含 UTF8 补丁，约 57KB），以 `<script src="/js/qrcode.js">` 引入 —— **不引入 npm 运行时依赖、不改镜像、不改 docker-compose**（容器 `node_modules` 在镜像内，加依赖需重建，故刻意避开）；`package.json` / `package-lock.json` **保持原样**。
+- **口径**：扫码二维码内容为 `tron:{收款地址}`（**只带入地址**，金额必须按「精确金额」手填 —— 避免不同钱包对 TRON URI `amount` 支持不一致导致转错金额）；精确金额与「认单尾数」口径**未变**（尾数仅用于认单、不额外入账）。
+
+### 验证
+
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测 + 截图）**：`tools/_v2100_recharge_ux_demo.js`（临时脚本·不入库，Playwright）**20 PASS / 0 FAIL**，产出 9 张截图 `logs/v2100-recharge-ux/*.png` —— S1 钱包页含教程入口；S2 步骤条 3 步且停在第 1 步 + 按钮「生成收款码」；S2b 弹层内教程入口；S3 教程含 3 步 + 网络事故警示 + FAQ；S4 进入第 2 步「扫码转账」高亮；**S4b 本地生成二维码 SVG + 上下居中布局**；S4c 精确金额为 4 位小数；**S4d 倒计时突出展示（MM:SS）**；**S4e 网络强警示**；S4f「为什么带 4 位小数」解释 + 扫码提示；S4g 地址/单号已展示；**S5 关窗前弹「离页引导」不丢单**；S5b 引导回显精确金额 + 剩余时间；**S6 钱包页「待支付充值单」区块 + 继续支付**；**S7「继续支付」直接进第 2 步且金额/单号一致**；S8 未勾选闸门禁用 → 勾选启用；S9 确认到账 + 弹层关闭 + 余额更新；S10 0 业务 console error / 无「会员·等级·升级·VIP」术语。
+- **功能/回归**：核心业务流程用户场景 `tools/_v290_core_flow_user_scenarios.js` **29 PASS / 0 FAIL / 0 GAP**（原「运营补单缺口」用例已改为**如实校验新入口可用**）；客服人工补录充值 `tools/_v290_manual_credit_verify.js` **14 PASS / 0 FAIL**；前台 UX 冒烟 `tools/_v290_frontend_ux_smoke.js` **6 PASS / 0 FAIL**（已同步新弹层选择器）；`node --check server.js` 通过、`public/site/index.html` 内联脚本语法 0 fail。
+- **门禁**：`check-docs-sync.js`（15 通过）/ `check-currency.js`（未发现人民币痕迹）/ `check-root-hygiene.js`（7 通过）三门禁全绿。
+- **测试数据已清理**：`kc-rcux-*` / `kc-e2e-*` / `kc-credit-*` / `kc-batch*` 测试顾客与临时管理员、订单、CDK、充值单、钱包流水、报价与审计行全部清除（测试残留计数 **0**）。
+
+### 下一步
+
+- 可选增强（未做，按需排期）：①真实接入 BEpusdt 后，`confirm` 改为**服务端验签的 notify** 入账（当前为模拟收款）；②二维码可选**带金额的 TRON URI**（需先确认主流钱包对 `amount` 参数的支持度）；③充值单到期前**站内/邮件提醒**；④把 `public/js/qrcode.js` 也替换掉后台 TOTP 那处**外链二维码服务**（`api.qrserver.com`，离线环境会失败）。
+- 待用户确认的边界：新手教程目前是**前端样例弹层**（够演示）；若需正式运营文档（图文/视频/多语言），可另起一篇独立帮助中心页面。
+
+---
+
+## v2.9.0 · 2026-10-16 · 客服人工补录充值：链上认单漏单时由客服凭交易哈希人工入账（幂等防重复，类型 adjust 与系统到账分开统计）
+
+**一句话概括**：核心业务流程测试发现**运营侧「帮客户补单/补余额」无任何入口** —— 顾客充值靠链上扫单认单（凭证 = 精确金额的 **4 位小数尾数**），**客户不输小数就会漏单**，而系统除「顾客自助点我已支付」外**没有任何服务端路径能写顾客余额**（`kc_customer_wallet_ledger.type` 早有 `adjust` 枚举却无人写入）。本版补上**客服人工补录充值**：新增 **`POST /api/admin/customers/:id/wallet/credit`**（`customer.write` 权限），客服在链上钱包核对确实到账后，用**链上交易哈希**作凭证人工入账 —— 同一哈希**幂等防重复入账**（409 `DUPLICATE_TX`）、流水类型记为 **`adjust`（人工干预，与系统自动到账的 `recharge` 分开统计）**、可选把关联的 `pending` 充值单**一并置为已到账**、全程落 **`customer.wallet_credit` 审计**（含余额前后 + 哈希）；技术后台「顾客管理 → 顾客详情 → 账单」新增「**人工补录充值**」弹层（风险提示 + 行内校验 + 二次确认），账单汇总新增「**人工补录合计**」卡片与系统「充值合计」并列。**无新表、未改 KC 原生业务逻辑。**
+
+### 变更
+
+- **后端（`server.js`）**：新增 `POST /api/admin/customers/:id/wallet/credit`（`requirePermission('customer.write')`）。入参 `{ amount_cents | amount, tx_hash(必填), recharge_no(可选), reason(可选) }`；校验：链上哈希必填（400 `TX_HASH_REQUIRED`）、金额需为 `$1 ~ $10000` 的正数（400 `INVALID_AMOUNT`）；**幂等**：按 `(customer_id, ref=tx_hash)` 查重 → 命中即 409 `DUPLICATE_TX`；入账后写流水 **`type='adjust'`**、`ref=tx_hash`、`note='客服人工补录充值（充值单 rc_xxx）· 原因'`；`recharge_no` 存在时把该顾客的 `pending` 充值单条件更新为 `paid`（`affectedRows>0` 才回 `recharge_status='paid'`）；落审计 `customer.wallet_credit`（`before: {balance_cents}` / `after: {balance_cents, amount_cents, tx_hash, recharge_no, reason}`）。同时 `customerWalletData()` 的账单汇总新增 **`adjust_total`**（`sums.adjust`，聚合 SQL 早已按 `type` 分组、`sums` 早已备有 `adjust` 槽位，仅需回吐）。
+- **前端（`public/admin.html`）**：顾客详情「账单」tab 的「充值单」标题右侧新增「**人工补录充值**」入口（**仅 `customer.write` 角色渲染**，用批次 6 的 `adminCan()` 判定）；新增弹层 `#cust-credit-backdrop`（顾客邮箱 + 当前余额抬头、**红字风险提示**「仅在链上确认确实到账后再补录 / 认单靠小数尾数 / 同一哈希只能补录一次」、字段 = 补录金额 / 链上交易哈希 / 关联充值单号（可选）/ 补录原因（可选））；行内校验（金额 ≤ 0 或**未填链上哈希**直接提示且不关弹层）；提交前 `confirm()` **二次确认**（回显哈希与单号）；成功后 toast「已补录 $X，当前余额 $Y」并**重载顾客详情 + 切回账单 tab**。账单汇总由 4 张卡改为 **5 张**（**充值合计 / 人工补录合计 / 消费合计 / 退款合计 / 当前余额**）；流水类型标签 `adjust` 由「调账」改为 **「人工补录」**；`window.openManualCredit / closeManualCredit / submitManualCredit` 已显式暴露（内联 `onclick` 依赖全局名）。
+- **前台（`public/site/index.html`）**：顾客钱包流水类型标签补 `adjust: '人工补录'`（顾客侧可见该笔为人工补录，与自助到账区分）。
+- **口径**：**同一笔链上交易不可重复入账**（幂等键 = 交易哈希）；人工补录**只是把已真实到账的钱补记进顾客余额**，不改变金额口径；**账单上 `adjust`（人工）与 `recharge`（系统自动到账）分开统计**，便于对账审计；无新表（复用 `kc_customer_wallet_ledger` + `kc_customer_recharges`）。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v290_manual_credit_verify.js`（临时脚本·不入库）**14 PASS / 0 FAIL** —— F1 补录 $100 → 运营侧与顾客侧余额**同时**即时增加；F1b 流水 **`type=adjust`**（区别于系统自动到账）+ `ref=链上哈希` + 备注含「客服人工补录」；**F1d 账单汇总分开统计：充值合计 `$0.00` / 人工补录合计 `$100.00`**；F1c 审计 `customer.wallet_credit` 含**余额前后 + 链上哈希**；F2 同一哈希重复补录 → **409 `DUPLICATE_TX` 且余额不变**；F3 缺哈希 → 400 `TX_HASH_REQUIRED`；F4 金额 0 / 超上限 → 400 `INVALID_AMOUNT`；F5 带充值单号补录 → 该 `pending` 单被**置为 `paid`**；F6 `viewer`（无 `customer.write`）调用 → **403**；F7 顾客不存在 → **404**；F8 顾客侧余额含人工补录（$100 + $300 = $400，而充值合计不含）。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：`tools/_v290_manual_credit_ux.js`（临时脚本·不入库，Playwright）**12 PASS / 0 FAIL** —— U1 顾客详情「账单」页出现「人工补录充值」入口且弹层容器就位；U2 弹层打开 + 4 字段 + 提交按钮（抬头显示顾客邮箱与当前余额）；U2b 含「链上/只能补录一次/确实到账」风险提示；U3 **未填哈希 → 行内报错且弹层不关闭**；U4 正常补录 → **弹层关闭 + toast「已补录 $50.00，当前余额 $50.00」+ 账单刷新出新流水**；U4b 账单区余额与流水同步刷新为 `$50.00`；**U4c 账单出现「人工补录合计」卡片 + 流水类型显示「人工补录」（与充值合计分开统计）**；U5 **`viewer` 角色不渲染补录入口**（`adminCan('customer.write')=false`）；U6 全程 **0 业务 console error**。
+- **回归**：批次 1~6 功能脚本全绿（`_v230` 11/0、`_v240` 17/0、`_v250` 39/0、`_v260` 20/0、`_v270` 25/0、`_v280` 11/0）+ 核心业务流程用户场景 **28 PASS / 0 FAIL**（本轮测试报告见 `docs/验收/核心业务流程-用户场景测试-2026-10-16.md`）；`node --check server.js` 通过、`admin.html` 内联脚本语法 0 fail。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+- **测试数据已清理**：`kc-credit-*` 测试顾客与 `kc-credit-viewer-*` / `kc-credit-uxviewer-*` 临时管理员及其钱包流水 / 充值单 / 审计 / 重置令牌行全部删除；核对 `kc_admin_users` = **1**（super）、`kc_customers` 无 `kc-credit-*` / `kc-e2e-*` 残留。
+
+### 下一步
+
+- 可选增强（未做，按需排期）：①**补发货**入口 —— 对 `status='failed'` 的订单用 `issueCdkByRef`（幂等键 `our_order_no`）重试履约；②人工补录**支持负数**（人工扣回，同样记 `adjust`）；③**链上扫单自动化**（真实 BEpusdt notify 接入后由服务端验签入账，替代模拟回调）。
+
+---
+
+## v2.8.0 · 2026-10-16 · 批次6 · 权限点细化收口：端点级 requirePermission 铺满 + 菜单按权限细粒度显隐 + 内置角色权限对齐
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 6（v2.8.0）**，为技术后台**既有端点补齐端点级权限点校验**（新增 `ADMIN_ROUTE_PERMISSIONS` 映射表 + `/api/admin` 统一中间件，35 条规则覆盖 33 个受控端点），并**对账内置角色权限**与端点门禁 —— 修复「`finance` 缺 `menu.read` → `/api/admin/menus` 403 → 回落内置兜底菜单（泄漏无权页面）」与「兜底菜单权限点过期」两处缺口，同时让**启动/轮询按权限点跳过无权端点**（低权限角色不再刷 403）。**无新表**；**未改卡池 / 代理池等 KC 原生业务逻辑。**
+
+### 变更
+
+- **端点权限铺满（`server.js`）**：新增 `ADMIN_ROUTE_PERMISSIONS`（`{re, methods?, point}` 规则表）+ `adminRoutePermission(req)` 解析器，注册为 `app.use('/api/admin', …)`（位于 `authenticateAdmin` → `requirePasswordChanged` 之后）。命中且权限不足 → **403 `FORBIDDEN`**（`缺少权限：<point>`）。覆盖 `billing/subscription/checkout/task-logs`（`order.read`）、`runtime-logs/login-logs`（`audit.read`）、`cdks`（`entitlement.issue`）、`cards/sessions/proxies/browser-pool/config/site-config/region/telegram/hcaptcha/gpt-api/integration` 与 `security/(2fa-mode|paths)`（`system.config`）、`addresses`（`admin.write`）；`products/plans/listing-cards/upstreams/card-config` 与 `entitlements/grants|rules|prices` 采用 **GET=读点 / 非 GET=写点**（如 `pricing.read` / `pricing.write`）；`tenants/api-clients/api-portal` **GET=`tenant.read` / 非 GET=`tenant.write`**。**刻意不设门**：登录壳与自助端点（`login` / `verify-secondary` / `secondary/session` / `session` / 改密 / 2FA 自助）、共享读 `/api/admin/data`、`/api/admin/security/status`；已内联 `requirePermission` 的域（customers / roles / admins / permissions / menus / audit-logs / password-resets）不入表，避免“双门”重复。
+- **内置角色权限对齐（`mysql-store.js`）**：`finance` 补 **`menu.read`**（后台导航由 `GET /api/admin/menus` 驱动，缺该权限会 403 并回落兜底菜单）；`seedAdminRoles()` 增**幂等对齐**分支（仅补齐「种子含而库中缺」的 `menu.read`，不覆盖运维已配置的其他权限点）。`BUILTIN_ADMIN_MENUS` 中缺失权限点的行补齐：`cancel_renewal/checkout_debug/billing/logs/automation_tasks → order.read`、`upstreams → pricing.read`、`cards/sessions/proxies/browser_pool → system.config`、`cdks → entitlement.issue`、`runtime_logs → audit.read`、`api_clients → tenant.read`（组行与 `dashboard` 保持空 = 始终可见）；`seedAdminMenus()` 改为**仅当库中该行 `permission` 为空时按种子补齐**（保留运维已配置的非空权限）。内置角色 `operator/viewer/finance` 仍按角色矩阵限定菜单可见面。
+- **前端显隐与兜底同步（`public/admin.html`）**：新增 **`adminCan(point)`** 助手；`bootAdmin` 按权限跳过 `loadRegionConfig / loadGptApiConfig / loadIntegrationConfig`（`system.config`）与 `loadCardConfig`（`pricing.read`）；`loadData`（含 3 秒轮询）按权限跳过 `loadCdkList`（`entitlement.issue`）与 `loadCardPoolList`（`system.config`）—— 修复低权限角色**启动即刷 403 + 控制台报错**；`NAV_MENU_FALLBACK`（菜单接口失败时的内置兜底）**权限点同步为批次 6 口径**，避免兜底路径泄漏无权页面。导航渲染仍由 `adminMenuVisible` 按 `window.__adminMe.permissions` × `menu.permission` 过滤（组行 `permission` 为整组访问门）。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v280_batch6_functional.js`（临时脚本·不入库）**11 PASS / 0 FAIL / 0 SKIP** —— TC-F-16a `super` 对 33 个受控端点全量 GET 无 403/401；TC-F-16b **`viewer`/`operator`/`finance` × 33 端点**：**菜单权限点 ↔ 端点放行**完全一致（能看到的页面其 GET 必放行、看不到的必 403）；TC-F-16c 共享端点（`/api/admin/data`、`/security/status`、`/session`）对只读角色仍放行；TC-F-16d `viewer` 导航不含 `system.config` / `admin.write` 页面；TC-F-16e `viewer` 仍可见 `order.read` / `pricing.read` / `entitlement.read` 页面；TC-F-16f `operator` 含「CDK 管理」（`entitlement.issue`）但不含系统配置页。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：`tools/_v280_batch6_ux.js`（临时脚本·不入库）**18 PASS / 0 FAIL** —— U1 `super` 导航 **32 项**、含「系统与安全」组与「操作审计」、组内子项可折叠展开；U2 `viewer` 导航**恰 18 项**（组门 `admin.write` 生效）、应见业务页全呈现、`system.config`/`admin.write`/`entitlement.issue` 页面**零泄漏**；U3 `viewer` 启动后 **API 403 计数 0 + 业务 console error 0**、概览中心可用（`active` 唯一 + dashboard 展示）、无 `undefined/NaN`；U4 全页无「会员/等级/升级/VIP」术语、5 折叠组名可见；U5 `finance`（**15 项**）含定价页、不含「租户与客户/系统与安全/CDK 管理/银行卡池」、启动零 403；U6 `operator`（**19 项**）含「CDK 管理」、不含系统配置类页、启动零 403。
+- **回归**：批次 1 **11/0**、批次 2 **17/0**、批次 3 **39/0**、批次 4 **20/0**、批次 5 **25/0** 全 PASS；`node --check server.js` / `mysql-store.js` 通过；`admin.html` 内联脚本语法检查 0 fail。
+- **门禁**：`check-docs-sync.js`（15 通过 / 0 失败）/ `check-currency.js`（未发现人民币痕迹）/ `check-root-hygiene.js`（7 通过 / 0 失败）三门禁全绿。
+- **测试数据已清理**：`kc-batch6-viewer/-operator/-finance@example.com` 三个测试管理员（`kc_admin_users`）及其审计行、重置令牌行删除；核对 `kc_admin_users` 仅存 `super`、`kc_admin_roles` = 4（全内置）。
+
+### 下一步
+
+- **全 6 批次收口完成**（批次 1 `v2.3.0` ~ 批次 6 `v2.8.0`）；实施计划状态行更新为「已完成」。
+- 需用户确认的边界：①数据驱动的「系统与安全」组行以 `admin.write` 作整组门 —— `viewer` 虽持有 `admin.read/role.read/audit.read` 仍**看不到**该组（与批次 4 退出条件 TC-F-11 一致，属**有意收紧**）；②`system.config` 复用为基础设施页（系统配置/卡池/Session/代理池/浏览器池/集成等）的统一权限点，未再细分；③`finance` 现含 `menu.read`（仅用于取导航，不含菜单管理页 —— 该页由 `admin.write` 把门）。
+
+---
+
+## v2.7.0 · 2026-10-16 · 批次5 · 租户员工完善：改角色 / 启用·禁用 / 重置密码 + 最后负责人保护与自身守卫
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 5（v2.7.0）**，把代理商后台（`/tenant-admin`）的「**员工**」页从「只能新增」补成**完整账号管理** —— 新增 **`PUT /api/tenant-admin/staff/:id`**（改角色）、**`POST /api/tenant-admin/staff/:id/status`**（启用·禁用）两个端点，复用批次 3 已交付的 **`POST /:id/reset-password`**（一次性临时密码 + 强制首改）；**无新表**（复用 `kc_tenant_staff.status` / `password_hash` / `must_change_password`）；全部端点沿用 `authenticateTenantStaff + requireTenantOwner`（**仅负责人可管员工**）并落 **`staff.update` 审计**。**安全守卫**：不能降级 / 禁用**最后一个负责人**（`LAST_OWNER`）、不能禁用或重置**当前登录账号**（`SELF`）、角色只接受 **`owner|staff`**（防 `ENUM` 写入报错）；前端「员工」页改为**表格**（邮箱 / 角色下拉 / 状态 pill / 最近登录 / 操作）。**未改卡池 / 代理池等 KC 原生业务逻辑。**
+
+### 变更
+
+- **后端（`server.js`）**：新增 `countActiveTenantOwners(tid)`；`PUT /api/tenant-admin/staff/:id`（角色变更，非 `owner|staff` → 400；把**最后一个**活跃负责人降级 → 400 `LAST_OWNER`；成功落审计 `staff.update`（`before.role` → `after.role`））；`POST /api/tenant-admin/staff/:id/status`（`active|disabled`，非法值 → 400；禁用**自己** → 400 `SELF`；禁用**最后一个负责人** → 400 `LAST_OWNER`；成功落审计 `staff.update`）。同时为批次 3 的 `POST /api/tenant-admin/staff/:id/reset-password` **补 `SELF` 守卫**（重置当前登录账号密码 → 400），避免负责人自我锁死（租户后台**没有**自助改密 UI，一旦重置自己将无法再执行写操作）。
+- **前端（`public/tenant-admin.html`）**：「员工」页 `loadStaff()` 重写为表格 —— 列 = **邮箱 / 角色（下拉 `owner|staff`）/ 状态（`启用`/`禁用` pill）/ 最近登录 / 操作**；行内操作 = **保存角色**（`PUT`）、**禁用·启用**（`POST …/status`）、**重置密码**（`POST …/reset-password`，成功后展示**一次性临时密码块** `#temp-pwd-wrap`：文案「一次性临时密码（30 分钟内有效…）」）；当前登录账号行标记「当前账号」且**「重置密码」按钮置灰**（`disabled` + `title="不能重置当前登录账号的密码"`）；非负责人访问该页显示「仅负责人可管理员工」；`window.saveStaffRole / toggleStaffStatus / resetStaffPassword` 已在 IIFE 尾部**显式暴露**（内联 `onclick` 依赖全局名，遗漏会静默失效）。
+- **口径**：`kc_tenant_staff.role` 的 `ENUM` **只有 `owner|staff`**（历史踩坑：写 `operator` 会触发 MySQL `Data truncated for column 'role'`），故端点对非法角色**先校验再写库**；被禁用账号的**登录与已签发令牌**均立即失效（`authenticateTenantStaff` 校验 `status='active'`）。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v270_batch5_functional.js`（临时脚本·不入库）**25 PASS / 0 FAIL / 0 SKIP** —— TC-F-15（回归）owner 重置 staff → 一次性临时密码 + `reset_expires_in=1800` + 首登 `must_change=true` + 改密前写操作 403 `PASSWORD_CHANGE_REQUIRED` + 白名单改密放行；批次 5 新增：B5-01~03 **非负责人**改角色 / 改状态 / 重置密码均 **403**；B5-04 角色 `owner↔staff` 双向变更成功；B5-05 非法角色 `operator` → **400**、非法状态 `banned` → **400**；B5-06 降级最后一个负责人 → **400 `LAST_OWNER`**；B5-07 禁用当前登录账号 → **400 `SELF`**；B5-08 重置当前登录账号密码 → **400 `SELF`**；B5-09 禁用后**登录 401 + 旧令牌 401**、重新启用后恢复登录；B5-10 **跨租户改他租户员工 → 404**（作用域锁 `req.tenant.id`）；B5-11 审计 `staff.update` **四要素齐备**（actor/action/target/before/after）。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：U1 员工页表头「邮箱·角色·状态·最近登录·操作」+ 4 行数据 + 角色下拉含「负责人/员工」+ 状态 pill 启用/禁用并存 + 三按钮齐备，`#staff-add` 可见、`#temp-pwd-wrap` 初始 `display:none` **PASS**；U2 点「重置密码」后临时密码块 display 变 `block`、`#temp-pwd-box` 为随机密码、toast「已生成一次性临时密码（30 分钟有效）」**PASS**；U3 状态开关**双向**实测（禁用→「已启用该员工」、再点→「已禁用该员工」）**PASS**；U4 **自身守卫**实测：当前账号行「重置密码」按钮 `disabled=true` 且 `title` 含「不能重置当前登录账号」**PASS**；U5 **0 控制台 error、0 禁词**（会员/等级/升级/VIP）**PASS**；U6 非负责人登录后「员工」页显示「仅负责人可管理员工」**PASS**。
+- **回归**：批次 1 `tools/_v230_batch1_functional.js` **11/11 PASS**、批次 2 `tools/_v240_batch2_functional.js` **17/17 PASS**、批次 3 `tools/_v250_batch3_functional.js` **39/39 PASS**、批次 4 `tools/_v260_batch4_functional.js` **20/0 PASS**；`node --check server.js` 通过。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+- **测试数据已清理**：独立测试租户 `cli_batch5test`（含 `kc_tenant_brand` / `kc_tenant_catalog` / `kc_tenant_domains` / `kc_tenant_staff` 5 行 / 相关审计与重置令牌）与批次 2~4 遗留测试管理员、自定义角色、批次 3 遗留测试顾客（含钱包流水 / 充值单 / 订单 / 权益授权）全部删除；核对 `kc_admin_users` = 1（super）、`kc_admin_roles` = 4（全内置）、`kc_admin_menus` = 32、`kc_tenant_staff` 无 `kc-batch%` 行。
+
+### 下一步
+
+- 批次 6（**v2.8.0 权限点细化收口**）：把剩余端点按权限点铺满 `requirePermission`，菜单按权限细粒度显隐收口；**无新表**。
+- 需用户确认的边界：无（本批次未触碰红线表述；「员工」页属代理商后台既有页面，未改 KC 原生业务逻辑）。
+
+---
+
+## v2.6.0 · 2026-10-16 · 批次4 · 后台菜单数据驱动：kc_admin_menus + 菜单管理页 + 按角色权限过滤导航
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 4（v2.6.0）**，把技术后台的**左侧导航从硬编码 DOM 改成数据驱动** —— 新建 **`kc_admin_menus`**（`menu_key` / `label` / `icon` / `group_key` / `is_group` / `sort` / `permission` / `visible` / `builtin`），种子取方案 §十 目标信息架构（并补齐该表未列但既有的「续费管理 / 上游管理」2 项，避免页面从导航失联），共 **32 项**；新增 **`/api/admin/menus`** CRUD（`menu.read` 读 / `menu.write` 写）与「系统与安全 → **菜单管理**」页；前端登录后**按当前角色权限点过滤**渲染导航（**保留 `switchPage` 契约与全部页面容器**）；「系统与安全」组行以 `permission='admin.write'` 作**整组访问门**，即 **`viewer` 等只读角色完全看不到该组**（TC-F-11 退出条件）。**未改卡池 / 代理池等 KC 原生业务逻辑。**
+
+### 变更
+
+- **数据层（`mysql-store.js`）**：新建 **`kc_admin_menus`**（`menu_key` 唯一 / `is_group` 区分可折叠组行 / `group_key` 所属组 / `permission` 所需权限点 / `visible` / `builtin` 内置不可删）；新增 `listAdminMenus()` / `getAdminMenuByKey()` / `upsertAdminMenu()`（无则插、有则更）/ `deleteAdminMenu()`（内置或含子项 → 拒绝）；`seedAdminMenus()` 幂等播种 **32 项**并标记 `builtin=1`；挂进 `ensureReady()`（`ensureAdminMenusTable` + `seedAdminMenus`）。
+- **导航重排（种子 = 方案 §十 目标 IA）**：顶级保留「概览中心」；新建 **业务运营**（顾客管理 / 权益 / 权益报价 / 商品管理 / 站点与定价 / 续费管理 / 上游管理）、**支付与资产**（支付链接调试 / 银行卡池 / CDK 管理 / Session 管理 / **开通账单**（原「账单记录」））、**自动化与任务**（任务管理 / 自动化任务 / 运行日志 / **代理池** / **浏览器池**）、**租户与客户**（租户 / API 客户）、**系统与安全**（后台账号 / 角色与权限 / **菜单管理** / 操作审计 / 系统配置 / 免税地址 / 登录日志）。
+- **API（`server.js`）**：`GET /api/admin/menus`（`requirePermission('menu.read')`）；`POST /api/admin/menus`（`requirePermission('menu.write')`，upsert + 审计 `menu.create` / `menu.update`）；`DELETE /api/admin/menus/:key`（`menu.write`，内置 400 / 含子项 400 / 不存在 404 + 审计 `menu.delete`）。
+- **前端（`public/admin.html`）**：`<nav id="nav-menu">` 由 `renderAdminNav()` 依据接口数据渲染（组行可折叠、子项点击 `switchPage`），接口失败时回落内置 `NAV_MENU_FALLBACK`（= 种子副本，保证后台永远可用）；渲染规则 = `visible` × 当前角色权限点（`window.__adminMe.permissions`，超级角色 `['*']` 全放行）；`expandNavGroupForPage()` 改为按 `.nav-item[data-page]` 就近找组**通用展开**（删除原先硬编码的 `BUSINESS_PAGES` / `SECURITY_PAGES`）；`switchPageInternal()` 记录 `window.__currentPage` 使重渲染后保持高亮；新增「**菜单管理**」页（排序 / 显示名 / Key / 所属分组 / 图标 / 所需权限 / 可见 / 类型 表格 + 新增 / 编辑弹层：Key 编辑时锁定、权限点下拉取 `/api/admin/permissions`、分组下拉取现有组行；内置项无删除按钮）。
+- **兜底与契约**：所有页面容器 id 与 `switchPage` 分派**一律未改**（菜单项 key = 页面 id），静态回归断言「每个菜单项 key 均有对应页面容器」通过（27 项齐全）；`ensureAdminSession()` 内 `await loadAdminMenus()` 后再做权限闸门与强制首改。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v260_batch4_functional.js`（临时脚本·不入库）**20 PASS / 0 FAIL / 0 SKIP** —— TC-F-09 菜单接口 200 且种子 = **32 项**、`g_security` 组 `permission=admin.write`、`menus` 项在位、32 项全 `builtin`；**静态回归**「每个菜单项 key 均有对应页面容器」通过（27 项）；TC-F-10 CRUD 新增 → 改名/改排序/置隐藏 → 删除全通过，**内置菜单删除 400**、**含子项的组删除 400**，审计 `menu.create` / `menu.update` / `menu.delete` 均落 `kc_audit_logs`；TC-F-11 **viewer 登录后可见菜单不含「系统与安全」任何子项**（可见 23 项、普通菜单仍在），且 viewer 无 `menu.write` → 新增菜单 **403**。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：U1 超级管理员实测导航 **32 项 / 5 个分组**（业务运营 / 支付与资产 / 自动化与任务 / 租户与客户 / **系统与安全**），`window.__adminMe.permissions = ["*"]`，接口与 `adminMenusRaw` 均 32 条、`g_security` 在位 **PASS**；U2 **viewer 实测导航不含「系统与安全」「后台账号」「角色与权限」「菜单管理」「操作审计」（全 ABSENT）**，普通项均在，0 控制台 error、0 禁词 **PASS**；U3「菜单管理」页实测主标题「菜单管理」、表头「排序·显示名·Key·所属分组·图标·所需权限·可见·类型·操作」、**32 行**、工具栏「刷新」+「+ 新增菜单」、32 行全标「内置」且无删除按钮 **PASS**；U4 弹层实测「新增菜单」8 个字段（Key / 显示名 / 图标 / 所属分组 / 排序 / 可折叠组行 / 所需权限点 / 可见；分组下拉 6 项、权限下拉 18 项）+「取消 / 保存」，编辑态「编辑菜单：菜单管理」且 **Key 锁定**、perm=admin.write、group=g_security，关闭后 `display:none` **PASS**。
+- **回归**：批次 1 `tools/_v230_batch1_functional.js` **11/11 PASS**、批次 2 `tools/_v240_batch2_functional.js` **17/17 PASS**、批次 3 `tools/_v250_batch3_functional.js` **39/39 PASS**；`node --check server.js / mysql-store.js` 通过。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+- **测试数据已清理**：临时 viewer 管理员、临时菜单与相关审计噪声行已删除；核对 `kc_admin_users` = 1（super）、`kc_admin_roles` = 4（全内置）、`kc_admin_menus` = 32。
+
+### 下一步
+
+- 批次 5（**v2.7.0 租户员工完善**）：补 `PUT` / `status` / `reset-password` 等租户员工管理端点（**`kc_tenant_staff.role` ENUM 仅 `owner|staff`，勿写 `operator`**）。
+- 批次 6（**v2.8.0 权限点铺满收口**）：把剩余端点按权限点收口，补 `menu.*` / `system.*` 等点位的越权断言。
+- 需用户确认的边界：本批次按已批准方案 §十 重排了**技术后台**导航分组，与产品红线「KC 后台菜单不动（业务需求不能修改技术后台结构）」表述存在张力 —— 本批次属**平台管理工具**改造（非业务需求），如需回退可改 `kc_admin_menus` 行的 `group_key` / `sort` 复位居中。
+
+---
+
+## v2.5.0 · 2026-10-16 · 批次3 · 密码与账号安全 + 操作审计：一次性重置令牌 + 强制首改 + 操作审计页
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 3（v2.5.0）**，把「改密 / 重置密码」这条最容易被做歪的安全链路一次性做正——新建 **`kc_password_resets` 一次性重置令牌表**（**只存 `sha256` 哈希、不存明文**、30 分钟过期、用后即焚），把**四类账号的重置场景统一抽象到同一张表**（平台 super 重置管理员 / 租户 owner 重置员工 / 管理员重置顾客 / 顾客自助找回留接口位）；批次 1/2 的「临时密码」端点**内部改走令牌表、对外契约不变**。同时补齐**登录安全**（密码强度策略、**强制首改闸门**：拿到临时密码后未改密则一切写操作 403、`password_version` 自增实现**强制下线**）与**操作审计覆盖面铺满**（改价 / 发权益 / 撤销权益 / 删卡 / 改商品卡片全部落 `kc_audit_logs`），技术后台新增「**操作审计**」页（筛选 + 分页 + 变更前后对比）。**未改卡池 / 代理池等 KC 原生业务逻辑。**
+
+### 变更
+
+- **数据层（`mysql-store.js`）**：新建 **`kc_password_resets`**（`token_hash` CHAR(64) 唯一 / `token_hint`（hash 前 8 位，仅供审计列表辨识）/ `account_type`(`admin|tenant_staff|customer`) / `account_id` / `expires_at` / `used_at` / `created_by_type` / `created_by`）；挂进 `ensureReady()`；新增 `createPasswordReset()`（写入用 `DATE_ADD(NOW(), INTERVAL ? SECOND)`）/ `consumePasswordReset()`（**单条 UPDATE 同时校验「未使用 + 未过期」**，`affectedRows==1` 即消费成功，否则回查判定 `used|expired|not_found`，时间比较走 SQL 避免时区问题）/ `listPasswordResets()`（**不返回 `token_hash`**）；`kc_tenant_staff` 加 `must_change_password`；新增 `listAuditLogs()`（分页 + 按操作人/动作/目标过滤，按 id DESC）。
+- **重置令牌统一抽象（`server.js`）**：新增 `sha256Hex` / `validatePasswordStrength`（**≥8 位且同时含字母与数字**）/ `registerResetToken` / `issuePasswordReset` / `consumePasswordResetToken`（消费与拒绝均落审计 `password.reset_issued|consumed|rejected`）；批次 1/2 三个既有重置端点（平台 `admins/:id`、平台 `customers/:id`、租户 `customers/:id`）**内部改走令牌表、对外契约不变**（仍返回 `temp_password`，新增 `reset_expires_in: 1800`）；租户员工新增 `POST /api/tenant-admin/staff/:id/reset-password`（owner 限定，`account_type='tenant_staff'`）。
+- **登录安全（`server.js` / `admin-auth.js`）**：**强制首改闸门**三层 —— 平台后台 `requirePasswordChanged`（写操作 403 `PASSWORD_CHANGE_REQUIRED`，白名单 `/change-password`、`/session`、`/security/status`、`/permissions`）、租户后台 `authenticateTenantStaff`（白名单 `/change-password`）、前台顾客 `authenticateCustomer`（白名单 `/auth/change-password`）；登录响应与 `/session`、`/me`、`whoami` 均回吐 `must_change_password`；`POST /api/admin/admins/:id/force-logout`（**`password_version = password_version + 1`** 令该账号全部旧令牌立即失效）；`/api/admin/change-password`、租户 `change-password`、顾客 `/api/tenant/auth/change-password` 三处统一改用 `validatePasswordStrength`；`POST /api/admin/password-resets/consume`（`admin.write`）/ `GET /api/admin/password-resets`（`requireSuperAdmin`）/ `GET /api/admin/audit-logs`（`audit.read`）。
+- **场景 D 接口位**：新增 `POST /api/tenant/auth/forgot-password`（**通用文案防枚举**、审计 `customer.self_reset_requested`、响应带 `reserved:true`，令牌下发依赖的邮件/短信通道未接入）。
+- **审计铺满（`server.js`）**：新增 `card.delete`（删卡）、`pricing.update`（权益报价与权益包定价）、`entitlement.issue` / `entitlement.revoke`（发 / 撤销权益）、`listing_card.update`（改商品卡片），统一走 `adminAuditActor(req)`。
+- **前端（`public/admin.html`）**：「系统与安全」组内新增「**操作审计**」页（筛选：操作人邮箱模糊 / 动作 / 目标类型 + 查询 / 重置 + 列表 + 分页，列=时间·操作人·动作·目标·变更前·变更后·IP，越界值裁剪 120 字）；新增**不可关闭的强制改密弹层**（仅「确认修改」按钮，前端同样校验 ≥8 位含字母数字 + 两次一致，成功后清令牌回登录页）；`ensureAdminSession()` 记录 `must_change_password` 并在权限闸门后调 `maybeForcePasswordChange()`；按 `audit.read` 显隐「操作审计」入口。
+- **前端（`public/site/index.html`）**：新增**顾客强制改密弹层** `#fpModal`；登录成功或 `me` 返回 `must_change_password` 时自动弹出，改密成功则清会话回首页并重新登录。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v250_batch3_functional.js`（临时脚本·不入库）**39 PASS / 0 FAIL / 0 SKIP** —— TC-F-07 重置顾客密码返回一次性临时密码 + `reset_expires_in=1800`、顾客首登 `must_change_password=true`、未改密时写操作 **403 `PASSWORD_CHANGE_REQUIRED`**、弱密码 400、自助改密 200 且标记清除、闸门放行；TC-F-14 令牌消费首次 200 / 二次 **410 `RESET_USED`** / 不存在 **404 `RESET_NOT_FOUND`**、列表**不落明文**且 `ttl_seconds=1800`；TC-F-12 冻结解冻顾客、改价幂等（回写原值 60000）、发权益 + 撤销、审计四要素齐备、`audit-logs` 分页可用；TC-F-15 租户 owner 登录 / 员工列表 / owner 重置 staff 成功 / staff 首登强制改密 / 写操作 403 / 非 owner 重置 **403** / 租户改密强度校验 400；TC-F-16 后台改密强度（<8 位 400、无数字 400）、临时管理员创建→登录→**force-logout→旧令牌 401**；TC-F-17 `forgot-password` 通用文案、未注册邮箱同文案（**防枚举**）。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：U1 后台强制首改——临时账号登录后遮罩弹层**自动弹出**，标题「请先修改初始密码」、正文「你正在使用一次性临时密码（30 分钟有效）。为账号安全，修改密码前无法进行任何写操作。」、**无关闭/取消/跳过按钮**，改密（kcux2026→newpass2026）后回到 `/admin-login` **PASS**；U2「操作审计」页——主标题「操作审计」、三筛选 placeholder（操作人邮箱（模糊）/动作（如 pricing.update）/目标类型（如 customer））、表头「时间·操作人·动作·目标·变更前·变更后·IP」、当页 30 行、右侧「共 30 条」、分页「上一页 / 下一页」**PASS**；U3 控制台 **0 error**、全文 **0 命中「会员/等级/升级/VIP」** **PASS**；U4 主站前台 `GET /` 品牌「KC 直供」、导航恰 5 项、主要区块渲染正常、登录弹层正常、0 控制台 error、0 禁词 **PASS**。
+- **回归**：批次 1 `tools/_v230_batch1_functional.js` 复跑 **11/11 PASS**；批次 2 `tools/_v240_batch2_functional.js` 复跑 **17/17 PASS**；`node --check server.js / mysql-store.js / admin-auth.js` 通过。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+
+### 下一步
+
+- 批次 4（**v2.6.0 菜单管理数据驱动**）：新建 `kc_admin_menus`（`key`/`label`/`icon`/`group`/`sort`/`permission`/`visible`），种子取计划 §十 目标 IA 表；`/api/admin/menus` CRUD；前端登录后**按角色权限拉取菜单渲染**，用数据源替换 `public/admin.html` 硬编码导航 DOM（**保留 `switchPage` 契约与页面容器**）；退出条件 TC-F-11（`viewer` 登录后菜单不含「系统与安全」整组）。
+- 待登记取舍：①注册路径仍沿用旧「≥6 位」口径，仅改密路径应用新强度策略；②场景 D 自助找回仅留接口位（邮件/短信通道未接入）；③「2FA 下放租户 owner」未实现（租户员工登录无 2FA 基建），记为 deferred。
+
+---
+
+## v2.4.0 · 2026-10-16 · 批次2 · 平台管理员账号域 + RBAC 地基：多管理员 + 角色权限 + requirePermission + 旧登录兜底
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 2（v2.4.0）**，把「后台不能管后台」这一最刺眼的缺口补上——平台从**单账号硬编码管理员**升级为 `kc_admin_users` **多管理员账号域**，并同批立起 **RBAC 三段式地基**（`主体(管理员) → 角色(kc_admin_roles) → 权限点(17 项) → 端点校验 requirePermission`）。技术后台新增「**系统与安全**」组：「**后台账号**」（列表/新增/改角色/禁用/重置密码，**仅超级管理员可写**）+「**角色与权限**」（内置 `super/operator/viewer/finance` + 自定义角色 + 权限点勾选矩阵）。**兼容红线**：现有单账号（`app_config`）自动迁移为**首个 super**，**旧登录路径兜底保留**，迁移后原账号仍可登录。
+
+### 变更
+
+- **数据层（`mysql-store.js`）**：新建 **`kc_admin_users`**（`email` 唯一 / `password_hash` / `password_version`（改密自增令旧令牌失效）/ `role_code` → `kc_admin_roles.code` / `status` / `must_change_password` / `note` / `last_login_at`）+ **`kc_admin_roles`**（`code` 唯一 / `name` / `permissions_json` / `builtin`）；挂进 `ensureReady()`；内置角色种子 `super`(全权 `['*']`)/`operator`/`viewer`/`finance`（`builtin=1`）；`seedAdminUsers()` 把 `app_config` 现管理员行**幂等迁移**为首个 `super`（仅当表为空时执行）。新增 `PERMISSION_POINTS`（17 项）与角色/管理员 CRUD 助手。
+- **认证改造（`admin-auth.js` / `server.js`）**：`issueAdminToken(pv, email, {id, role, permissions})` 支持携带 `auid/role/permissions`；`verifyAdminToken` 放宽为「签名有效 + `sub='admin'` + `permissions` 非空」；`authenticateAdmin` 改为**带 `auid` 的令牌查 `kc_admin_users`**（校验 status/pv，组装角色权限），**无 `auid` 的旧令牌回落 `app_config` 单账号校验并视为全权 super**（旧登录不破坏）；新增 `requirePermission(point)`（`'*'` 全权放行）与 `requireSuperAdmin`。登录/2FA/`/api/admin/session`/`/api/admin/change-password` 全部按「优先表、回落 `app_config`」双路走通，令牌刷新保留 `auid/role/permissions`。
+- **API（`server.js`，均注册于全局 `authenticateAdmin` 之后）**：`GET /api/admin/permissions`（权限点目录）、`GET /api/admin/roles`、`POST /api/admin/roles`（创建/更新，`super` 不可改）、`DELETE /api/admin/roles/:code`（内置/在用不可删）、`GET /api/admin/admins`、`POST /api/admin/admins`（创建，留空自动生成**一次性临时密码**并置首改）、`PUT /api/admin/admins/:id`（改角色/备注）、`POST /api/admin/admins/:id/status`（禁用/启用）、`POST /api/admin/admins/:id/reset-password`。**自保护**：不能禁用当前登录账号、不能移除/禁用最后一个 `super`；写操作全部落 `kc_audit_logs`（`admin.create/update/disable/enable/reset_password`、`role.create/update/delete`）。
+- **顾客域接入权限点**：批次 1 的顾客端点补上 `requirePermission('customer.read')`（读）/ `requirePermission('customer.write')`（冻结·备注·改密·开号），作为「低权限角色越权 403」的可验证落点（`viewer` 只读、`operator` 可写）。
+- **前端（`public/admin.html`）**：新组「**系统与安全**」（`shield-check` 图标，折叠组，深链自动展开）下两页——「**后台账号**」表格（邮箱/角色徽标/状态/首改/最近登录/备注/操作）+ 新增·编辑弹层（角色下拉）+ 一次性临时密码弹层（复制降级 `execCommand`）；「**角色与权限**」表格（角色/在用账号数/权限点摘要/备注）+ 角色编辑弹层（**权限点勾选矩阵** + 全选/清空）；`ensureAdminSession()` 记录当前 `role/permissions` 并据此**隐藏「+ 新增管理员」「+ 新增角色」按钮**（非 super 显示「仅可查看」）。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v240_batch2_functional.js`（临时脚本·不入库）**17/17 PASS** —— TC-F-13 迁移后原管理员账号仍可登录 + 会话含 `role=super`/`permissions=['*']`；TC-F-09 权限点目录 17 项（含 `admin.write`/`customer.write`）/ 内置四角色齐备且 `builtin` 标记 / 管理员列表含迁移来的 super；TC-F-16 不能禁用当前登录账号（400）；TC-F-10 新增管理员返回一次性临时密码，新账号可登录且 `role=viewer`；TC-F-10c **非 super 新增管理员 403**；TC-F-11 viewer 有 `admin.read`/`customer.read` → 列表可见，**无 `customer.write` → 冻结顾客 403**；TC-F-12 禁用后该管理员登录被拒 403；TC-F-09d~g 自定义角色可建/内置不可删/在用不可删/可删。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：U1 新组「系统与安全」可展开、进入「后台账号」页标题与表格列（邮箱/角色/状态/首改/最近登录/备注/操作）及「超级管理员·启用」行 + 「+ 新增管理员」按钮 **PASS**；U2 新增管理员弹层字段（邮箱/角色/初始密码/备注 + 取消/保存）**PASS**；U3「角色与权限」页 ≥4 角色、`超级管理员` 显示「全部权限」+「内置角色」**PASS**；U4 角色编辑弹层含 角色代号/显示名/备注 + **约 17 个权限点复选框** + 全选/清空 **PASS**；U5 两页渲染文本 **0 命中「会员/等级/升级/VIP」**、**控制台 0 JS 报错** **PASS**。
+- **审计**：管理员创建 / 改角色 / 禁用·启用 / 角色创建·删除实测落 `kc_audit_logs`（`actor_email`/`action`/`target_type`/`target_id` 齐备；**重置密码审计不含明文**）。
+- **回归**：批次 1 顾客域脚本 `tools/_v230_batch1_functional.js` 复跑 **11/11 PASS**（新增 `requirePermission` 后超级管理员令牌 `['*']` 仍全通，无回归）；`node --check server.js / mysql-store.js / admin-auth.js` 通过。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+
+### 下一步
+
+- 批次 3（**v2.5.0 密码与账号安全 + 操作审计**）：新建 `kc_password_resets`（存 hash 不存明文、30 分钟过期、用后即焚）；四场景重置统一抽象（平台 super 重置管理员 / 租户 owner 重置 staff / 管理员重置顾客 / 顾客自助找回留接口位）；批次 1/2 的「临时密码」端点内部改走令牌表（**契约不变**）；写操作审计覆盖面铺满；登录安全（会话超时与强制下线、密码强度、强制首改、2FA 下放租户 owner）。
+
+---
+
+## v2.3.0 · 2026-10-16 · 批次1 · 后台顾客管理域：顾客四视图 + 冻结/备注/改密/开号 + 操作审计地基
+
+**一句话概括**：按《后台用户与账号管理方案》实施计划的**批次 1（v2.3.0）**，把「顾客」做成后台**一等公民**——技术后台 `/admin` 与代理商后台 `/tenant-admin` 均新增「顾客管理」：列表（搜索/状态/租户筛选/分页）+ 详情抽屉**四视图**（概览 / 权益 / 订单 / 账单）+ 最低限度资金安全写操作（冻结/解冻、备注/昵称、重置临时密码、手动开号）。同批**先立操作审计地基**（`kc_audit_logs` + `insertAuditLog`），使本批所有写操作即有审计。**未改卡池/代理池等 KC 原生业务逻辑。**
+
+### 变更
+
+- **数据层（`mysql-store.js`）**：新建 `kc_audit_logs`（`actor_type`/`actor_id`/`actor_email`/`action`/`target_type`/`target_id`/`before_json`/`after_json`/`ip`）+ `insertAuditLog()` + `backfillOrderBizType()`，挂进 `ensureReady()`；`kc_api_orders` 加 **`biz_type`** ENUM（`topup/account/website/entitlement/other`，容错 ALTER + 历史按 `kc_listing_cards.card_json.category` 回填）；`kc_customers` 加 `must_change_password`、`admin_note`；`kc_customer_wallet_ledger.type` 扩 `adjust`。
+- **订单打标（`server.js`）**：`openApiFindSku` 增 `LEFT JOIN kc_listing_cards` 取 `card_json`；`createApiOrderCore` 下单 INSERT 落 `biz_type`（由卡 JSON 品类映射）。定位：订单类型不再靠前端猜，**库内可筛**。
+- **平台后台顾客 API（`server.js`，注册于全局 `authenticateAdmin` 之后）**：`GET /api/admin/customers`（分页/搜索/状态/租户）、`/:id`（概览聚合）、`/:id/wallet`（流水+充值单+汇总）、`/:id/orders`（**并两源**：`kc_api_orders` + `kc_customer_pack_purchases`，按 `biz_type`/`status`/`source` 过滤）、`/:id/entitlements`（**按 `customer_id` 命中**，非 `user_id`）、`POST /:id/status`、`/:id/note`、`/:id/reset-password`（一次性临时密码 + 强制首改）、`POST /customers`（开号）；写操作均落 `kc_audit_logs`。
+- **代理商后台顾客 API（`server.js`，`authenticateTenantStaff`）**：同构 7 端点，作用域锁 `req.tenant.id`（越权 404）、**剔除 `cost_cents` 与租户字段**、重置密码要求 owner。
+- **前端（`public/admin.html` / `public/tenant-admin.html`）**：新增「顾客管理」菜单与页面（列表 + 详情抽屉四 tab + 行内冻结/重置密码/备注/开号、一次性临时密码弹层）；金额一律 `$`、0 禁词。
+- 顺带清除既有权益页占位文案里残留的一处身份化术语（改为「Plus 套餐 8 折」）。
+
+### 验证
+
+- **功能测试用例（功能测试工程师 ≥3）**：`tools/_v230_batch1_functional.js`（临时脚本·不入库）**11/11 PASS** —— 管理员登录；列表分页 + 搜索命中；`balance == balance_cents/100`；钱包流水**链式自洽且末条 = 当前余额**；订单 `biz_type` 筛选生效；权益按 `customer_id` 命中；冻结/解冻生效并恢复；重置密码返回一次性临时密码且置 `must_change_password`；不存在顾客返回 404 `code:'NOT_FOUND'`。
+- **UX 测试用例（UX 专家 ≥3，无头浏览器实测）**：U1 列表渲染（数据行 + 筛选 + `$xx.xx`）**PASS**；U2 搜索空态不报错 **PASS**；U3 详情抽屉四 tab（概览/权益/订单含类型徽标/账单含余额流水+充值单）**PASS**；U4 全文 0 命中「会员/等级/升级/VIP」、金额全 `$` **PASS**；U5 控制台 0 JS 报错 **PASS**。
+- **审计**：冻结/解冻/备注/重置密码实测落 `kc_audit_logs`（`action`/`actor_type`/`actor_email`/`target`/`before_json`/`after_json`/`ip` 齐备；**重置密码审计不含明文**）。
+- **门禁**：`check-docs-sync.js` / `check-currency.js` / `check-root-hygiene.js` 三门禁全绿。
+
+### 下一步
+
+- 批次 2（**v2.4.0 平台管理员账号域 + RBAC 地基**）：新建 `kc_admin_users`/`kc_admin_roles`；`authenticateAdmin` 改造 + `requirePermission` 中间件；单账号迁移（保留旧登录兜底）；「后台账号」「角色与权限」页。
+
+---
+
 ## v2.2.0 · 2026-10-16 · 充值页大改：精确金额认单 + 小数位强提醒；后台报错排查 + 图标库全局兜底
 
 **一句话概括**：① 按用户指令「充值页要大改、对客户不输小数位要明显提醒」，参考区块链钱包充值行业规则（网络必须完全匹配、精确金额作认单标识、四舍五入无法自动匹配 → 转人工、手续费导致对方实收不足），**重写主站前台充值弹层**并把后端改为「每单派生唯一小数尾数的精确金额」；② 对 KC 技术后台 `/admin`（23 个 tab）与代充后台 `/business-admin`（7 个 tab）做**报错普查**——**231 次 `/api` 请求全 200、无 4xx/5xx**，唯一报错源于离线环境 lucide CDN 失载的级联抛错（「渲染 X 失败」假报错），在 3 个页面加**图标库全局兜底**消除。**严格只改充值页 + 图标兜底，未动卡池 / 代理池等 KC 原生页面的业务逻辑。**

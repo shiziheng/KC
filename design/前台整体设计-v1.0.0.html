@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light" data-scheme="ink">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KC 直供 · 前台整体设计 v1.0.0（评审稿）</title>
+<style>
+/* ============================================================
+   KC 前台整体设计 · 评审原型 v1.0.0
+   口径铁律：导航恒 5 项 / 全站无「会员·等级·升级·VIP」/ 金额一律 $
+   ============================================================ */
+:root{
+  --radius:16px; --radius-sm:10px; --radius-lg:22px;
+}
+:root[data-theme="dark"]{
+  --bg:#0A0C10; --bg2:#0F1319; --card:#141922; --card2:#1A212C;
+  --line:#232B38; --line2:#303B4B;
+  --text:#F2F5F3; --sub:#98A2B0; --dim:#697384;
+  --brand:#7BC800; --brand-deep:#65A800; --brand-ink:#0A0C10;
+  --brand-bg:rgba(123,200,0,.12); --brand-line:rgba(123,200,0,.35);
+  --amber:#E2B24A; --amber-bg:rgba(226,178,74,.12);
+  --red:#F05A5F; --red-bg:rgba(240,90,95,.12);
+  --ok:#4ECB71; --ok-bg:rgba(78,203,113,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(123,200,0,.16), transparent 62%);
+  --shadow:0 24px 60px rgba(0,0,0,.5);
+  --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(10,12,16,.82);
+}
+:root[data-theme="light"]{
+  --bg:#F6F8F5; --bg2:#FFFFFF; --card:#FFFFFF; --card2:#F3F6F1;
+  --line:#E5E9E0; --line2:#D2D8CB;
+  --text:#12171D; --sub:#5B636D; --dim:#97A0AA;
+  --brand:#4E8F00; --brand-deep:#3D7000; --brand-ink:#FFFFFF;
+  --brand-bg:#EDF6DE; --brand-line:#BFD98F;
+  --amber:#8A5A0B; --amber-bg:#FBF2DF;
+  --red:#C13B3F; --red-bg:#FCEBEB;
+  --ok:#167A3D; --ok-bg:#E6F7EC;
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(120,180,0,.12), transparent 60%);
+  --shadow:0 20px 44px rgba(20,28,20,.10);
+  --shadow-sm:0 4px 16px rgba(20,28,20,.07);
+  --head:rgba(255,255,255,.86);
+}
+/* ============================================================
+   配色方案（评审用，可实时切换；覆盖上面的主题 token）
+   ============================================================ */
+/* A · 经典绿 —— 参考站同款（当前基线，仅作对比） */
+:root[data-scheme="lime"]{
+  --bg:#0A0C10; --bg2:#0F1319; --card:#141922; --card2:#1A212C;
+  --line:#232B38; --line2:#303B4B;
+  --text:#F2F5F3; --sub:#98A2B0; --dim:#697384;
+  --brand:#7BC800; --brand-deep:#65A800; --brand-ink:#0A0C10;
+  --brand-bg:rgba(123,200,0,.12); --brand-line:rgba(123,200,0,.35);
+  --amber:#E2B24A; --amber-bg:rgba(226,178,74,.12);
+  --red:#F05A5F; --red-bg:rgba(240,90,95,.12);
+  --ok:#4ECB71; --ok-bg:rgba(78,203,113,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(123,200,0,.16), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(123,200,0,.22), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(10,12,16,.82);
+}
+/* B · 深海蓝 —— 冷色、可信，最不像参考站 */
+:root[data-scheme="ocean"]{
+  --bg:#070B14; --bg2:#0B1220; --card:#0F1626; --card2:#151E30;
+  --line:#1E2A42; --line2:#2B3B58;
+  --text:#EEF3FB; --sub:#93A1B8; --dim:#66738A;
+  --brand:#4D9BFF; --brand-deep:#3A7FE0; --brand-ink:#04101F;
+  --brand-bg:rgba(77,155,255,.13); --brand-line:rgba(77,155,255,.36);
+  --amber:#E6BE5E; --amber-bg:rgba(230,190,94,.12);
+  --red:#FF6B70; --red-bg:rgba(255,107,112,.12);
+  --ok:#4DD08A; --ok-bg:rgba(77,208,138,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(77,155,255,.16), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(77,155,255,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(7,11,20,.82);
+}
+/* C · 靛紫 —— AI 产品气质，偏高级 */
+:root[data-scheme="violet"]{
+  --bg:#0A0812; --bg2:#0E0B18; --card:#141021; --card2:#1B1630;
+  --line:#271F3D; --line2:#372C52;
+  --text:#F2EFFB; --sub:#A69CBD; --dim:#79708F;
+  --brand:#8B7BFF; --brand-deep:#7263E8; --brand-ink:#0A0812;
+  --brand-bg:rgba(139,123,255,.14); --brand-line:rgba(139,123,255,.36);
+  --amber:#E7BE6A; --amber-bg:rgba(231,190,106,.12);
+  --red:#FF6B8A; --red-bg:rgba(255,107,138,.12);
+  --ok:#4FD3A2; --ok-bg:rgba(79,211,162,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(139,123,255,.18), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(139,123,255,.17), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.55); --shadow-sm:0 6px 20px rgba(0,0,0,.4);
+  --head:rgba(10,8,18,.82);
+}
+/* D · 暖橘 —— 亲和、转化氛围强 */
+:root[data-scheme="ember"]{
+  --bg:#0C0A09; --bg2:#120F0D; --card:#1A1512; --card2:#221B16;
+  --line:#332A23; --line2:#473A30;
+  --text:#FBF4EF; --sub:#B39B8C; --dim:#84705F;
+  --brand:#FF7A45; --brand-deep:#E85F2A; --brand-ink:#180A04;
+  --brand-bg:rgba(255,122,69,.13); --brand-line:rgba(255,122,69,.36);
+  --amber:#EFC15E; --amber-bg:rgba(239,193,94,.12);
+  --red:#FF6A5E; --red-bg:rgba(255,106,94,.12);
+  --ok:#58CF8A; --ok-bg:rgba(88,207,138,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(255,122,69,.14), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(255,122,69,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.55); --shadow-sm:0 6px 20px rgba(0,0,0,.4);
+  --head:rgba(12,10,9,.82);
+}
+/* E · 墨绿 —— 浅薄荷版（v1.1 按反馈调浅，去荧光毒感） */
+:root[data-scheme="mint"]{
+  --bg:#0C1613; --bg2:#0F1B17; --card:#14211D; --card2:#1A2A25;
+  --line:#213830; --line2:#2D4C43;
+  --text:#EEF6F3; --sub:#94AFA7; --dim:#6C8B82;
+  --brand:#6EE7B7; --brand-deep:#4FD3A0; --brand-ink:#06231A;
+  --brand-bg:rgba(110,231,183,.13); --brand-line:rgba(110,231,183,.36);
+  --amber:#E3BE63; --amber-bg:rgba(227,190,99,.12);
+  --red:#FF6B6B; --red-bg:rgba(255,107,107,.12);
+  --ok:#4FD08C; --ok-bg:rgba(79,208,140,.12);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(110,231,183,.16), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(110,231,183,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(12,22,19,.82);
+}
+/* F · 简约白 —— 浅色系，与参考站区分度最大，金额/二维码可读性最好 */
+:root[data-scheme="ink"]{
+  --bg:#F7F8FA; --bg2:#FFFFFF; --card:#FFFFFF; --card2:#F2F4F8;
+  --line:#E6E9EF; --line2:#D3D8E0;
+  --text:#111827; --sub:#5B6472; --dim:#98A1AE;
+  --brand:#3B6CF6; --brand-deep:#2E56CC; --brand-ink:#FFFFFF;
+  --brand-bg:#EAF0FE; --brand-line:#B9CBFB;
+  --amber:#8A5A0B; --amber-bg:#FBF2DF;
+  --red:#C13B3F; --red-bg:#FCEBEB;
+  --ok:#167A3D; --ok-bg:#E6F7EC;
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(59,108,246,.10), transparent 60%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(59,108,246,.09), transparent 68%);
+  --shadow:0 20px 44px rgba(20,28,45,.10); --shadow-sm:0 4px 16px rgba(20,28,45,.07);
+  --head:rgba(255,255,255,.88);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:#06080B;color:var(--text);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;
+}
+:root[data-scheme="ink"] body{background:#E4E8EE}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.stage{container-type:inline-size;container-name:stage;width:100%;margin:0 auto;background:var(--bg);min-height:100vh;transition:max-width .25s}
+.is-mobile .stage{max-width:430px;box-shadow:0 0 0 1px var(--line2),0 30px 80px rgba(0,0,0,.6)}
+
+/* ---------- 设计工具条（仅评审用，不进正式站） ---------- */
+.devbar{position:sticky;top:0;z-index:999;background:#111621;color:#C7D0DC;border-bottom:1px solid #232B38;font-size:12.5px}
+.devbar .in{max-width:1240px;margin:0 auto;padding:8px 18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.devbar .tag{background:#1D2634;border:1px solid #2E3A4B;border-radius:999px;padding:3px 10px;color:#8B97A8}
+.devbar .pgs{display:flex;gap:4px;flex-wrap:wrap}
+.devbar .pgs button{background:transparent;border:1px solid transparent;border-radius:8px;padding:4px 10px;color:#AEB9C7;font-size:12.5px}
+.devbar .pgs button:hover{background:#1D2634;color:#fff}
+.devbar .pgs button.on{background:#7BC800;color:#0A0C10;font-weight:600}
+.devbar .sp{margin-left:auto;display:flex;gap:6px;align-items:center}
+.devbar .tbtn{background:#1D2634;border:1px solid #2E3A4B;border-radius:8px;padding:4px 11px;color:#C7D0DC}
+.devbar .tbtn:hover{border-color:#5A6B82;color:#fff}
+.devbar .pal{display:flex;gap:6px;align-items:center}
+.devbar .pal button{width:26px;height:26px;border-radius:50%;border:2px solid transparent;background:#1D2634;display:grid;place-items:center;padding:0}
+.devbar .pal button i{width:13px;height:13px;border-radius:50%;display:block}
+.devbar .pal button:hover{border-color:#5A6B82}
+.devbar .pal button.on{border-color:#fff}
+
+/* ---------- 站点通用 ---------- */
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+section.page{display:none}
+section.page.on{display:block}
+
+/* 顶栏 */
+header.site{position:sticky;top:0;z-index:80;background:var(--head);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+header.site .inner{display:flex;align-items:center;gap:22px;height:64px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;white-space:nowrap;flex:none}
+.logo .mk{width:28px;height:28px;border-radius:8px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-size:13px;font-weight:800}
+nav.main{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+nav.main::-webkit-scrollbar{display:none}
+nav.main button{background:transparent;color:var(--sub);font-size:14px;padding:8px 13px;border-radius:9px;white-space:nowrap;transition:.15s}
+nav.main button:hover{color:var(--text);background:var(--brand-bg)}
+nav.main button.on{color:var(--brand-deep);background:var(--brand-bg);font-weight:600}
+html[data-theme="dark"] nav.main button.on{color:var(--brand)}
+.hright{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none}
+.balchip{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--sub);border:1px solid var(--line);border-radius:999px;padding:6px 12px}
+.balchip b{color:var(--text);font-weight:600}
+.balchip:hover{border-color:var(--brand)}
+
+/* 通用组件 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 20px;border-radius:var(--radius-sm);font-size:14px;font-weight:500;border:1px solid var(--line2);background:transparent;color:var(--text);transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--sub)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+.btn.primary:hover{background:var(--brand-deep);border-color:var(--brand-deep)}
+.btn.pill{border-radius:999px}
+.btn.sm{height:34px;padding:0 14px;font-size:13px;border-radius:9px}
+.btn.lg{height:50px;padding:0 28px;font-size:15px}
+.btn.ghost{border-color:transparent;background:var(--card2);color:var(--sub)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.lnk{background:none;border:0;color:var(--brand);font-weight:700;cursor:pointer;font-size:12.5px;padding:0 3px;font-family:inherit;text-decoration:underline;text-underline-offset:3px}
+.lnk:hover{opacity:.8}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:10px;transition:.15s}
+.card:hover{border-color:var(--line2);box-shadow:var(--shadow-sm)}
+.card h3{font-size:15.5px;font-weight:650}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);padding:28px;margin-bottom:18px}
+.panel>h2{font-size:18px;font-weight:650;margin-bottom:4px}
+.panel .psub{color:var(--sub);font-size:13px;margin-bottom:16px}
+.pill{display:inline-block;font-size:11.5px;padding:3px 10px;border-radius:999px;font-weight:600}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.gray{background:var(--card2);color:var(--sub)}
+.pill.brand{background:var(--brand-bg);color:var(--brand-deep)}
+html[data-theme="dark"] .pill.brand{color:var(--brand)}
+.pill.red{background:var(--red-bg);color:var(--red)}
+.hidden{display:none!important}
+
+/* Hero */
+.hero{position:relative;overflow:hidden;text-align:center;padding:84px 24px 60px}
+.hero::before{content:"";position:absolute;inset:0;background:var(--glow);pointer-events:none}
+.hero::after{content:"";position:absolute;left:50%;bottom:-180px;transform:translateX(-50%);width:1400px;height:320px;border-radius:50%;background:var(--glow-strong);filter:blur(30px);pointer-events:none;opacity:.5}
+.hero .hero-in{position:relative;z-index:2;max-width:760px;margin:0 auto}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--sub);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 13px;margin-bottom:22px}
+.eyebrow .d{width:6px;height:6px;border-radius:50%;background:var(--brand)}
+.hero h1{font-size:52px;line-height:1.14;font-weight:750;letter-spacing:-.02em}
+/* v1.1.0：Hero 改为单行标题，原 .l2 双行样式已废弃 */
+.hero .lead{max-width:560px;margin:20px auto 0;color:var(--sub);font-size:16px;line-height:1.75}
+.hero .cond{margin-top:16px;font-size:13px;color:var(--dim)}
+.hero-cta{max-width:420px;margin:30px auto 0;display:flex;align-items:center;gap:14px;text-align:left;background:var(--card);border:1px solid var(--brand-line);border-radius:18px;padding:16px 18px;box-shadow:0 0 34px rgba(123,200,0,.14);cursor:pointer;transition:.18s}
+.hero-cta:hover{transform:translateY(-2px);border-color:var(--brand);box-shadow:0 0 40px rgba(123,200,0,.24)}
+.hero-cta .ic{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);border:1px solid var(--brand-line);display:grid;place-items:center;flex:none;color:var(--brand);font-size:20px}
+.hero-cta .tt{flex:1}
+.hero-cta .tt b{display:block;font-size:15.5px;font-weight:650}
+.hero-cta .tt span{display:block;font-size:12.5px;color:var(--sub);margin-top:2px}
+.hero-cta .ar{color:var(--brand);font-size:18px}
+
+/* 信任条 */
+.trust{position:relative;z-index:2;max-width:900px;margin:52px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.trust .t{text-align:center;padding:0 14px;border-left:1px solid var(--line)}
+.trust .t:first-child{border-left:0}
+.trust .n{font-size:30px;font-weight:750;letter-spacing:-.02em}
+.trust .n em{font-style:normal;color:var(--brand)}
+.trust .l{font-size:12.5px;color:var(--sub);margin-top:2px}
+.trust .s{font-size:11px;color:var(--dim)}
+
+/* 能力卡 */
+.cap{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.cap .c{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;gap:10px;transition:.15s}
+.cap .c:hover{border-color:var(--line2);transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+.cap .ic{width:44px;height:44px;border-radius:12px;background:var(--brand-bg);color:var(--brand);display:grid;place-items:center;font-size:19px;border:1px solid var(--brand-line)}
+.cap h3{font-size:16px;font-weight:650}
+.cap p{color:var(--sub);font-size:13px;flex:1}
+.cap .go{color:var(--brand);font-size:13px;font-weight:600}
+
+/* 商品双价卡 */
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:12px;transition:.15s}
+.pcard:hover{border-color:var(--brand-line);box-shadow:var(--shadow-sm)}
+.pcard .top{display:flex;gap:10px;align-items:flex-start}
+.pcard .tico{width:40px;height:40px;border-radius:11px;background:var(--card2);border:1px solid var(--line);display:grid;place-items:center;flex:none;font-size:17px}
+.pcard h3{font-size:14.5px;font-weight:650;line-height:1.4}
+.pcard .meta{font-size:11.5px;color:var(--dim);margin-top:2px}
+.pcard .price{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.pcard .price .now{font-size:24px;font-weight:750;color:var(--text);letter-spacing:-.01em}
+.pcard .price .was{font-size:12.5px;color:var(--dim);text-decoration:line-through}
+.pcard .off{font-size:11.5px;font-weight:700;background:var(--brand-bg);color:var(--brand-deep);border-radius:999px;padding:3px 9px}
+html[data-theme="dark"] .pcard .off{color:var(--brand)}
+.pcard .save{font-size:12px;color:var(--brand);font-weight:600}
+.pcard .foot{margin-top:auto;display:flex;align-items:center;gap:10px}
+
+/* 权益进度点阵 */
+.dots{display:inline-flex;gap:5px;align-items:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line2);display:block}
+.dots i.on{background:var(--brand)}
+
+/* FAQ 手风琴 */
+.faq details{border-bottom:1px solid var(--line);padding:4px 0}
+.faq details:last-child{border-bottom:0}
+.faq summary{display:flex;align-items:center;gap:12px;padding:14px 2px;font-size:14.5px;font-weight:600;cursor:pointer;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary .q{flex:1}
+.faq summary .pm{width:22px;height:22px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;color:var(--sub);font-size:13px;flex:none;transition:.2s}
+.faq details[open] summary .pm{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);transform:rotate(45deg)}
+.faq .a{color:var(--sub);font-size:13.5px;padding:0 2px 16px 34px;line-height:1.7}
+.faq .a b{color:var(--text)}
+
+/* 步骤条 */
+.steps{display:flex;gap:12px;flex-wrap:wrap}
+.steps .s{flex:1;min-width:180px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;position:relative}
+.steps .s .n{width:26px;height:26px;border-radius:8px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-size:13px;font-weight:800;margin-bottom:10px}
+.steps .s h4{font-size:14.5px;font-weight:650;margin-bottom:4px}
+.steps .s p{font-size:12.5px;color:var(--sub)}
+
+/* 表格 */
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl th{text-align:left;padding:11px 12px;background:var(--card2);color:var(--sub);font-weight:600;font-size:12px;border-bottom:1px solid var(--line)}
+.tbl td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tbody tr:hover{background:var(--brand-bg)}
+.cdk{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--card2);border:1px solid var(--line);border-radius:6px;padding:2px 8px;display:inline-block}
+
+/* 表单 */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px}
+.field .hint{font-weight:400;color:var(--dim)}
+.field input,.field select,.field textarea{width:100%;background:var(--bg2);border:1px solid var(--line2);border-radius:var(--radius-sm);padding:11px 13px;font-size:14px;font-family:inherit;color:var(--text)}
+.field textarea{resize:vertical;min-height:104px;font-size:13px}
+.field input:focus,.field textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+.msg{font-size:12.5px;min-height:18px;margin-top:8px;color:var(--sub)}
+.msg.err{color:var(--red)}
+.msg.ok{color:var(--ok)}
+
+/* 详情页 */
+.detail{display:grid;grid-template-columns:1.25fr .75fr;gap:26px;align-items:start}
+.kv{display:flex;padding:12px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.kv:last-child{border-bottom:0}
+.kv .k{width:118px;flex:none;color:var(--sub)}
+.kv .v{flex:1}
+.notice{display:flex;gap:10px;background:var(--amber-bg);border:1px solid rgba(226,178,74,.35);border-radius:var(--radius-sm);padding:12px 14px;font-size:13px;color:var(--amber);line-height:1.6}
+.notice.red{background:var(--red-bg);border-color:rgba(240,90,95,.35);color:var(--red)}
+.notice b{font-weight:700}
+.buybox{background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:22px;position:sticky;top:86px}
+.qty{display:inline-flex;align-items:center;border:1px solid var(--line2);border-radius:var(--radius-sm);overflow:hidden}
+.qty button{width:36px;height:38px;font-size:17px;color:var(--sub);background:var(--bg2)}
+.qty button:hover{background:var(--brand-bg);color:var(--brand-deep)}
+.qty input{width:52px;text-align:center;border:0;background:transparent;height:38px;font-family:inherit;font-size:14px;color:var(--text)}
+
+/* 时间线 */
+.tl{display:flex;flex-direction:column}
+.tl .it{display:flex;gap:12px;padding:10px 0;align-items:flex-start}
+.tl .dot{width:11px;height:11px;border-radius:50%;background:var(--line2);flex:none;margin-top:5px}
+.tl .it.done .dot{background:var(--brand)}
+.tl .it.doing .dot{background:var(--amber)}
+.tl .it.fail .dot{background:var(--red)}
+.tl .m{flex:1}
+.tl .m b{font-size:14px;font-weight:650;display:block}
+.tl .m small{color:var(--sub);font-size:12.5px}
+.tl .tm{color:var(--dim);font-size:12.5px;flex:none}
+
+/* 钱包/充值 */
+.wtop{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px dashed var(--line);margin-bottom:20px}
+.wtop .bal{font-size:40px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.wtop .k{color:var(--sub);font-size:12.5px}
+.wtop .acts{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+.presets{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.preset{border:1px solid var(--line2);border-radius:var(--radius-sm);padding:9px 18px;font-size:13.5px;color:var(--text);background:var(--bg2)}
+.preset:hover{border-color:var(--brand)}
+.preset.on{border-color:var(--brand);background:var(--brand-bg);color:var(--brand-deep);font-weight:700}
+html[data-theme="dark"] .preset.on{color:var(--brand)}
+
+/* 兑换进度 */
+.rd-hint{color:var(--sub);font-size:13.5px;margin-bottom:14px}
+.rd-verified{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13.5px;background:var(--brand-bg);border:1px solid var(--brand-line);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px}
+.rd-track{height:6px;background:var(--line2);border-radius:4px;overflow:hidden;margin-top:16px}
+.rd-bar{height:100%;width:0;background:var(--brand);transition:width .4s}
+
+/* 页脚 */
+footer.site{border-top:1px solid var(--line);margin-top:34px;padding:38px 0 26px;color:var(--dim);font-size:12.5px}
+.foot-cols{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:26px;margin-bottom:26px}
+.foot-cols h5{font-size:12.5px;color:var(--text);font-weight:650;margin-bottom:10px}
+.foot-cols a,.foot-cols button{display:block;color:var(--sub);font-size:12.5px;padding:4px 0;text-align:left}
+.foot-cols a:hover,.foot-cols button:hover{color:var(--brand)}
+.foot-cols .about{color:var(--sub);font-size:12.5px;line-height:1.7;max-width:280px}
+.foot-base{border-top:1px solid var(--line);padding-top:18px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+/* 弹层 */
+.modal{position:fixed;inset:0;background:rgba(4,6,9,.66);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:120;padding:20px}
+.modal.show{display:flex}
+.modal .box{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:26px;width:100%;max-width:420px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow)}
+.modal .box h3{font-size:18px;font-weight:700;margin-bottom:4px}
+.modal .box .sub{color:var(--sub);font-size:12.5px;margin-bottom:18px}
+
+/* 充值弹层特有 */
+.rc-steps{display:flex;gap:6px;margin-bottom:14px}
+.rc-step{flex:1;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--sub);background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+.rc-step b{width:16px;height:16px;flex:none;border-radius:50%;background:var(--line2);color:var(--bg);font-size:10.5px;display:grid;place-items:center}
+.rc-step.on{color:var(--brand-deep);border-color:var(--brand-line);background:var(--brand-bg)}
+html[data-theme="dark"] .rc-step.on{color:var(--brand)}
+.rc-step.on b{background:var(--brand);color:var(--brand-ink)}
+.rc-exact{background:var(--red-bg);border:1px solid rgba(240,90,95,.35);border-radius:var(--radius-sm);padding:13px 15px;margin-bottom:12px}
+.rc-exact .k{font-size:12px;color:var(--red);font-weight:700}
+.rc-exact .v{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:5px}
+.rc-exact .v b{font-size:26px;font-weight:800;color:var(--red);letter-spacing:.4px;font-family:ui-monospace,Consolas,monospace}
+.rc-exact .w{font-size:12px;color:var(--red);margin-top:7px;font-weight:700}
+.rc-net{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--sub);margin-bottom:10px}
+.rc-net .badge{background:var(--brand-bg);color:var(--brand-deep);border:1px solid var(--brand-line);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700}
+html[data-theme="dark"] .rc-net .badge{color:var(--brand)}
+.rc-qr{display:flex;flex-direction:column;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:16px;text-align:center;margin-bottom:12px}
+.rc-qr .img{width:150px;height:150px;background:#fff;border-radius:10px;display:grid;place-items:center;color:#111;font-size:12px}
+.rc-timer{display:flex;align-items:center;justify-content:space-between;background:var(--red-bg);border:1px solid rgba(240,90,95,.35);border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:12px}
+.rc-timer .k{font-size:12.5px;color:var(--red);font-weight:700}
+.rc-timer .v{font-size:21px;font-weight:800;color:var(--red);font-family:ui-monospace,Consolas,monospace}
+.rc-ack{display:flex;gap:9px;align-items:flex-start;font-size:13px;font-weight:600;margin:12px 0;cursor:pointer}
+.rc-ack input{margin-top:4px}
+.toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);font-size:13.5px;padding:11px 22px;border-radius:999px;opacity:0;transition:.25s;pointer-events:none;z-index:300;font-weight:600}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 设计说明页 */
+.spec h2{font-size:22px;font-weight:700;margin:34px 0 6px;letter-spacing:-.01em}
+.spec h2:first-child{margin-top:0}
+.spec p{color:var(--sub);font-size:14px;margin-bottom:10px}
+.spec .sw{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.spec .sw .s{border:1px solid var(--line);border-radius:12px;padding:12px;min-width:150px;background:var(--card)}
+.spec .sw .s .c{height:34px;border-radius:8px;margin-bottom:8px;border:1px solid var(--line)}
+.spec .sw .s b{font-size:12.5px;display:block}
+.spec .sw .s code{font-size:11px;color:var(--dim)}
+.spec ul{margin:8px 0 14px 20px;color:var(--sub);font-size:14px}
+.spec ul li{margin-bottom:6px}
+.spec .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.spec .box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.spec .box.do{border-color:var(--brand-line)}
+.spec .box.dont{border-color:rgba(240,90,95,.35)}
+.spec .box h4{font-size:14px;font-weight:700;margin-bottom:8px}
+.spec .box.do h4{color:var(--brand)}
+.spec .box.dont h4{color:var(--red)}
+.spec .box ul{margin:0 0 0 18px;font-size:13px}
+
+/* 响应式（容器查询，支持工具条「移动预览」独立生效） */
+@container stage (max-width:860px){
+  .cap{grid-template-columns:1fr}
+  .detail{grid-template-columns:1fr}
+  .buybox{position:static}
+  .foot-cols{grid-template-columns:1fr 1fr}
+  .spec .two{grid-template-columns:1fr}
+}
+@container stage (max-width:560px){
+  .wrap{padding:0 16px}
+  header.site .inner{height:58px;gap:10px}
+  .logo{font-size:14px}
+  nav.main{display:none}
+  .hero{padding:56px 16px 40px}
+  .hero h1{font-size:31px}
+  .hero .lead{font-size:14.5px}
+  .hero-cta{padding:14px}
+  .trust{grid-template-columns:1fr;gap:14px;margin-top:34px}
+  .trust .t{border-left:0;border-top:1px solid var(--line);padding-top:14px}
+  .trust .t:first-child{border-top:0;padding-top:0}
+  .grid{grid-template-columns:1fr}
+  .panel{padding:20px}
+  .steps .s{min-width:100%}
+  .foot-cols{grid-template-columns:1fr}
+  .wtop .bal{font-size:32px}
+  .wtop .acts{margin-left:0;width:100%}
+  .tbl{font-size:12.5px}
+  .hide-sm{display:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ 设计工具条（评审用，不进正式站） ============ -->
+<div class="devbar">
+  <div class="in">
+    <span class="tag">设计评审稿 v1.0.0</span>
+    <div class="pgs" id="pageNav">
+      <button data-page="spec" class="on">设计说明</button>
+      <button data-page="home">首页</button>
+      <button data-page="catalog">商品列表</button>
+      <button data-page="detail">商品详情</button>
+      <button data-page="pack">权益包</button>
+      <button data-page="orders">我的订单</button>
+      <button data-page="wallet">我的钱包</button>
+      <button data-page="redeem">兑换卡密</button>
+      <button data-page="login">登录 / 注册</button>
+    </div>
+    <div class="sp">
+      <span style="color:#8B97A8">配色</span>
+      <span class="tag" id="palName">经典绿</span>
+      <div class="pal" id="palNav">
+        <button data-scheme="lime" class="on" title="A 经典绿（参考站同款 · 当前）"><i style="background:#7BC800"></i></button>
+        <button data-scheme="ocean" title="B 深海蓝"><i style="background:#4D9BFF"></i></button>
+        <button data-scheme="violet" title="C 靛紫"><i style="background:#8B7BFF"></i></button>
+        <button data-scheme="ember" title="D 暖橘"><i style="background:#FF7A45"></i></button>
+        <button data-scheme="mint" title="E 墨绿（延续现有品牌色）"><i style="background:#2ED3A1"></i></button>
+        <button data-scheme="ink" title="F 简约白"><i style="background:#3B6CF6"></i></button>
+      </div>
+      <button class="tbtn" id="mobBtn">移动预览</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+
+<!-- ============ 站点顶栏 ============ -->
+<header class="site">
+  <div class="wrap inner">
+    <div class="logo" onclick="goPage('home')"><span class="mk">K</span>KC 直供</div>
+    <nav class="main" id="mainNav">
+      <button data-nav="home" onclick="goPage('home')">首页</button>
+      <button data-nav="recharge" onclick="goPage('catalog')">代充</button>
+      <button data-nav="account" onclick="goPage('catalog')">成品号</button>
+      <button data-nav="website" onclick="goPage('catalog')">建站服务</button>
+      <button data-nav="pack" onclick="goPage('pack')">权益包</button>
+      <button data-nav="orders" onclick="goPage('orders')">我的订单</button>
+    </nav>
+    <div class="hright">
+      <div class="balchip">钱包余额 <b>$ 128.00</b></div>
+      <button class="btn primary pill sm">登录 / 注册</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- ====================================================================
+     P1 · 设计说明
+     ==================================================================== -->
+<section class="page on spec" id="p-spec">
+  <div class="wrap" style="padding-top:34px;padding-bottom:20px">
+
+    <h2>一、这份设计稿是什么</h2>
+    <p>这是 <b>KC 直供前台整体视觉与信息架构的设计评审稿</b>，覆盖首页到下单/充值/兑卡的全部关键页面。它<b>不是可运行的正式站</b>，而是用来先定「长什么样、怎么排」的图纸 —— 你确认后，我再按同一套 token 落到 <code>public/site/index.html</code>。</p>
+    <p>参考站点：<code>ezsub7xlkj.ezsub.com</code>（你指定）。我的判断：<b>视觉基调与信息架构可用、推荐借鉴，但不照搬</b>（见第四节两张清单）。</p>
+
+    <h2>二、配色方案（6 套候选 · 默认「简约白」亮色 · 右上角色块可实时切换）</h2>
+    <p>布局不动，只换 token。<b>默认 =「简约白」亮色</b>；配色是<b>白标租户级配置</b>（租户在后台选定），<b>前台顾客不提供配色切换</b>。下面色板随你切换的方案实时更新。<b>租户白标品牌色优先级最高</b>，落地后仍会覆盖 --brand，不破坏多租户。</p>
+    <div class="sw" id="swD">
+      <div class="s"><div class="c" data-t="--bg"></div><b>页面底</b><code data-tc="--bg"></code></div>
+      <div class="s"><div class="c" data-t="--card"></div><b>卡片底</b><code data-tc="--card"></code></div>
+      <div class="s"><div class="c" data-t="--line"></div><b>描边</b><code data-tc="--line"></code></div>
+      <div class="s"><div class="c" data-t="--text"></div><b>主文字</b><code data-tc="--text"></code></div>
+      <div class="s"><div class="c" data-t="--brand"></div><b>强调色</b><code data-tc="--brand"></code></div>
+      <div class="s"><div class="c" data-t="--amber"></div><b>警示</b><code data-tc="--amber"></code></div>
+      <div class="s"><div class="c" data-t="--red"></div><b>危险</b><code data-tc="--red"></code></div>
+    </div>
+    <p>关键规则（换配色时不变，只换 token）：<b>主按钮 = 强调色实心 + 反色文字</b>；<b>金额用主文字色大号字而非品牌色</b>；金额面板禁用发光，保证强光下与二维码可读。</p>
+
+    <div class="two" style="margin-top:14px">
+      <div class="box do"><h4>B · 深海蓝 #4D9BFF</h4><ul><li>冷色、可信，<b>最不像参考站</b></li><li>适合「工具 / 交付」气质</li></ul></div>
+      <div class="box do"><h4>C · 靛紫 #8B7BFF</h4><ul><li>AI 产品常见气质，偏高级</li><li>与多数代充站拉开差异</li></ul></div>
+      <div class="box do"><h4>D · 暖橘 #FF7A45</h4><ul><li>亲和、下单氛围暖</li><li>警示仍靠独立琥珀 / 红，不串色</li></ul></div>
+      <div class="box do"><h4>E · 墨绿 #6EE7B7</h4><ul><li>浅薄荷版（v1.1 已调浅，去荧光毒感）</li><li>品牌连贯性最好，沉稳但不刺眼</li></ul></div>
+      <div class="box do"><h4>F · 简约白 #3B6CF6</h4><ul><li>浅色系，与参考站区分度最大</li><li>金额 / 二维码可读性最好</li></ul></div>
+      <div class="box dont"><h4>A · 经典绿 #7BC800（当前）</h4><ul><li>即参考站同款 —— 你说「太像」的那版</li><li>保留仅作对比基线</li></ul></div>
+    </div>
+    <p style="margin-top:14px">另外：最「参考站签名」的<b>底部地平线光晕</b>已改为跟随方案的弱光并压低强度（这是「像参考站」的主要来源之一）。</p>
+
+    <h2>三、页面与区块清单</h2>
+    <ul>
+      <li><b>首页</b>：顶栏 → Hero（双行标题·单一 CTA）→ 信任条 → 三能力卡 → 热门商品双价卡 → 权益包推介 → FAQ 手风琴 → 页脚</li>
+      <li><b>商品列表</b>：分类 Tab（代充/成品号/建站服务）+ 商品网格（双价卡）</li>
+      <li><b>商品详情</b>：主信息 + 右侧购买盒；代充类含 <b>Session 输入与校验</b>（仅存浏览器内存）</li>
+      <li><b>权益包</b>：两档权益卡（次数点阵 + 每次成本 + 对比结论）</li>
+      <li><b>我的订单</b>：状态筛选（全部/处理中/已完成/失败）+ 列表 + 详情时间线</li>
+      <li><b>我的钱包</b>：余额 + 充值 + 流水；充值弹层含 <b>精确金额 4 位小数 + 二次确认闸门</b></li>
+      <li><b>兑换卡密</b>：验证 CDK → 输入 Session → 开通进度</li>
+      <li><b>登录 / 注册</b>：邮箱 + 密码；登录后可下单与查看订单</li>
+    </ul>
+
+    <h2>四、借鉴什么 / 不照搬什么</h2>
+    <div class="two">
+      <div class="box do">
+        <h4>借鉴（参考站做得好）</h4>
+        <ul>
+          <li>双行大标题，第二行用颜色制造层次</li>
+          <li>首屏<b>只有一个主 CTA</b>（发光卡），不并列抢焦点</li>
+          <li>信任前置（把「可信」放在价格之前）</li>
+          <li>卡片用「描边 + 微发光」代替阴影，深色不脏</li>
+          <li>FAQ 手风琴收页，长尾疑问不干扰主路径</li>
+        </ul>
+      </div>
+      <div class="box dont">
+        <h4>不照搬（对我们不成立）</h4>
+        <ul>
+          <li>客户 logo 墙（Oracle/Meta…）—— 会被误解为代理关系</li>
+          <li>「61 万开发者 / 10B 请求」大数字 —— 量级不支持，编数字自伤信任</li>
+          <li>粒子/地球大背景 —— 移动端耗电，与付款页气质不符（改为极轻径向渐变）</li>
+          <li>语言/币种切换、Cookie 弹窗 —— 我们没有多币种/多语言，加了是假功能</li>
+          <li>全站高发光 —— 金额/地址/二维码面板必须低发光高对比</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>五、口径铁律（本稿严格遵守）</h2>
+    <ul>
+      <li>导航恒 <b>5 项</b>：代充 / 成品号 / 建站服务 / 权益包 / 我的订单（首页由 logo 承担，不占导航）</li>
+      <li>全站 <b>0 个</b>「会员 / 等级 / 升级 / VIP」；统一表述「权益包」</li>
+      <li>金额一律 <code>$</code>；权益句式统一「用 1 次权益 · 省 $X」</li>
+      <li>代充 Session 仅存浏览器内存，不落库、不写 localStorage</li>
+    </ul>
+
+    <h2>六、需要你确认的点</h2>
+    <ul>
+      <li><b>① 配色（已定）</b>：默认 <b>「简约白」亮色</b>；配色归<b>白标租户</b>配置，<b>前台顾客不开放配色切换</b></li>
+      <li><b>② 品牌色</b>：方案的强调色随配色方案走；白标租户自定义 <code>primary_color</code> 仍优先覆盖 --brand</li>
+      <li><b>③ 信任条</b>：要不要做？若要做，数字必须接<b>真实运营数据</b>（已交付订单/平均开通时长/到账率），否则建议直接不做。</li>
+      <li><b>④ 落地范围</b>：先只做首页（低风险可回滚），还是一次性做全套页面？</li>
+    </ul>
+    <p style="margin-top:16px"><b>已定：</b>默认 <b>「简约白」亮色</b>（v1.1 定稿），配色由<b>白标租户</b>配置（后台选定 5 套之一：墨绿 / 深海蓝 / 靛紫 / 暖橘 / 简约白），<b>前台顾客不提供配色切换</b>；租户自定义品牌色优先级最高。A 经典绿 仅留在评审工具条做对比基线。</p>
+    <p style="margin-top:14px;color:var(--dim);font-size:12.5px">↑ 左上的页面按钮可切换全部页面；右上角色块切配色、「移动预览」切窄屏。本稿未改动任何线上文件。</p>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P2 · 首页
+     ==================================================================== -->
+<section class="page" id="p-home">
+
+  <div class="hero">
+    <div class="hero-in">
+      <span class="eyebrow"><span class="d"></span>AI 服务直供 · 明码标价 · 即时交付</span>
+      <h1>以更低成本，用上顶级 AI 能力</h1>
+      <p class="lead">ChatGPT 代充、成品号与建站服务，一个平台完成。价格透明、余额下单、支付成功即时发卡。</p>
+      <div class="cond">$15 起开通权益包，按权益价单次下单 —— 不用先压几千美元</div>
+
+      <div class="hero-cta" onclick="goPage('catalog')">
+        <span class="ic">⚡</span>
+        <span class="tt"><b>AI 订阅代充</b><span>即时、安全地为你的 ChatGPT 账号充值</span></span>
+        <span class="ar">→</span>
+      </div>
+
+      <div class="trust">
+        <div class="t"><div class="n num">12,480<em>+</em></div><div class="l">已交付订单</div><div class="s">示例数据 · 落地接真实统计</div></div>
+        <div class="t"><div class="n num">3<em> 分钟</em></div><div class="l">平均开通时长</div><div class="s">示例数据 · 落地接真实统计</div></div>
+        <div class="t"><div class="n num">99.9<em>%</em></div><div class="l">充值到账率</div><div class="s">示例数据 · 落地接真实统计</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <div class="panel">
+      <h2>三种商品，一个平台</h2>
+      <div class="psub">按你的需要选：给已有账号充值、直接买现成号、或建独立站</div>
+      <div class="cap">
+        <div class="c">
+          <div class="ic">⚡</div>
+          <h3>给已有账号充值（代充）</h3>
+          <p>粘贴你的 ChatGPT 会话凭证，平台代你完成开通，即时到账。</p>
+          <span class="go" onclick="goPage('catalog')">去看看 →</span>
+        </div>
+        <div class="c">
+          <div class="ic">🪪</div>
+          <h3>买成品号</h3>
+          <p>现成 ChatGPT 账号，已含会员权益，开箱即用，无需自己注册。</p>
+          <span class="go" onclick="goPage('catalog')">去看看 →</span>
+        </div>
+        <div class="c">
+          <div class="ic">🌐</div>
+          <h3>建站服务</h3>
+          <p>独立站搭建与部署，含域名与运维，交付即可上线。</p>
+          <span class="go" onclick="goPage('catalog')">去看看 →</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>热门商品</h2>
+      <div class="psub">开通权益包后按「权益价」结算，每次下单抵扣 1 次权益</div>
+      <div class="grid" id="homeGrid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>权益包</h2>
+      <div class="psub">低成本试水，不用先压资金</div>
+      <div class="grid" id="homePackGrid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>下单只要三步</h2>
+      <div class="psub">从选商品到开通完成，全程不超过 3 步</div>
+      <div class="steps">
+        <div class="s"><div class="n">1</div><h4>选商品</h4><p>代充 / 成品号 / 建站服务，明码标价</p></div>
+        <div class="s"><div class="n">2</div><h4>余额下单</h4><p>钱包余额支付，有权益包自动按权益价结算</p></div>
+        <div class="s"><div class="n">3</div><h4>即时开通</h4><p>支付成功立即发放卡密，兑换即完成开通</p></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>常见问题</h2>
+      <div class="faq">
+        <details open><summary><span class="q">下单后多久到货？</span><span class="pm">＋</span></summary><div class="a">支付成功后<b>立即发放卡密</b>；在「我的订单」查看卡密，兑换即完成开通。</div></details>
+        <details><summary><span class="q">代充需要我提供什么？</span><span class="pm">＋</span></summary><div class="a">只需粘贴你的 ChatGPT <b>会话凭证（Session JSON）</b>。它<b>只存在于浏览器内存，不会保存、不会落库</b>，仅用于本次开通。</div></details>
+        <details><summary><span class="q">权益包有什么用？</span><span class="pm">＋</span></summary><div class="a">开通后，后续下单按「权益价」结算，每次下单抵扣 1 次权益，用多少花多少；用完恢复原价，随时可再续。</div></details>
+        <details><summary><span class="q">怎么充值？支持哪些币种？</span><span class="pm">＋</span></summary><div class="a">在右上角「钱包」发起充值，支持 <b>USDT（TRC20）</b>；到账后余额即可用于下单，全站金额以 <b>$</b> 计。</div></details>
+        <details><summary><span class="q">充值金额为什么带 4 位小数？</span><span class="pm">＋</span></summary><div class="a">那串<b>小数是链上认单标识</b>，用来把「你这一笔」和别人的区分开。请<b>务必按页面显示的精确金额转账</b>；少输小数会导致无法自动到账。</div></details>
+        <details><summary><span class="q">选错网络怎么办？</span><span class="pm">＋</span></summary><div class="a">请务必选择页面标明的链（如 TRC20）。<b>转到其他网络，资金将无法找回</b>。</div></details>
+        <details><summary><span class="q">不小心关掉充值页了？</span><span class="pm">＋</span></summary><div class="a">回到「我的钱包」→「待支付充值单」，可继续支付；充值单 <b>30 分钟内有效</b>，超时请重新发起。</div></details>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ====================================================================
+     P3 · 商品列表
+     ==================================================================== -->
+<section class="page" id="p-catalog">
+  <div class="wrap" style="padding-top:26px">
+    <div class="panel">
+      <h2 id="catTitle">代充</h2>
+      <div class="psub">选择一个商品下单，支付成功后即时发卡</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+        <button class="btn pill sm primary" onclick="setCat('recharge',this)">代充</button>
+        <button class="btn pill sm" onclick="setCat('account',this)">成品号</button>
+        <button class="btn pill sm" onclick="setCat('website',this)">建站服务</button>
+      </div>
+      <div class="grid" id="catalogGrid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P4 · 商品详情（代充 · 含 Session 输入与校验）
+     ==================================================================== -->
+<section class="page" id="p-detail">
+  <div class="wrap" style="padding-top:26px">
+    <button class="btn ghost sm" style="margin-bottom:16px" onclick="goPage('catalog')">← 返回商品列表</button>
+    <div class="detail">
+      <div class="panel" style="margin:0">
+        <span class="pill brand">代充</span>
+        <h2 style="font-size:24px;font-weight:750;margin:12px 0 6px">ChatGPT Plus 一个月</h2>
+        <p style="color:var(--sub);font-size:13.5px;margin-bottom:18px">平台代你为你自己的 ChatGPT 账号开通 Plus 会员，一个月有效期，即时生效。</p>
+
+        <div class="notice" style="margin-bottom:16px">
+          <span>🧭</span>
+          <div><b>购买流程：</b>① 先下单拿到卡密 ② 在下方粘贴并校验你的 Session ③ 系统自动完成开通。Session 仅存浏览器内存，不会保存。</div>
+        </div>
+
+        <div class="field">
+          <label>ChatGPT 会话凭证（Session JSON）<span class="hint"> · 仅用于本次开通，不保存</span></label>
+          <textarea id="d-session" placeholder='粘贴完整 Session JSON（含 accessToken 等字段）'></textarea>
+          <div class="msg" id="d-session-msg"></div>
+        </div>
+
+        <div class="notice red">
+          <span>⚠️</span>
+          <div>请确认粘贴的是<b>你自己的账号</b>的 Session。开通后账号权益变更不可撤销；Session 无效会导致开通失败。</div>
+        </div>
+      </div>
+
+      <div class="buybox">
+        <div class="pill ok" style="margin-bottom:12px">● 有库存</div>
+        <div class="price" style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+          <span style="font-size:32px;font-weight:800">$ 9.00</span>
+          <span style="color:var(--dim);text-decoration:line-through;font-size:13px">$ 15.00</span>
+          <span class="off" style="font-size:12px;font-weight:700;background:var(--brand-bg);color:var(--brand-deep);border-radius:999px;padding:3px 10px">权益价</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--brand);font-weight:600;margin-top:8px">用 1 次权益 · 省 $6.00</div>
+        <div style="border-top:1px dashed var(--line);margin:16px 0;padding-top:16px">
+          <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button>−</button><input value="1" readonly><button>+</button></span></span></div>
+          <div class="kv"><span class="k">应付</span><span class="v" style="font-size:20px;font-weight:800">$ 9.00</span></div>
+          <div class="kv"><span class="k">余额</span><span class="v">$ 128.00 <span style="color:var(--dim);font-size:12px">（足够）</span></span></div>
+        </div>
+        <button class="btn primary lg" style="width:100%;margin-top:6px">立即购买</button>
+        <p style="font-size:11.5px;color:var(--dim);margin-top:10px;text-align:center">下单即从钱包余额扣款，支付成功立即发卡</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P5 · 权益包
+     ==================================================================== -->
+<section class="page" id="p-pack">
+  <div class="wrap" style="padding-top:26px">
+    <div class="panel">
+      <h2>权益包</h2>
+      <div class="psub">买到的是「按权益价下单的次数」，不是商品本身；用完恢复原价，随时可再续</div>
+      <div class="grid" id="packGrid"></div>
+    </div>
+    <div class="panel">
+      <h2>两档怎么选</h2>
+      <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card"><h3>还没验证市场</h3><div style="color:var(--sub);font-size:13px">有客户群，但不确定卖不卖得动 —— 先用 <b>$15 试 5 单</b>，跑得通再放量，跑不通就停。</div></div>
+        <div class="card"><h3>已经稳定出货</h3><div style="color:var(--sub);font-size:13px">每月稳定几十单 —— 用 <b>$99 / 50 次</b> 把每次机会成本摊薄，越用越省。</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P6 · 我的订单
+     ==================================================================== -->
+<section class="page" id="p-orders">
+  <div class="wrap" style="padding-top:26px">
+    <div class="panel">
+      <h2>我的订单</h2>
+      <div class="psub">下单后即时扣款并交付，无需等待支付</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn pill sm primary">全部 <span class="pill gray" style="margin-left:6px">5</span></button>
+        <button class="btn pill sm">处理中 <span class="pill gray" style="margin-left:6px">1</span></button>
+        <button class="btn pill sm">已完成 <span class="pill gray" style="margin-left:6px">3</span></button>
+        <button class="btn pill sm">失败 <span class="pill gray" style="margin-left:6px">1</span></button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr><th>订单号</th><th>商品</th><th>金额</th><th>状态</th><th>下单时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="num">KC-8F2A1B</td><td>ChatGPT Plus 一个月</td><td class="num">$ 9.00</td><td><span class="pill ok">已完成</span></td><td class="hide-sm">2026-10-17 14:02</td><td><button class="btn ghost sm">查看卡密</button></td></tr>
+            <tr><td class="num">KC-7C9D02</td><td>GPT Pro 200</td><td class="num">$ 124.00</td><td><span class="pill brand">处理中</span></td><td class="hide-sm">2026-10-17 13:40</td><td><button class="btn ghost sm">查看详情</button></td></tr>
+            <tr><td class="num">KC-6B1E77</td><td>ChatGPT Plus 成品号</td><td class="num">$ 19.90</td><td><span class="pill ok">已完成</span></td><td class="hide-sm">2026-10-16 20:11</td><td><button class="btn ghost sm">查看卡密</button></td></tr>
+            <tr><td class="num">KC-5A0C31</td><td>GPT Pro 100（菲区）</td><td class="num">$ 78.00</td><td><span class="pill red">失败</span></td><td class="hide-sm">2026-10-16 19:02</td><td><button class="btn ghost sm">已退款</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>订单详情 · KC-7C9D02</h2>
+      <div class="psub">交付进度实时可见</div>
+      <div class="tl">
+        <div class="it done"><span class="dot"></span><div class="m"><b>已下单</b><small>订单创建成功</small></div><span class="tm">13:40</span></div>
+        <div class="it done"><span class="dot"></span><div class="m"><b>已支付</b><small>支付方式：账户余额</small></div><span class="tm">13:40</span></div>
+        <div class="it doing"><span class="dot"></span><div class="m"><b>开通中</b><small>正在为你开通，请稍候</small></div><span class="tm">—</span></div>
+        <div class="it"><span class="dot"></span><div class="m"><b>交付完成</b><small>卡密发放并开通成功</small></div><span class="tm">—</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P7 · 我的钱包
+     ==================================================================== -->
+<section class="page" id="p-wallet">
+  <div class="wrap" style="padding-top:26px">
+    <div class="panel">
+      <h2>我的钱包</h2>
+      <div class="wtop">
+        <div><div class="k">可用余额</div><div class="bal num">$ 128.00</div></div>
+        <div class="acts">
+          <button class="btn primary" onclick="openModal('rcModal')">充值</button>
+          <button class="btn" onclick="goPage('orders')">我的订单</button>
+          <button class="btn ghost" onclick="openModal('guideModal')">USDT 充值教程</button>
+        </div>
+      </div>
+      <div class="presets">
+        <button class="preset on">$ 20</button>
+        <button class="preset">$ 50</button>
+        <button class="preset">$ 100</button>
+        <button class="preset">$ 200</button>
+      </div>
+      <div class="notice" style="margin-bottom:18px">
+        <span>🔔</span>
+        <div>有待支付充值单时，可在下方「待支付充值单」继续支付，<b>30 分钟内有效</b>。</div>
+      </div>
+      <h3 style="font-size:14.5px;font-weight:650;margin:6px 0 10px">流水明细</h3>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr><th>时间</th><th>类型</th><th>金额</th><th>余额</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td class="hide-sm">2026-10-17 14:02</td><td>消费</td><td class="num" style="color:var(--red)">- $ 9.00</td><td class="num">$ 128.00</td><td>ChatGPT Plus 一个月</td></tr>
+            <tr><td class="hide-sm">2026-10-17 13:30</td><td>充值</td><td class="num" style="color:var(--ok)">+ $ 100.00</td><td class="num">$ 137.00</td><td>USDT · TRC20</td></tr>
+            <tr><td class="hide-sm">2026-10-16 20:00</td><td>充值</td><td class="num" style="color:var(--ok)">+ $ 50.00</td><td class="num">$ 37.00</td><td>USDT · TRC20</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P8 · 兑换卡密
+     ==================================================================== -->
+<section class="page" id="p-redeem">
+  <div class="wrap" style="padding-top:26px">
+    <div class="panel" style="max-width:640px;margin:0 auto">
+      <h2>兑换卡密 · 完成开通</h2>
+      <div class="psub">输入代充卡密，验证通过后进入开通</div>
+      <p class="rd-hint">输入或粘贴你的代充卡密，验证通过后进入开通。</p>
+      <div class="field"><label>卡密 / CDK</label><input value="KC-CMR29PQRSA7" readonly></div>
+      <button class="btn primary" style="margin-bottom:18px">验证卡密</button>
+
+      <div class="rd-verified">
+        <span style="color:var(--sub)">卡密</span><span class="cdk">KC-CMR29PQRSA7</span>
+        <span style="color:var(--brand);font-weight:600">ChatGPT Plus 一个月</span>
+      </div>
+      <div class="field">
+        <label>会话凭证（Session JSON）<span class="hint"> · 仅存浏览器内存</span></label>
+        <textarea placeholder='粘贴完整 Session JSON（含 accessToken 等字段）'></textarea>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn primary">开始开通</button>
+        <button class="btn ghost">重新输入卡密</button>
+      </div>
+      <div class="rd-track"><div class="rd-bar" style="width:52%"></div></div>
+      <div style="font-size:13px;color:var(--sub);margin-top:8px">正在开通…（52%）请勿关闭页面</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================================
+     P9 · 登录 / 注册
+     ==================================================================== -->
+<section class="page" id="p-login">
+  <div class="wrap" style="padding-top:56px;padding-bottom:44px">
+    <div class="panel" style="max-width:440px;margin:0 auto">
+      <h2 id="authH" style="text-align:center">登录</h2>
+      <div class="psub" id="authP" style="text-align:center">登录后可下单并查看订单</div>
+      <div class="field"><label>邮箱</label><input type="email" placeholder="you@example.com" autocomplete="username"></div>
+      <div class="field"><label>密码</label><input type="password" placeholder="至少 6 位" autocomplete="current-password"></div>
+      <div class="field hidden" id="regName"><label>昵称（可选）</label><input placeholder="如何称呼您"></div>
+      <button class="btn primary lg" id="authSubmit" style="width:100%" onclick="toast('示例：提交中…')">登 录</button>
+      <div style="text-align:center;margin-top:14px;font-size:12.5px;color:var(--sub)" id="authSwitch">还没有账号？<button class="lnk" onclick="setAuth('register')">注册</button></div>
+      <div style="text-align:center;margin-top:18px;font-size:11.5px;color:var(--dim);line-height:1.6">登录即表示你同意服务条款；本平台仅提供 AI 服务代充与账号交付，不涉及订阅关系转让。</div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ 页脚 ============ -->
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div>
+        <div class="logo" style="margin-bottom:10px"><span class="mk">K</span>KC 直供</div>
+        <div class="about">ChatGPT 代充、成品号与建站服务。明码标价，余额下单，支付成功即时交付。</div>
+      </div>
+      <div>
+        <h5>帮助与支持</h5>
+        <button onclick="toast('示例：打开工单支持')">工单支持</button>
+        <button onclick="toast('示例：打开使用文档')">使用文档</button>
+        <button onclick="toast('示例：邀请好友')">邀请好友</button>
+      </div>
+      <div>
+        <h5>商品</h5>
+        <button onclick="goPage('catalog')">代充</button>
+        <button onclick="goPage('catalog')">成品号</button>
+        <button onclick="goPage('catalog')">建站服务</button>
+        <button onclick="goPage('pack')">权益包</button>
+      </div>
+      <div>
+        <h5>关于</h5>
+        <button onclick="toast('示例：关于我们')">关于我们</button>
+        <button onclick="toast('示例：服务条款')">服务条款</button>
+        <button onclick="toast('示例：联系客服')">联系客服</button>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>© 2026 KC 直供 · 保留所有权利</span>
+      <span>金额单位：USD（$）</span>
+    </div>
+  </div>
+</footer>
+
+</div><!-- /stage -->
+
+<!-- ============ 充值弹层 ============ -->
+<div class="modal" id="rcModal">
+  <div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>充值余额</h3><div class="sub">USDT · TRC20</div></div>
+      <button class="btn ghost sm" onclick="closeModal('rcModal')">✕</button>
+    </div>
+    <div class="rc-steps">
+      <div class="rc-step on"><b>1</b>选金额</div>
+      <div class="rc-step"><b>2</b>转账</div>
+      <div class="rc-step"><b>3</b>到账</div>
+    </div>
+    <div class="presets">
+      <button class="preset on">$ 20</button>
+      <button class="preset">$ 50</button>
+      <button class="preset">$ 100</button>
+    </div>
+
+    <div class="rc-exact">
+      <div class="k">请务必按此金额精确转账（含小数）</div>
+      <div class="v"><b>20.0047</b><span style="font-size:12px;color:var(--sub)">USDT</span>
+        <button class="btn ghost sm" style="margin-left:auto" onclick="toast('已复制精确金额 20.0047')">复制</button></div>
+      <div class="w">⚠️ 小数位是链上认单标识，少输将无法自动到账；到账余额仍按 $20.00 计</div>
+    </div>
+
+    <div class="rc-net">
+      <span>网络</span><span class="badge">USDT · TRC20</span>
+      <span style="color:var(--red)">请勿使用其他链（ERC20/BEP20），转错无法找回</span>
+    </div>
+
+    <div class="rc-qr">
+      <div class="img">［收款二维码］</div>
+      <div style="font-size:12px;color:var(--sub);word-break:break-all">TQm5…9Xk2（示例收款地址）</div>
+      <button class="btn ghost sm" onclick="toast('已复制收款地址')">复制地址</button>
+    </div>
+
+    <div class="rc-timer">
+      <div class="k">请在此时间内完成支付</div>
+      <div class="v num">29:41</div>
+    </div>
+
+    <label class="rc-ack"><input type="checkbox" id="rcAck" onchange="document.getElementById('rcPay').disabled=!this.checked">
+      <span>我已按<b>精确金额</b>转至<b>TRC20 网络</b>，并知晓少输小数位不会到账</span></label>
+
+    <button class="btn primary lg" id="rcPay" style="width:100%" disabled onclick="toast('已提交，等待链上确认…')">我已支付</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" onclick="closeModal('rcModal')">稍后再付（保存为待支付充值单）</button>
+  </div>
+</div>
+
+<!-- ============ 教程弹层 ============ -->
+<div class="modal" id="guideModal">
+  <div class="box">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><h3>USDT 充值教程</h3><div class="sub">三步完成，首次充值建议先看一遍</div></div>
+      <button class="btn ghost sm" onclick="closeModal('guideModal')">✕</button>
+    </div>
+    <ol style="margin-left:18px;font-size:13.5px;line-height:1.9;color:var(--sub)">
+      <li><b style="color:var(--text)">准备钱包</b><br>在交易所或钱包 App 中准备好 USDT，确认可提现到 TRC20 网络。</li>
+      <li><b style="color:var(--text)">按精确金额转账</b><br>复制页面显示的<b style="color:var(--text)">含 4 位小数</b>的金额，转至页面给出的地址，网络选 TRC20。</li>
+      <li><b style="color:var(--text)">等待到账</b><br>链上确认后余额自动入账；若长时间未到账，回到「待支付充值单」查看或联系客服。</li>
+    </ol>
+    <div class="notice red" style="margin-top:14px"><span>⚠️</span><div><b>两个最常见的坑：</b>①少输小数位 ②选错网络（转到 ERC20/BEP20）。二者都会导致无法自动到账。</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- 数据（示例，落地时接真实接口） ---------- */
+const PRODS = [
+  {id:'xplan_1',  cat:'recharge', name:'ChatGPT Plus 一个月', meta:'代充 · 有效期 1 个月', ent:9.00,  was:15.00, save:6.00, ic:'⚡'},
+  {id:'xplan_17', cat:'recharge', name:'GPT Pro 100（菲区）', meta:'代充 · 即时开通', ent:78.00, was:98.00, save:20.00, ic:'⚡'},
+  {id:'xplan_29', cat:'recharge', name:'GPT Pro 200', meta:'代充 · 高配额', ent:124.00, was:155.00, save:31.00, ic:'⚡'},
+  {id:'xplan_plus_acc', cat:'account', name:'ChatGPT Plus 成品号', meta:'成品号 · 含 1 个月会员', ent:0, was:19.90, save:0, ic:'🪪'},
+  {id:'site_basic', cat:'website', name:'独立站搭建（基础版）', meta:'建站服务 · 含域名与部署', ent:0, was:399.00, save:0, ic:'🌐'},
+];
+const PACKS = [
+  {id:'pack_light', name:'轻享包', price:15.00, times:5,   cost:3.00, tag:'试水推荐', desc:'一顿饭钱，试 5 单就知道。跑不通就停，亏 $15。'},
+  {id:'pack_pro',   name:'畅享包', price:99.00, times:50,  cost:1.98, tag:'放量更省', desc:'每次机会成本从 $3.00 降到 $1.98，越用越省。'},
+];
+
+/* ---------- 渲染 ---------- */
+function priceHtml(p){
+  if (p.ent > 0) {
+    return `<div class="price"><span class="now num">$ ${p.ent.toFixed(2)}</span><span class="was num">$ ${p.was.toFixed(2)}</span><span class="off">权益价</span></div>
+            <div class="save">用 1 次权益 · 省 $${p.save.toFixed(2)}</div>`;
+  }
+  return `<div class="price"><span class="now num">$ ${p.was.toFixed(2)}</span></div>`;
+}
+function prodCard(p){
+  return `<div class="pcard">
+    <div class="top"><span class="tico">${p.ic}</span><div><h3>${p.name}</h3><div class="meta">${p.meta}</div></div></div>
+    ${priceHtml(p)}
+    <div class="foot"><button class="btn primary sm" onclick="goPage('detail')">立即购买</button><span class="pill ok">有库存</span></div>
+  </div>`;
+}
+function renderGrid(id, list){
+  const el = document.getElementById(id); if(!el) return;
+  el.innerHTML = list.map(prodCard).join('') || '<div style="color:var(--dim)">暂无商品</div>';
+}
+function packCard(pk){
+  const dots = Array.from({length:5}).map((_,i)=>`<i class="${i<pk.times/10||pk.times<=5?'on':''}"></i>`).join('');
+  return `<div class="pcard">
+    <div class="top"><span class="tico">🎟️</span><div><h3>${pk.name}</h3><div class="meta">权益包 · 共 ${pk.times} 次</div></div><span class="pill brand" style="margin-left:auto">${pk.tag}</span></div>
+    <div class="price"><span class="now num">$ ${pk.price.toFixed(2)}</span><span style="color:var(--sub);font-size:12.5px">/ ${pk.times} 次</span></div>
+    <div style="display:flex;align-items:center;gap:10px"><span class="dots">${dots}</span><span style="font-size:12px;color:var(--sub)">每次成本 $${pk.cost.toFixed(2)}</span></div>
+    <div style="font-size:12.5px;color:var(--sub);line-height:1.6">${pk.desc}</div>
+    <div class="foot"><button class="btn primary sm" onclick="toast('示例：进入 ${pk.name} 下单')">立即开通</button></div>
+  </div>`;
+}
+
+document.getElementById('homeGrid').innerHTML = PRODS.filter(p=>p.cat==='recharge').slice(0,3).concat(PRODS.filter(p=>p.cat==='account')).map(prodCard).join('');
+document.getElementById('homePackGrid').innerHTML = PACKS.map(packCard).join('');
+document.getElementById('packGrid').innerHTML = PACKS.map(packCard).join('');
+
+function setCat(cat, btn){
+  document.querySelectorAll('#p-catalog .btn.pill.sm.primary,#p-catalog .btn.pill.sm').forEach(b=>b.classList.remove('primary'));
+  document.querySelectorAll('#p-catalog > .wrap > .panel > div > button').forEach(b=>b.classList.remove('primary'));
+  btn.classList.add('primary');
+  const titles = {recharge:'代充', account:'成品号', website:'建站服务'};
+  document.getElementById('catTitle').textContent = titles[cat] || '全部商品';
+  const list = PRODS.filter(p=>p.cat===cat);
+  document.getElementById('catalogGrid').innerHTML = list.length ? list.map(prodCard).join('') : '<div style="color:var(--dim);padding:20px 0">该分类暂无商品</div>';
+}
+
+/* ---------- 页面切换 ---------- */
+function goPage(name){
+  document.querySelectorAll('section.page').forEach(s=>s.classList.remove('on'));
+  const el = document.getElementById('p-'+name);
+  if (el) el.classList.add('on');
+  document.querySelectorAll('#pageNav button').forEach(b=>b.classList.toggle('on', b.dataset.page===name));
+  document.querySelectorAll('#mainNav button').forEach(b=>b.classList.remove('on'));
+  const map = {home:'home', catalog:'recharge', pack:'pack', orders:'orders'};
+  if (map[name]) document.querySelector(`#mainNav button[data-nav="${map[name]}"]`)?.classList.add('on');
+  window.scrollTo({top:0,behavior:'instant'});
+  if (name==='catalog') setCat('recharge', document.querySelector('#p-catalog .btn.pill.sm.primary') || document.querySelector('#p-catalog .btn.pill.sm'));
+}
+document.querySelectorAll('#pageNav button').forEach(b=>b.addEventListener('click',()=>goPage(b.dataset.page)));
+document.querySelectorAll('#mainNav button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#mainNav button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+}));
+
+/* ---------- 配色方案（默认 E 墨绿 · 站内保留顾客自选 · 工具条与站内入口同步） ---------- */
+const SCHEMES = {
+  lime:  {name:'经典绿', theme:'dark',  sw:'#7BC800'},
+  ocean: {name:'深海蓝', theme:'dark',  sw:'#4D9BFF'},
+  violet:{name:'靛紫',   theme:'dark',  sw:'#8B7BFF'},
+  ember: {name:'暖橘',   theme:'dark',  sw:'#FF7A45'},
+  mint:  {name:'墨绿',   theme:'dark',  sw:'#6EE7B7'},
+  ink:   {name:'简约白', theme:'light', sw:'#3B6CF6'}
+};
+const DEFAULT_SCHEME = 'ink';   // 默认 = 简约白（亮色，v1.1 定稿）；白标租户可在后台改；前台顾客不提供切换
+const root = document.documentElement;
+
+/* 配色由「租户」决定，不由前台顾客切换：落地时由租户品牌配置下发；本工具条仅供评审预览 */
+function applyScheme(s){
+  if (!SCHEMES[s]) s = DEFAULT_SCHEME;
+  root.dataset.scheme = s;
+  root.dataset.theme = SCHEMES[s].theme;
+  document.getElementById('palName').textContent = SCHEMES[s].name;
+  document.querySelectorAll('#palNav button').forEach(b=>b.classList.toggle('on', b.dataset.scheme === s));
+  // 「设计说明」页色板随方案实时更新
+  const cs = getComputedStyle(root);
+  document.querySelectorAll('#swD .c').forEach(el=>{ const v = cs.getPropertyValue(el.dataset.t).trim(); if (v) el.style.background = v; });
+  document.querySelectorAll('#swD code').forEach(el=>{ el.textContent = cs.getPropertyValue(el.dataset.tc).trim().toUpperCase(); });
+}
+document.querySelectorAll('#palNav button').forEach(b=>b.addEventListener('click',()=>applyScheme(b.dataset.scheme)));
+
+document.getElementById('mobBtn').addEventListener('click', ()=>{
+  document.body.classList.toggle('is-mobile');
+  document.getElementById('mobBtn').textContent = document.body.classList.contains('is-mobile') ? '桌面预览' : '移动预览';
+});
+
+applyScheme(DEFAULT_SCHEME);
+
+/* ---------- 弹层 / toast ---------- */
+function openModal(id){ document.getElementById(id).classList.add('show'); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m) m.classList.remove('show'); }));
+let tt;
+function toast(t){ const el=document.getElementById('toast'); el.textContent=t; el.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>el.classList.remove('show'),1800); }
+
+/* ---------- 登录 / 注册切换 ---------- */
+function setAuth(mode){
+  const h = document.getElementById('authH'), p = document.getElementById('authP');
+  const name = document.getElementById('regName'), sub = document.getElementById('authSubmit');
+  h.textContent = mode === 'login' ? '登录' : '注册';
+  p.textContent = mode === 'login' ? '登录后可下单并查看订单' : '注册后即可下单并查看订单';
+  name.classList.toggle('hidden', mode === 'login');
+  sub.textContent = mode === 'login' ? '登 录' : '注 册';
+  document.getElementById('authSwitch').innerHTML = mode === 'login'
+    ? '还没有账号？<button class="lnk" onclick="setAuth(\'register\')">注册</button>'
+    : '已有账号？<button class="lnk" onclick="setAuth(\'login\')">登录</button>';
+}
+
+/* 初始渲染商品列表 */
+setCat('recharge', document.querySelector('#p-catalog .btn.pill.sm.primary'));
+</script>
+</body>
+</html>

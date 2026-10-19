@@ -115,18 +115,27 @@ function verifySignedToken(token, { expectedSub, secret = resolveAdminTokenSecre
     }
 }
 
-function issueAdminToken(passwordVersion, email = '') {
-    return issueSignedToken({
+// v2.4.0：多管理员/RBAC —— options 携带 auid（kc_admin_users.id）、role、permissions（权限点数组）。
+// 兼容：调用方不传 options 时行为与旧版一致（单账号兜底，permissions=['admin']）。
+function issueAdminToken(passwordVersion, email = '', options = {}) {
+    const permissions = Array.isArray(options.permissions) && options.permissions.length
+        ? options.permissions.slice()
+        : ['admin'];
+    const body = {
         sub: 'admin',
-        permissions: ['admin'],
+        permissions: permissions,
         pv: Math.max(1, Number(passwordVersion || 1)),
         email: String(email || '').trim().toLowerCase()
-    }, ADMIN_TOKEN_TTL_MS);
+    };
+    if (options.id != null) body.auid = Number(options.id);
+    if (options.role) body.role = String(options.role);
+    return issueSignedToken(body, ADMIN_TOKEN_TTL_MS);
 }
 
 function verifyAdminToken(token) {
     const payload = verifySignedToken(token, { expectedSub: 'admin' });
-    if (!payload || !Array.isArray(payload.permissions) || !payload.permissions.includes('admin')) {
+    // v2.4.0：RBAC 令牌的 permissions 为权限点数组（超级角色 = ['*']），签名有效 + sub='admin' 即为合法后台令牌。
+    if (!payload || !Array.isArray(payload.permissions) || !payload.permissions.length) {
         return null;
     }
     return payload;

@@ -28,6 +28,8 @@ describe('Zovo product catalog adapter', () => {
     it('uses registry keys and checks both ACC enabled and supplier purchasable flags', async () => {
         vi.stubEnv('REQUIRE_ZOVOCARD_MOCK', '0');
         vi.stubEnv('ZOVOCARD_MOCK', '0');
+        // F1 后客户端 base_url 以 cfg（调用方/DB）优先、env 作兜底；此处清空 env 以保证断言使用 cfg.base_url 且不受环境污染。
+        vi.stubEnv('ZOVOCARD_BASE_URL', '');
         const request = vi.spyOn(axios, 'request').mockResolvedValue({
             status: 200,
             data: {
@@ -69,6 +71,36 @@ describe('Zovo product catalog adapter', () => {
         await expect(assertPurchasableZovoPlan('pro_50x', async () => result)).rejects.toMatchObject({ code: 'ZOVO_PLAN_UNAVAILABLE' });
         await expect(assertPurchasableZovoPlan('plus', async () => result)).rejects.toMatchObject({ code: 'ZOVO_PLAN_UNAVAILABLE' });
         await expect(assertPurchasableZovoPlan('go', async () => result)).resolves.toMatchObject({ plan: { key: 'go' } });
+    });
+
+    it('prefers caller/DB cfg over env for base_url and api_key (F1)', async () => {
+        vi.stubEnv('REQUIRE_ZOVOCARD_MOCK', '0');
+        vi.stubEnv('ZOVOCARD_MOCK', '0');
+        vi.stubEnv('ZOVOCARD_BASE_URL', 'https://env.zovo.test/openapi/v1');
+        vi.stubEnv('ZOVOCARD_API_KEY', 'env-key');
+        const request = vi.spyOn(axios, 'request').mockResolvedValue({ status: 200, data: { code: 0, msg: 'ok', data: { version: 1, registry: [], plans: {} } } });
+
+        await zovoCard.fetchPlans({ base_url: 'https://db.zovo.test/openapi/v1', api_key: 'db-key' });
+
+        expect(request).toHaveBeenCalledWith(expect.objectContaining({
+            url: 'https://db.zovo.test/openapi/v1/gpt-direct/plans?product=gpt',
+            headers: expect.objectContaining({ 'X-API-Key': 'db-key' })
+        }));
+    });
+
+    it('falls back to env base_url/api_key when cfg is empty (F1)', async () => {
+        vi.stubEnv('REQUIRE_ZOVOCARD_MOCK', '0');
+        vi.stubEnv('ZOVOCARD_MOCK', '0');
+        vi.stubEnv('ZOVOCARD_BASE_URL', 'https://env.zovo.test/openapi/v1');
+        vi.stubEnv('ZOVOCARD_API_KEY', 'env-key');
+        const request = vi.spyOn(axios, 'request').mockResolvedValue({ status: 200, data: { code: 0, msg: 'ok', data: { version: 1, registry: [], plans: {} } } });
+
+        await zovoCard.fetchPlans({});
+
+        expect(request).toHaveBeenCalledWith(expect.objectContaining({
+            url: 'https://env.zovo.test/openapi/v1/gpt-direct/plans?product=gpt',
+            headers: expect.objectContaining({ 'X-API-Key': 'env-key' })
+        }));
     });
 
     it('does not treat renewal attachment as an ordinary product sale', async () => {

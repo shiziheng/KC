@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -7,11 +7,102 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F6F7F5;--card:#FFFFFF;--line:#E4E5DF;--line2:#D3D5CC;
-  --text:#1F2328;--sub:#6B6F76;--dim:#9AA0A6;
-  --brand:#0F6E56;--brand-deep:#0B5341;--brand-bg:#E6F4EF;
-  --amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB;
-  --radius:14px;--radius-sm:9px;
+  /* 配色方案 简约白（亮色）· 平台默认；白标租户 primary_color 经 setProperty 覆盖 --brand */
+  color-scheme:light;
+  --bg:#F7F8FA;--bg2:#FFFFFF;--card:#FFFFFF;--card2:#F2F4F8;
+  --line:#E6E9EF;--line2:#D3D8E0;
+  --text:#111827;--sub:#5B6472;--dim:#98A1AE;
+  --brand:#3B6CF6;--brand-deep:#2E56CC;--brand-ink:#FFFFFF;
+  --brand-bg:#EAF0FE;--brand-line:#B9CBFB;
+  --amber:#8A5A0B;--amber-bg:#FBF2DF;
+  --red:#C13B3F;--red-bg:#FCEBEB;
+  --ok:#167A3D;--ok-bg:#E6F7EC;
+  --radius:16px;--radius-sm:10px;--radius-lg:22px;
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(59,108,246,.10), transparent 60%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(59,108,246,.09), transparent 68%);
+  --shadow:0 20px 44px rgba(20,28,45,.10);
+  --shadow-sm:0 4px 16px rgba(20,28,45,.07);
+  --head:rgba(255,255,255,.88);
+}
+/* ============================================================
+   配色方案（v2.14.0）：由「租户品牌 color_scheme」下发给 <html data-scheme="…">
+   在后台可切换；前台顾客不提供配色入口。方案只覆盖 token，不改布局。
+   租户自定义 primary_color 仍单独覆盖 --brand（优先级更高）。
+   ============================================================ */
+:root[data-scheme="mint"]{
+  color-scheme:dark;
+  --bg:#0C1613;--bg2:#0F1B17;--card:#14211D;--card2:#1A2A25;
+  --line:#213830;--line2:#2D4C43;
+  --text:#EEF6F3;--sub:#94AFA7;--dim:#6C8B82;
+  --brand:#6EE7B7;--brand-deep:#4FD3A0;--brand-ink:#06231A;
+  --brand-bg:rgba(110,231,183,.13);--brand-line:rgba(110,231,183,.36);
+  --amber:#E3BE63;--amber-bg:rgba(227,190,99,.13);
+  --red:#FF6B6B;--red-bg:rgba(255,107,107,.13);
+  --ok:#4FD08C;--ok-bg:rgba(79,208,140,.13);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(110,231,183,.16), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(110,231,183,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.5);--shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(12,22,19,.82);
+}
+:root[data-scheme="ocean"]{
+  color-scheme:dark;
+  --bg:#070B14;--bg2:#0B1220;--card:#0F1626;--card2:#151E30;
+  --line:#1E2A42;--line2:#2B3B58;
+  --text:#EEF3FB;--sub:#93A1B8;--dim:#66738A;
+  --brand:#4D9BFF;--brand-deep:#3A7FE0;--brand-ink:#04101F;
+  --brand-bg:rgba(77,155,255,.13);--brand-line:rgba(77,155,255,.36);
+  --amber:#E6BE5E;--amber-bg:rgba(230,190,94,.13);
+  --red:#FF6B70;--red-bg:rgba(255,107,112,.13);
+  --ok:#4DD08A;--ok-bg:rgba(77,208,138,.13);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(77,155,255,.16), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(77,155,255,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.5);--shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  --head:rgba(7,11,20,.82);
+}
+:root[data-scheme="violet"]{
+  color-scheme:dark;
+  --bg:#0A0812;--bg2:#0E0B18;--card:#141021;--card2:#1B1630;
+  --line:#271F3D;--line2:#372C52;
+  --text:#F2EFFB;--sub:#A69CBD;--dim:#79708F;
+  --brand:#8B7BFF;--brand-deep:#7263E8;--brand-ink:#0A0812;
+  --brand-bg:rgba(139,123,255,.14);--brand-line:rgba(139,123,255,.36);
+  --amber:#E7BE6A;--amber-bg:rgba(231,190,106,.13);
+  --red:#FF6B8A;--red-bg:rgba(255,107,138,.13);
+  --ok:#4FD3A2;--ok-bg:rgba(79,211,162,.13);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(139,123,255,.18), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(139,123,255,.17), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.55);--shadow-sm:0 6px 20px rgba(0,0,0,.4);
+  --head:rgba(10,8,18,.82);
+}
+:root[data-scheme="ember"]{
+  color-scheme:dark;
+  --bg:#0C0A09;--bg2:#120F0D;--card:#1A1512;--card2:#221B16;
+  --line:#332A23;--line2:#473A30;
+  --text:#FBF4EF;--sub:#B39B8C;--dim:#84705F;
+  --brand:#FF7A45;--brand-deep:#E85F2A;--brand-ink:#180A04;
+  --brand-bg:rgba(255,122,69,.13);--brand-line:rgba(255,122,69,.36);
+  --amber:#EFC15E;--amber-bg:rgba(239,193,94,.13);
+  --red:#FF6A5E;--red-bg:rgba(255,106,94,.13);
+  --ok:#58CF8A;--ok-bg:rgba(88,207,138,.13);
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(255,122,69,.14), transparent 62%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(255,122,69,.16), transparent 68%);
+  --shadow:0 24px 60px rgba(0,0,0,.55);--shadow-sm:0 6px 20px rgba(0,0,0,.4);
+  --head:rgba(12,10,9,.82);
+}
+:root[data-scheme="ink"]{
+  color-scheme:light;
+  --bg:#F7F8FA;--bg2:#FFFFFF;--card:#FFFFFF;--card2:#F2F4F8;
+  --line:#E6E9EF;--line2:#D3D8E0;
+  --text:#111827;--sub:#5B6472;--dim:#98A1AE;
+  --brand:#3B6CF6;--brand-deep:#2E56CC;--brand-ink:#FFFFFF;
+  --brand-bg:#EAF0FE;--brand-line:#B9CBFB;
+  --amber:#8A5A0B;--amber-bg:#FBF2DF;
+  --red:#C13B3F;--red-bg:#FCEBEB;
+  --ok:#167A3D;--ok-bg:#E6F7EC;
+  --glow:radial-gradient(ellipse at 50% 0%, rgba(59,108,246,.10), transparent 60%);
+  --glow-strong:radial-gradient(ellipse at center, rgba(59,108,246,.09), transparent 68%);
+  --shadow:0 20px 44px rgba(20,28,45,.10);--shadow-sm:0 4px 16px rgba(20,28,45,.07);
+  --head:rgba(255,255,255,.88);
 }
 body{font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6}
 a{color:var(--brand)}
@@ -97,6 +188,54 @@ table.kc td{padding:9px 10px;border-bottom:1px solid var(--line)}
 .rd-bar.err{background:var(--red)}
 .rd-status{font-size:13px;color:var(--sub);margin-top:8px}
 .rd-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+/* ── v2.15.0 代充 5 步向导（① 登录 → ② 获取 Session → ③ 提交 Session → ④ 支付 → ⑤ 完成）──
+   代充商城详情页与「兑换卡密」页共用同一组件；配色全部走 scheme token */
+.wiz{background:var(--card2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 16px 14px;margin:12px 0}
+.wiz-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.wiz-steps{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.wiz-steps .ws{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.wiz-steps .ws i{font-style:normal;width:16px;height:16px;border-radius:50%;background:var(--line2);color:var(--card);font-size:10.5px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.wiz-steps .ws.on{color:var(--brand-deep);border-color:var(--brand-line);background:var(--brand-bg);font-weight:650}
+.wiz-steps .ws.on i{background:var(--brand);color:var(--brand-ink)}
+.wiz-steps .ws.done{color:var(--ok)}
+.wiz-steps .ws.done i{background:var(--ok);color:var(--brand-ink)}
+.wiz-count{font-size:12px;color:var(--dim)}
+.wiz-h{font-size:17px;font-weight:750;margin:0 0 6px}
+.wiz-p{color:var(--sub);font-size:13px;margin:0 0 10px}
+/* v2.16.2：第 ① 步改为「说明 + 主按钮」同一行（宽度被用起来，纵向不留空）；原伪浏览器大框已退役 */
+.wiz-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:4px 0 12px}
+.wiz-row .t{flex:1;min-width:260px;font-size:13px;color:var(--sub);line-height:1.7}
+/* v2.16.2：第 ② 步把地址从 ol 里提出来，单独一条「地址 + 复制」栏（一眼可见、纵向更省） */
+.wiz-urlbar{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);padding:7px 12px;margin:0 0 10px}
+.wiz-urlbar code{flex:1;min-width:0;font-size:12.5px;color:var(--text);word-break:break-all}
+.wiz-note{background:var(--amber-bg);color:var(--amber);border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px 12px;font-size:12.5px;margin-bottom:8px}
+.wiz-help{margin-bottom:8px}
+.wiz-ol{margin:0 0 10px;padding-left:20px;color:var(--sub);font-size:13px}
+.wiz-ol li{margin-bottom:6px}
+.wiz-ol code{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--text);word-break:break-all}
+.wiz-acts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.wiz-kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.wiz-kv .k{color:var(--sub)}
+.wiz-kv .v{font-weight:650;text-align:right}
+.wiz-amt{color:var(--brand-deep);font-weight:750}
+/* ── v2.16.0 批量代充：账号清单工作台 + 逐账号进度（同一流程既收 1 段亦收 N 段 Session）── */
+.wiz-acctbar{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;margin:12px 0 8px}
+.wiz-acctbar .mini{font-size:12px;color:var(--dim)}
+.wiz-acctacts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.wiz-acctwrap{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);overflow:auto;max-height:280px}
+.wiz-accttbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.wiz-accttbl th{position:sticky;top:0;background:var(--card2);color:var(--sub);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;z-index:1}
+.wiz-accttbl td{padding:8px 10px;border-bottom:1px dashed var(--line);vertical-align:middle}
+.wiz-accttbl tr:last-child td{border-bottom:0}
+.wiz-accttbl tr.bad{background:var(--red-bg)}
+.wiz-accttbl .em{font-family:ui-monospace,Consolas,monospace;word-break:break-all}
+.wiz-accttbl .mini{font-size:11.5px;color:var(--red)}
+.wiz-accttbl input[type=checkbox]{width:15px;height:15px}
+.wiz-prog{width:100%;height:8px;background:var(--line2);border-radius:999px;overflow:hidden;margin:10px 0 4px}
+.wiz-prog i{display:block;height:100%;background:var(--brand);border-radius:999px;transition:width .3s}
+.wiz-sum{font-size:12.5px;color:var(--sub);margin-bottom:4px}
+.wiz-over{color:var(--red);font-weight:650}
+.wiz-done-ic{width:44px;height:44px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 8px}
 .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);background:#1F2328;color:#fff;font-size:13px;padding:10px 20px;border-radius:999px;opacity:0;transition:all .25s;pointer-events:none;z-index:200}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 footer.site{border-top:1px solid var(--line);padding:22px 0;color:var(--dim);font-size:12px;text-align:center}
@@ -121,6 +260,67 @@ footer.site{border-top:1px solid var(--line);padding:22px 0;color:var(--dim);fon
 .otab.on .n{background:var(--brand);color:#fff}
 tr.orow{cursor:pointer}
 tr.orow:hover{background:var(--brand-bg)}
+/* ── 我的订单 · v2.19.0 风格改造（统计卡即筛选 + 类型页签 + 搜索 + 宽松表格）── */
+.op-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  background:linear-gradient(120deg,var(--brand-bg),var(--card) 62%);
+  border:1px solid var(--brand-line);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px}
+.op-head-l{display:flex;align-items:center;gap:14px;min-width:0}
+.op-ico{width:44px;height:44px;border-radius:13px;background:var(--brand);color:var(--brand-ink);display:flex;align-items:center;justify-content:center;flex:none;box-shadow:var(--shadow-sm)}
+.op-head h2{font-size:19px;font-weight:700;margin:0}
+.op-head .psub{color:var(--sub);font-size:12.5px;margin-top:2px;margin-bottom:0}
+.op-head-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:6px}
+.op-badge{font-size:12px;font-weight:600;color:var(--brand-deep);background:var(--card);border:1px solid var(--brand-line);border-radius:999px;padding:4px 12px}
+.op-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.ostat{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:15px 18px;cursor:pointer;font-family:inherit;
+  transition:border-color .15s,box-shadow .15s,background .15s}
+.ostat:hover{border-color:var(--brand-line)}
+.ostat .k{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--sub)}
+.ostat .k svg{width:15px;height:15px}
+.ostat .num{font-size:26px;font-weight:750;color:var(--text);line-height:1;font-variant-numeric:tabular-nums}
+.ostat.on{border-color:var(--brand);background:var(--brand-bg);box-shadow:var(--shadow-sm)}
+.ostat.on .k{color:var(--brand-deep);font-weight:600}
+.ostat.on .num{color:var(--brand-deep)}
+.op-panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px 6px}
+.op-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:2px 2px 12px;border-bottom:1px solid var(--line)}
+.osecs{display:flex;gap:6px;flex-wrap:wrap}
+.osec{border:1px solid var(--line2);background:transparent;border-radius:999px;padding:5px 13px;font-size:12.5px;cursor:pointer;font-family:inherit;color:var(--sub)}
+.osec:hover{border-color:var(--brand);color:var(--brand-deep)}
+.osec.on{border-color:var(--brand);background:var(--brand-bg);color:var(--brand-deep);font-weight:600}
+.osearch{display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--line);border-radius:999px;padding:6px 13px;min-width:200px}
+.osearch svg{width:14px;height:14px;color:var(--dim);flex:none}
+.osearch input{border:0;outline:0;background:transparent;color:var(--text);font-size:13px;width:100%;font-family:inherit}
+.osearch:focus-within{border-color:var(--brand);background:var(--card)}
+.op-count{font-size:12px;color:var(--dim);white-space:nowrap}
+table.otable{width:100%;border-collapse:collapse;font-size:13px}
+table.otable th{text-align:left;padding:12px 12px;color:var(--dim);font-weight:600;font-size:12px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.otable td{padding:13px 12px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+table.otable tbody tr:last-child td{border-bottom:0}
+table.otable .osku{font-weight:600}
+table.otable .osub{font-size:11.5px;color:var(--dim);margin-top:1px}
+table.otable .oamt{font-weight:650;font-variant-numeric:tabular-nums}
+table.otable .otime{color:var(--sub);font-size:12.5px}
+table.otable .olink{color:var(--brand-deep);font-weight:600;font-size:12.5px}
+tr.orow:hover .olink{text-decoration:underline}
+.ocopy{border:0;background:transparent;color:var(--dim);cursor:pointer;padding:2px 4px;border-radius:6px;vertical-align:middle;margin-left:5px}
+.ocopy:hover{color:var(--brand-deep);background:var(--brand-bg)}
+.ocopy.ok{color:var(--ok)}
+.ocopy svg{width:13px;height:13px;display:block}
+.otag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2.5px 10px;line-height:1.4}
+.otag.topup{background:var(--brand-bg);color:var(--brand-deep)}
+.otag.account{background:var(--ok-bg);color:var(--ok)}
+.otag.website{background:var(--amber-bg);color:var(--amber)}
+.otag.ent{background:rgba(139,123,255,.15);color:#6D5BD0}
+.otag.other{background:var(--card2);color:var(--sub)}
+.op-empty{text-align:center;padding:46px 0 40px;color:var(--dim)}
+.op-empty .e-ico{width:52px;height:52px;border-radius:16px;background:var(--card2);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.op-empty .e-ico svg{width:24px;height:24px}
+.op-empty .e-t{font-size:14.5px;font-weight:650;color:var(--text)}
+.op-empty .e-s{font-size:12.5px;margin:4px 0 14px}
+@media (max-width:720px){
+  .op-head{padding:16px}
+  .op-stats{grid-template-columns:repeat(2,1fr)}
+}
 /* 待支付倒计时（Stage 3.6） */
 .countdown{font-size:11px;color:var(--amber);margin-left:6px}
 .countdown.dead{color:var(--red)}
@@ -135,6 +335,15 @@ tr.orow:hover{background:var(--brand-bg)}
 .tl .main .k{font-size:13.5px;font-weight:600}
 .tl .main small{display:block;color:var(--sub);font-size:12px}
 .tl .time{color:var(--dim);font-size:12px;flex:0 0 auto}
+/* v2.21.0 上游进度节点（订单详情时间线内联查询） */
+.up-link{color:var(--brand-deep);font-weight:600;cursor:pointer}
+.up-link:hover{text-decoration:underline}
+.up-detail{margin:0 0 10px 20px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px;font-size:12.5px;line-height:1.7}
+.up-detail .u-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.up-detail .u-time{color:var(--dim);font-size:11.5px}
+.up-detail .u-row{color:var(--sub)}
+.up-detail .u-row .cdk{margin:0 2px}
+.up-detail .u-note{color:var(--dim);font-size:11.5px;margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
 .as-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
 /* 充值页改造（Stage 3.10）：网络徽标 / 精确金额 / 小数位强提醒 */
 .net-badge{display:inline-block;font-size:11px;font-weight:700;background:var(--brand-bg);color:var(--brand-deep);border:1px solid var(--brand);border-radius:999px;padding:1px 9px;vertical-align:middle}
@@ -151,14 +360,279 @@ tr.orow:hover{background:var(--brand-bg)}
 .rc-ack{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;font-weight:600;margin:10px 0;cursor:pointer}
 .rc-ack input{margin-top:3px;flex:0 0 auto}
 .rc-copy{font-size:11px}
+/* v2.10.0 充值体验重构：步骤引导 / 突出倒计时 / 网络强警示 / 扫码 / 小数位解释 / 离页引导 / 新手教程 */
+.rc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.rc-x{border:0;background:transparent;color:var(--sub);font-size:18px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px}
+.rc-x:hover{background:#F1EFEA;color:var(--ink)}
+.rc-steps{display:flex;gap:6px;margin:4px 0 10px}
+.rc-step{flex:1;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);background:#F6F5F1;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.rc-step b{width:16px;height:16px;flex:0 0 auto;border-radius:50%;background:#DAD6CD;color:#fff;font-size:11px;display:grid;place-items:center}
+.rc-step.on{color:var(--brand-deep);border-color:var(--brand);background:var(--brand-bg)}
+.rc-step.on b{background:var(--brand)}
+.rc-guide-line{font-size:12.5px;color:var(--sub);margin:0 0 14px}
+.rc-timer{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#FFF4F4;border:1px solid #F0C9C9;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px}
+.rc-timer-k{font-size:12.5px;color:var(--red);font-weight:600}
+.rc-timer-v .countdown{font-size:20px;font-weight:800;color:var(--red);font-family:ui-monospace,Consolas,monospace;letter-spacing:.5px}
+.rc-timer-v .countdown.dead{font-size:13px;font-family:inherit}
+.rc-timer.urgent{animation:rcPulse 1.2s ease-in-out infinite}
+@keyframes rcPulse{0%,100%{box-shadow:0 0 0 0 rgba(200,60,60,0)}50%{box-shadow:0 0 0 4px rgba(200,60,60,.12)}}
+.rc-chain{background:#FBF3F3;border:1px solid #EED7D7;border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px}
+.rc-chain-row{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.rc-chain-k{color:var(--sub)}
+.rc-chain-warn{font-size:12px;color:var(--red);margin-top:6px;font-weight:600}
+.rc-qrwrap{display:flex;flex-direction:column;align-items:center;gap:10px;background:#F8F8F5;border:1px solid var(--line);border-radius:var(--radius-sm);padding:14px 12px;margin-bottom:12px;text-align:center}
+.rc-qr{flex:0 0 auto;width:152px;height:152px;background:#fff;border:1px solid var(--line);border-radius:8px;display:grid;place-items:center;overflow:hidden;padding:4px}
+.rc-qr img{width:100%;height:100%;display:block}
+.rc-qr-ph{font-size:11px;color:var(--dim);text-align:center;padding:6px}
+.rc-qr-tip{width:100%;font-size:12px;color:var(--sub);line-height:1.65}
+.rc-qr-tip b{display:block;color:var(--ink);font-size:12.5px;margin-bottom:4px}
+.rc-qr-tip span{display:block;max-width:340px;margin:0 auto}
+.rc-qr-tip .btn{margin-top:8px}
+.rc-why{margin-top:8px;font-size:12px}
+.rc-why summary{cursor:pointer;color:var(--brand-deep);font-weight:600}
+.rc-why p{margin:6px 0 0;color:var(--sub);line-height:1.65}
+.rc-leave-btns{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
+.gd-list{margin:6px 0 0;padding-left:20px;font-size:13px;line-height:1.7}
+.gd-list li{margin-bottom:12px}
+.gd-list b{color:var(--ink)}
+.gd-list p{margin:4px 0 0;color:var(--sub);font-size:12.5px}
+.gd-warn{margin-top:6px;font-size:12px;color:var(--red);background:var(--red-bg);border:1px solid #F0C9C9;border-radius:8px;padding:8px 10px;line-height:1.6}
+.gd-faq{margin-top:6px}
+.gd-faq details{font-size:12.5px;border-top:1px solid var(--line);padding:9px 0}
+.gd-faq summary{cursor:pointer;font-weight:600;color:var(--ink)}
+.gd-faq p{margin:6px 0 0;color:var(--sub);line-height:1.6}
+.w-pend{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid #EED7D7;background:#FFF9F9;border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px}
+.w-pend .kp{font-size:12px;color:var(--sub)}
+.w-pend .vp{font-family:ui-monospace,Consolas,monospace;font-weight:800;color:var(--red);font-size:17px}
+.w-pend .left{font-size:12px;color:var(--amber);font-weight:700}
 .hidden{display:none!important}
-@media (max-width:640px){
-  .wrap{padding:0 14px}
-  nav.main{gap:2px}
-  nav.main button{padding:7px 8px;font-size:12.5px}
+/* 响应式断点见文件末尾（对齐原型 860 / 560），此处不再单独定义 */
+/* ============================================================
+   前台布局迁移 v1.0 —— 对齐设计原型《前台整体设计-v1.0.0.html》· E 墨绿
+   结构换新（双行 Hero / 信任条 / 能力卡 / FAQ 手风琴 / 四列页脚）；
+   以下同时覆盖原浅色硬编码并补齐原型组件样式。
+   白标租户自定义 --brand 仍最高优先（applyBrand setProperty 注入）。
+   ============================================================ */
+.logo .dot{color:var(--brand-ink)}
+.btn{background:transparent;color:var(--text)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+.btn.primary:hover{background:var(--brand-deep);border-color:var(--brand-deep)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.gray{background:var(--card2);color:var(--sub)}
+.pill.brand{background:var(--brand-bg);color:var(--brand)}
+table.kc th{background:var(--card2)}
+.cdk{background:var(--card2)}
+.modal{background:rgba(0,0,0,.62)}
+.modal .box{background:var(--bg2)}
+.toast{background:var(--text);color:var(--bg)}
+.qty button{background:transparent;color:var(--sub)}
+.qty input{background:transparent;color:var(--text)}
+.preset{background:transparent;color:var(--text)}
+.otab{background:transparent}
+.otab .n{background:var(--line2)}
+.otab.on .n{background:var(--brand);color:var(--brand-ink)}
+.field input,.field select,.field textarea{background:var(--card2);color:var(--text)}
+.field input:focus,.field select:focus,.field textarea:focus{box-shadow:0 0 0 3px var(--brand-bg)}
+.msg.ok{color:var(--ok)}
+.card:hover{box-shadow:var(--shadow-sm)}
+.rd-track{background:var(--line2)}
+.rc-x:hover{background:var(--card2);color:var(--text)}
+.rc-qr-tip b,.gd-list b,.gd-faq summary{color:var(--text)}
+.rc-step{background:var(--card2)}
+.rc-step b{background:var(--line2);color:var(--text)}
+.rc-timer{background:var(--red-bg);border-color:rgba(255,107,107,.35)}
+.rc-chain{background:var(--red-bg);border-color:rgba(255,107,107,.3)}
+.rc-qrwrap{background:var(--card2)}
+.rc-exact{border-color:rgba(255,107,107,.35)}
+.rc-fee{background:var(--card2)}
+.gd-warn{border-color:rgba(255,107,107,.35)}
+.w-pend{background:var(--red-bg);border-color:rgba(255,107,107,.3)}
+.rd-verified{border-color:var(--brand-line)}
+.net-badge{border-color:var(--brand-line)}
+
+/* ---- 站点外壳 / 顶栏 ---- */
+body{font-size:15px;line-height:1.65}
+main{padding:0}
+.wrap{max-width:1140px;padding:0 24px}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+header.site{background:var(--head);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);z-index:80}
+header.site .inner{height:64px;gap:18px}
+nav.main{margin-left:0;min-width:0}
+nav.main button{font-size:14px;padding:8px 13px;border-radius:9px}
+nav.main button.active,nav.main button.on{color:var(--brand);background:var(--brand-bg);font-weight:600}
+.hright{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none}
+.balchip{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--sub);border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer}
+.balchip b{color:var(--text);font-weight:600}
+.balchip:hover{border-color:var(--brand)}
+
+/* ---- 按钮 ---- */
+.btn{height:42px;padding:0 20px;border-radius:var(--radius-sm);font-size:14px;font-weight:500;border:1px solid var(--line2)}
+.btn:hover{border-color:var(--sub);background:transparent}
+.btn.pill{border-radius:999px}
+.btn.sm{height:34px;padding:0 14px;font-size:13px;border-radius:9px}
+.btn.lg{height:50px;padding:0 28px;font-size:15px}
+.btn.ghost{border-color:transparent;background:var(--card2);color:var(--sub)}
+.btn.ghost:hover{border-color:var(--line2);color:var(--text)}
+.btn.link{border:0;background:transparent;color:var(--brand);padding:4px 6px;height:auto;font-size:12.5px}
+.btn.link:hover{opacity:.8}
+.lnk{background:none;border:0;color:var(--brand);font-weight:700;cursor:pointer;font-size:12.5px;padding:0 3px;font-family:inherit;text-decoration:underline;text-underline-offset:3px}
+
+/* ---- Hero ---- */
+.hero{position:relative;overflow:hidden;text-align:center;padding:84px 24px 60px;background:transparent;border:0;border-radius:0;margin:0}
+.hero::before{content:"";position:absolute;inset:0;background:var(--glow);pointer-events:none}
+.hero::after{content:"";position:absolute;left:50%;bottom:-180px;transform:translateX(-50%);width:1400px;height:320px;border-radius:50%;background:var(--glow-strong);filter:blur(30px);pointer-events:none;opacity:.5}
+.hero .hero-in{position:relative;z-index:2;max-width:760px;margin:0 auto}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--sub);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 13px;margin-bottom:22px}
+.eyebrow .d{width:6px;height:6px;border-radius:50%;background:var(--brand)}
+.hero h1{font-size:52px;line-height:1.14;font-weight:750;letter-spacing:-.02em;color:var(--text)}
+/* v2.14.0：Hero 改为单行标题，原 .l2 双行样式已废弃 */
+.hero .lead{max-width:560px;margin:20px auto 0;color:var(--sub);font-size:16px;line-height:1.75}
+.hero .cond{margin-top:16px;font-size:13px;color:var(--dim)}
+.hero-cta{max-width:420px;margin:30px auto 0;display:flex;align-items:center;gap:14px;text-align:left;background:var(--card);border:1px solid var(--brand-line);border-radius:18px;padding:16px 18px;box-shadow:0 0 34px var(--brand-bg);cursor:pointer;transition:.18s}
+.hero-cta:hover{transform:translateY(-2px);border-color:var(--brand);box-shadow:0 0 40px var(--brand-bg)}
+.hero-cta .ic{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);border:1px solid var(--brand-line);display:grid;place-items:center;flex:none;color:var(--brand);font-size:20px}
+.hero-cta .tt{flex:1}
+.hero-cta .tt b{display:block;font-size:15.5px;font-weight:650}
+.hero-cta .tt span{display:block;font-size:12.5px;color:var(--sub);margin-top:2px}
+.hero-cta .ar{color:var(--brand);font-size:18px}
+
+/* ---- 信任条 ---- */
+.trust{position:relative;z-index:2;max-width:900px;margin:52px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.trust .t{text-align:center;padding:0 14px;border-left:1px solid var(--line)}
+.trust .t:first-child{border-left:0}
+.trust .n{font-size:30px;font-weight:750;letter-spacing:-.02em;line-height:1.3}
+.trust .n em{font-style:normal;color:var(--brand)}
+.trust .l{font-size:12.5px;color:var(--sub);margin-top:2px}
+.trust .s{font-size:11px;color:var(--dim)}
+
+/* ---- 能力卡 ---- */
+.cap{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.cap .c{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;gap:10px;transition:.15s}
+.cap .c:hover{border-color:var(--line2);transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+.cap .ic{width:44px;height:44px;border-radius:12px;background:var(--brand-bg);color:var(--brand);display:grid;place-items:center;font-size:19px;border:1px solid var(--brand-line)}
+.cap h3{font-size:16px;font-weight:650}
+.cap p{color:var(--sub);font-size:13px;flex:1}
+.cap .go{color:var(--brand);font-size:13px;font-weight:600;cursor:pointer}
+
+/* ---- 商品双价卡（原型保留；实际网格由脚本渲染 .card） ---- */
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:12px;transition:.15s}
+.pcard:hover{border-color:var(--brand-line);box-shadow:var(--shadow-sm)}
+.pcard .top{display:flex;gap:10px;align-items:flex-start}
+.pcard .tico{width:40px;height:40px;border-radius:11px;background:var(--card2);border:1px solid var(--line);display:grid;place-items:center;flex:none;font-size:17px}
+.pcard h3{font-size:14.5px;font-weight:650;line-height:1.4}
+.pcard .meta{font-size:11.5px;color:var(--dim);margin-top:2px}
+.pcard .price{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.pcard .foot{margin-top:auto;display:flex;align-items:center;gap:10px}
+
+/* ---- 权益进度点阵 ---- */
+.dots{display:inline-flex;gap:5px;align-items:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line2);display:block}
+.dots i.on{background:var(--brand)}
+
+/* ---- 步骤条 ---- */
+.steps{display:flex;gap:12px;flex-wrap:wrap}
+.steps .s{flex:1;min-width:180px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;position:relative}
+.steps .s .n{width:26px;height:26px;border-radius:8px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;font-size:13px;font-weight:800;margin-bottom:10px}
+.steps .s h4{font-size:14.5px;font-weight:650;margin-bottom:4px}
+.steps .s p{font-size:12.5px;color:var(--sub)}
+
+/* ---- FAQ 手风琴 ---- */
+.faq details{border-bottom:1px solid var(--line);padding:4px 0}
+.faq details:last-child{border-bottom:0}
+.faq summary{display:flex;align-items:center;gap:12px;padding:14px 2px;font-size:14.5px;font-weight:600;cursor:pointer;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary .q{flex:1}
+.faq summary .pm{width:22px;height:22px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;color:var(--sub);font-size:13px;flex:none;transition:.2s}
+.faq details[open] summary .pm{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);transform:rotate(45deg)}
+.faq .a{color:var(--sub);font-size:13.5px;padding:0 2px 16px 34px;line-height:1.7}
+.faq .a b{color:var(--text)}
+
+/* ---- 详情页 ---- */
+.detail{display:grid;grid-template-columns:1.25fr .75fr;gap:26px;align-items:start}
+/* v2.16.1：代充是「完整呈递流程」商品 —— 进入向导后右侧价格箱无用（CTA 已移进向导），
+   故收为单列聚焦版式，价格以「向导标题下的价签行」呈现，避免出现两个价格入口。 */
+.detail.single{grid-template-columns:1fr}
+.detail.single .panel{max-width:880px;margin:0 auto;width:100%}
+/* v2.16.2：商品名与价签同行（省掉一整行的纵向占用，标题与价格成一个视觉块） */
+.d-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+.d-head h2{margin:0}
+.d-priceInline{display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.notice{display:flex;gap:10px;background:var(--amber-bg);border:1px solid rgba(227,190,99,.35);border-radius:var(--radius-sm);padding:12px 14px;font-size:13px;color:var(--amber);line-height:1.6}
+.notice.red{background:var(--red-bg);border-color:rgba(255,107,107,.35);color:var(--red)}
+.notice b{font-weight:700}
+.buybox{background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:22px;position:sticky;top:86px}
+/* v2.17.0 代充双轨：进入详情先二选一（直接代充 / 购买卡密） */
+.mode-pick{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+.mode-card{background:var(--card2);border:1px solid var(--line);border-radius:var(--radius);padding:18px;display:flex;flex-direction:column;gap:8px}
+.mode-card h3{font-size:15.5px;font-weight:700;margin:0;display:flex;align-items:center;gap:7px}
+.mode-card p{margin:0;color:var(--sub);font-size:12.5px;line-height:1.65;flex:1}
+.mode-card .btn{align-self:flex-start}
+.mode-card .mc-tag{font-size:11.5px;color:var(--dim)}
+@media (max-width:820px){.mode-pick{grid-template-columns:1fr}}
+/* v2.17.0 卡密代充：卡密凭证列表 */
+.ck-cards{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px;max-height:280px;overflow-y:auto}
+.ck-card{display:flex;align-items:center;gap:10px;background:var(--card2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:10px 12px}
+.ck-card .idx{font-size:11.5px;color:var(--dim);min-width:26px}
+.ck-card .code{flex:1;font-family:var(--mono,monospace);font-size:13px;word-break:break-all}
+
+/* ---- 钱包 ---- */
+.wtop{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px dashed var(--line);margin-bottom:20px}
+.wtop .bal{font-size:40px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.wtop .k{color:var(--sub);font-size:12.5px}
+.wtop .acts{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+
+/* ---- 金额（主文字色大号字，符合口径） ---- */
+.card .price{color:var(--text)}
+.card .price small{color:var(--sub)}
+.dp{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.ent,.dp .ent{font-size:24px;font-weight:750;color:var(--text);letter-spacing:-.01em;line-height:1.3}
+.was,.dp .was{font-size:12.5px;color:var(--dim);text-decoration:line-through}
+.off,.dp .off{font-size:11.5px;font-weight:700;background:var(--brand-bg);color:var(--brand);border-radius:999px;padding:3px 9px}
+.save{font-size:12px;color:var(--brand);font-weight:600}
+
+/* ---- 面板 / 网格 ---- */
+.panel{padding:28px;border-radius:var(--radius-lg);margin-bottom:18px}
+.panel>h2,.panel h2{font-size:18px;font-weight:650;margin-bottom:4px}
+.panel .psub{color:var(--sub);font-size:13px;margin-bottom:16px}
+.grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+
+/* ---- 页脚 ---- */
+footer.site{margin-top:34px;padding:38px 0 26px;color:var(--dim);font-size:12.5px;text-align:left}
+.foot-cols{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr 1fr;gap:26px;margin-bottom:26px}
+.foot-cols h5{font-size:12.5px;color:var(--text);font-weight:650;margin-bottom:10px}
+.foot-cols button{display:block;color:var(--sub);font-size:12.5px;padding:4px 0;text-align:left;font-family:inherit;background:none;border:0;cursor:pointer}
+.foot-cols button:hover{color:var(--brand)}
+.foot-cols .about{color:var(--sub);font-size:12.5px;line-height:1.7;max-width:280px}
+.foot-cols .logo{font-size:16px;cursor:default}
+.foot-base{border-top:1px solid var(--line);padding-top:18px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+/* ---- 响应式：改用媒体查询（原型用 #stage 容器查询，线上无 #stage） ---- */
+@media (max-width:860px){
+  .cap{grid-template-columns:1fr}
+  .detail{grid-template-columns:1fr}
+  .buybox{position:static}
+  .foot-cols{grid-template-columns:1fr 1fr 1fr}
+}
+@media (max-width:560px){
+  .wrap{padding:0 16px}
+  header.site .inner{height:58px;gap:10px}
   .logo{font-size:14px}
-  .hero{padding:28px 20px}
-  .hero h1{font-size:21px}
+  nav.main button{padding:7px 9px;font-size:13px}
+  .balchip{display:none}
+  .hero{padding:56px 16px 40px}
+  .hero h1{font-size:31px}
+  .hero .lead{font-size:14.5px}
+  .hero-cta{padding:14px}
+  .trust{grid-template-columns:1fr;gap:14px;margin-top:34px}
+  .trust .t{border-left:0;border-top:1px solid var(--line);padding-top:14px}
+  .trust .t:first-child{border-top:0;padding-top:0}
+  .grid{grid-template-columns:1fr}
+  .panel{padding:20px}
+  .steps .s{min-width:100%}
+  .foot-cols{grid-template-columns:1fr 1fr}
+  .wtop .bal{font-size:32px}
+  .wtop .acts{margin-left:0;width:100%}
+  .hide-sm{display:none!important}
 }
 </style>
 </head>
@@ -166,156 +640,262 @@ tr.orow:hover{background:var(--brand-bg)}
 
 <header class="site">
   <div class="wrap inner">
-    <div class="logo" onclick="go('home')"><span class="dot" id="logoDot"></span><span id="brandName">…</span></div>
+    <div class="logo" onclick="go('home')"><span class="dot" id="logoDot">K</span><span id="brandName">…</span></div>
     <nav class="main">
       <button data-nav="recharge" onclick="openCategory('recharge')">代充</button>
       <button data-nav="account" onclick="openCategory('account')">成品号</button>
       <button data-nav="website" onclick="openCategory('website')">建站服务</button>
       <button data-nav="pack" onclick="go('pack')">权益包</button>
       <button data-nav="orders" onclick="go('orders')">我的订单</button>
+      <button data-nav="redeem" onclick="goRedeem()">兑换卡密</button>
     </nav>
-    <div class="me" id="meBox"></div>
+    <div class="hright">
+      <div class="balchip" onclick="go('wallet')" title="我的钱包">钱包余额 <b id="walletChip">—</b></div>
+      <div class="me" id="meBox"></div>
+    </div>
   </div>
 </header>
 
 <main>
-  <div class="wrap">
 
     <section id="view-home" class="view">
       <div class="hero">
-        <h1 id="heroTitle">欢迎</h1>
-        <p id="heroSub"></p>
-        <div class="cta">
-          <button class="btn primary" onclick="openCategory('recharge')">浏览商品</button>
-          <button class="btn" onclick="go('pack')">查看权益包</button>
+        <div class="hero-in">
+          <span class="eyebrow"><span class="d"></span>AI 服务直供 · 明码标价 · 即时交付</span>
+          <h1><span id="heroTitle">以更低成本，用上顶级 AI 能力</span></h1>
+          <p class="lead" id="heroSub"></p>
+          <div class="cond">$15 起开通权益包，按权益价单次下单 —— 不用先压几千美元</div>
+          <div class="hero-cta" onclick="openCategory('recharge')">
+            <span class="ic">⚡</span>
+            <span class="tt"><b>AI 订阅代充</b><span>即时、安全地为你的 ChatGPT 账号充值</span></span>
+            <span class="ar">→</span>
+          </div>
+          <div class="trust">
+            <div class="t"><div class="n">即时<em>发卡</em></div><div class="l">支付成功即刻交付</div><div class="s">下单 → 发卡 → 兑换开通</div></div>
+            <div class="t"><div class="n">余额<em>下单</em></div><div class="l">无需等待支付</div><div class="s">钱包余额直接扣款</div></div>
+            <div class="t"><div class="n">USDT<em>·TRC20</em></div><div class="l">充值到账即用</div><div class="s">全站金额以 $ 计</div></div>
+          </div>
         </div>
       </div>
 
-      <div class="panel">
-        <h2>为什么更省</h2>
-        <div class="grid" style="margin-top:6px">
-          <div class="card"><h3>市面常见做法</h3><div style="color:var(--sub);font-size:12.5px">先充值数百至数千美元起，才够格享受低价长期套餐</div></div>
-          <div class="card"><h3>KC 的做法</h3><div style="color:var(--sub);font-size:12.5px">开通权益包，按「权益价」单次下单，用多少花多少，不用先压资金</div></div>
+      <div class="wrap">
+        <div class="panel">
+          <h2>三种商品，一个平台</h2>
+          <div class="psub">按你的需要选：给已有账号充值、直接买现成号、或建独立站</div>
+          <div class="cap">
+            <div class="c">
+              <div class="ic">⚡</div>
+              <h3>给已有账号充值（代充）</h3>
+              <p>粘贴你的 ChatGPT 会话凭证，平台代你完成开通，即时到账。</p>
+              <span class="go" onclick="openCategory('recharge')">去看看 →</span>
+            </div>
+            <div class="c">
+              <div class="ic">🪪</div>
+              <h3>买成品号</h3>
+              <p>现成 ChatGPT 账号，开箱即用，无需自己注册。</p>
+              <span class="go" onclick="openCategory('account')">去看看 →</span>
+            </div>
+            <div class="c">
+              <div class="ic">🌐</div>
+              <h3>建站服务</h3>
+              <p>独立站搭建与部署，含域名与运维，交付即可上线。</p>
+              <span class="go" onclick="openCategory('website')">去看看 →</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="panel">
-        <h2>三步完成</h2>
-        <div class="grid" style="margin-top:6px">
-          <div class="card"><h3>① 选商品</h3><div style="color:var(--sub);font-size:12.5px">代充 / 成品号 / 建站服务，明码标价</div></div>
-          <div class="card"><h3>② 余额下单</h3><div style="color:var(--sub);font-size:12.5px">钱包余额支付，有权益包时自动按权益价结算</div></div>
-          <div class="card"><h3>③ 即时发卡</h3><div style="color:var(--sub);font-size:12.5px">支付成功立即发放卡密，兑换即完成开通</div></div>
+        <div class="panel">
+          <h2>热门商品</h2>
+          <div class="psub">开通权益包后按「权益价」结算，每次下单抵扣 1 次权益</div>
+          <div class="grid" id="homeGrid"></div>
         </div>
-      </div>
 
-      <div class="panel"><h2>热门商品</h2><div class="grid" id="homeGrid" style="margin-top:6px"></div></div>
+        <div class="panel">
+          <h2>权益包</h2>
+          <div class="psub">低成本试水，不用先压资金</div>
+          <div class="grid" id="homePackGrid"></div>
+        </div>
 
-      <div class="panel"><h2>权益包推介</h2><div class="grid" id="homePackGrid" style="margin-top:6px"></div></div>
+        <div class="panel">
+          <h2>下单只要三步</h2>
+          <div class="psub">从选商品到开通完成，全程不超过 3 步</div>
+          <div class="steps">
+            <div class="s"><div class="n">1</div><h4>选商品</h4><p>代充 / 成品号 / 建站服务，明码标价</p></div>
+            <div class="s"><div class="n">2</div><h4>余额下单</h4><p>钱包余额支付，有权益包自动按权益价结算</p></div>
+            <div class="s"><div class="n">3</div><h4>即时开通</h4><p>支付成功立即发放卡密，兑换即完成开通</p></div>
+          </div>
+        </div>
 
-      <div class="panel">
-        <h2>常见问题</h2>
-        <div class="faq">
-          <div class="qa"><div class="q">下单后多久到货？</div><div class="a">支付成功后立即发放卡密；在「我的订单」查看卡密，兑换即完成开通。</div></div>
-          <div class="qa"><div class="q">权益包有什么用？</div><div class="a">开通权益包后，后续下单可享「权益价」，每次下单抵扣 1 次权益，用多少花多少。</div></div>
-          <div class="qa"><div class="q">怎么充值？</div><div class="a">在右上角「钱包」发起充值，支持 USDT（TRC20）；到账后余额即可用于下单。</div></div>
-          <div class="qa"><div class="q">权益包和代充是什么关系？</div><div class="a">买权益包不等于代充，它只是「更便宜下单」的资格；真正开通仍需按正常流程下单并兑换卡密。</div></div>
+        <div class="panel">
+          <h2>常见问题</h2>
+          <div class="faq">
+            <details open><summary><span class="q">下单后多久到货？</span><span class="pm">＋</span></summary><div class="a">支付成功后<b>立即发放卡密</b>；在「我的订单」查看卡密，兑换即完成开通。</div></details>
+            <details><summary><span class="q">代充需要我提供什么？</span><span class="pm">＋</span></summary><div class="a">只需粘贴你的 ChatGPT <b>会话凭证（Session JSON）</b>。它<b>只存在于浏览器内存，不会保存、不会落库</b>，仅用于本次开通。</div></details>
+            <details><summary><span class="q">权益包有什么用？</span><span class="pm">＋</span></summary><div class="a">开通后，后续下单按「权益价」结算，每次下单抵扣 1 次权益，用多少花多少；用完恢复原价，随时可再续。</div></details>
+            <details><summary><span class="q">怎么充值？支持哪些币种？</span><span class="pm">＋</span></summary><div class="a">在「我的钱包」发起充值，支持 <b>USDT（TRC20）</b>；到账后余额即可用于下单，全站金额以 <b>$</b> 计。</div></details>
+            <details><summary><span class="q">充值金额为什么带 4 位小数？</span><span class="pm">＋</span></summary><div class="a">那串<b>小数是链上认单标识</b>，用来把「你这一笔」和别人的区分开。请<b>务必按页面显示的精确金额转账</b>；少输小数会导致无法自动到账。</div></details>
+            <details><summary><span class="q">选错网络怎么办？</span><span class="pm">＋</span></summary><div class="a">请务必选择页面标明的链（如 TRC20）。<b>转到其他网络，资金将无法找回</b>。</div></details>
+            <details><summary><span class="q">不小心关掉充值页了？</span><span class="pm">＋</span></summary><div class="a">回到「我的钱包」→「待支付充值单」，可继续支付；充值单 <b>30 分钟内有效</b>，超时请重新发起。</div></details>
+          </div>
         </div>
       </div>
     </section>
 
     <section id="view-catalog" class="view hidden">
-      <div class="panel"><h2 id="catTitle">全部商品</h2><div class="grid" id="catalogGrid" style="margin-top:6px"></div></div>
+      <div class="wrap" style="padding-top:26px">
+        <div class="panel">
+          <h2 id="catTitle">代充</h2>
+          <div class="psub">选择商品下单：可直接代充（先冻结、开通成功才扣款），也可购买卡密稍后兑换</div>
+          <div id="catalogTabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+            <button class="btn pill sm primary" data-cat="recharge" onclick="openCategory('recharge')">代充</button>
+            <button class="btn pill sm" data-cat="account" onclick="openCategory('account')">成品号</button>
+            <button class="btn pill sm" data-cat="website" onclick="openCategory('website')">建站服务</button>
+          </div>
+          <div class="grid" id="catalogGrid"></div>
+        </div>
+      </div>
     </section>
 
     <section id="view-detail" class="view hidden">
-      <div class="panel">
-        <button class="btn link" onclick="backToCatalog()">← 返回商品列表</button>
-        <h2 id="d-name" style="margin-top:12px">商品</h2>
-        <div class="kv"><span class="k">单价</span><span class="v" id="d-price">-</span></div>
-        <div class="kv"><span class="k">库存状态</span><span class="v" id="d-avail">-</span></div>
-        <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button onclick="stepQty(-1)">−</button><input id="d-qty" value="1" readonly><button onclick="stepQty(1)">+</button></span></span></div>
-        <div class="kv" style="border-bottom:0;padding-top:14px">
-          <span class="k"></span>
-          <span class="v" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn primary" id="d-buy" onclick="buy()">立即购买</button>
-            <span class="msg" id="d-msg"></span>
-          </span>
+      <div class="wrap" style="padding-top:26px">
+        <button class="btn ghost sm" style="margin-bottom:16px" onclick="backToCatalog()">← 返回商品列表</button>
+        <div class="detail" id="d-grid">
+          <div class="panel" style="margin:0">
+            <div class="d-head">
+              <h2 id="d-name" style="font-size:23px;font-weight:750">商品</h2>
+              <!-- v2.16.2：代充价签与商品名同行（进向导后右栏收起，价格并入此处，一眼看到价格又不占一整行） -->
+              <div id="d-priceInline" class="d-priceInline hidden"></div>
+            </div>
+            <!-- v2.15.0：代充商品的 5 步呈递向导（① 登录 → ② 获取 Session → ③ 提交 Session → ④ 支付 → ⑤ 完成）；
+                 铁律：Session 只存在于浏览器内存，不写入任何存储、不落库 -->
+            <div id="d-hint" class="rd-hint hidden" style="margin-bottom:14px"></div>
+            <!-- v2.17.0 代充双轨：代充商品进入详情先二选一（直接代充 / 购买卡密），两条流程互不影响 -->
+            <div id="d-mode" class="hidden"></div>
+            <div id="d-sessionWrap" class="wiz hidden"></div>
+          </div>
+          <div class="buybox" id="d-buybox">
+            <div id="d-avail" style="margin-bottom:12px"></div>
+            <div class="dp" id="d-price">—</div>
+            <div id="d-qtyRow" style="border-top:1px dashed var(--line);margin:16px 0;padding-top:16px">
+              <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button type="button" onclick="stepQty(-1)">−</button><input id="d-qty" value="1" readonly><button type="button" onclick="stepQty(1)">+</button></span></span></div>
+            </div>
+            <button class="btn primary lg" id="d-buy" style="width:100%" onclick="buy()">立即购买</button>
+            <div class="msg" id="d-msg"></div>
+            <p style="font-size:11.5px;color:var(--dim);margin-top:10px;text-align:center">下单即从钱包余额扣款，支付成功立即发卡</p>
+          </div>
         </div>
       </div>
     </section>
 
     <section id="view-pack" class="view hidden">
-      <div class="panel">
-        <h2>权益包</h2>
-        <div id="packBox"><div class="empty">加载中…</div></div>
+      <div class="wrap" style="padding-top:26px">
+        <div class="panel">
+          <h2>权益包</h2>
+          <div class="psub">买到的是「按权益价下单的次数」，不是商品本身；用完恢复原价，随时可再续</div>
+          <div id="packBox"><div class="empty">加载中…</div></div>
+        </div>
       </div>
     </section>
 
     <section id="view-orders" class="view hidden">
-      <div class="panel">
-        <h2>我的订单</h2>
+      <div class="wrap" style="padding-top:26px">
+        <div class="op-head">
+          <div class="op-head-l">
+            <div class="op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M9 2h6l1 3h3v17H5V5h3z"/><path d="M9 11l2 2 4-4"/></svg></div>
+            <div>
+              <h2>我的订单</h2>
+              <div class="psub">查看与管理您的全部订单；状态未及时更新时点「刷新」重新拉取</div>
+            </div>
+          </div>
+          <div class="op-head-r">
+            <span class="op-badge" id="op-badge" hidden></span>
+            <span id="orders-updated" style="color:var(--dim);font-size:12px"></span>
+            <button class="btn sm" id="orders-refresh-btn" onclick="loadOrders()">刷新</button>
+          </div>
+        </div>
         <div id="ordersBox"><div class="empty">加载中…</div></div>
       </div>
     </section>
 
     <section id="view-wallet" class="view hidden">
-      <div class="panel">
-        <h2>我的钱包</h2>
-        <div class="wallet-top">
-          <div class="wallet-bal"><span class="k">可用余额</span><div class="bal" id="w-bal">—</div></div>
-          <div class="wallet-acts">
-            <button class="btn primary" onclick="openRecharge()">充值</button>
-            <button class="btn" onclick="go('orders')">我的订单</button>
+      <div class="wrap" style="padding-top:26px">
+        <div class="panel">
+          <h2>我的钱包</h2>
+          <div class="wtop">
+            <div><div class="k">可用余额</div><div class="bal num" id="w-bal">—</div></div>
+            <div id="w-heldWrap" class="hidden"><div class="k">冻结中 <span style="font-weight:400">（直接代充在途）</span></div><div class="bal num" id="w-held" style="font-size:22px">—</div></div>
+            <div class="acts">
+              <button class="btn primary" onclick="openRecharge()">充值</button>
+              <button class="btn" onclick="go('orders')">我的订单</button>
+              <button class="btn ghost" onclick="openGuide()">USDT 充值教程</button>
+            </div>
           </div>
+          <div class="presets" id="w-presets"></div>
+          <div id="w-pendingWrap" class="hidden">
+            <h3 style="font-size:14px;font-weight:650;margin:6px 0 10px">待支付充值单 <span style="color:var(--sub);font-weight:400;font-size:12px">（关闭充值页后可从这里继续支付）</span></h3>
+            <div id="w-pending"></div>
+          </div>
+          <h3 style="font-size:14.5px;font-weight:650;margin:6px 0 10px">流水明细</h3>
+          <div id="w-ledgerBox"><div class="empty">加载中…</div></div>
         </div>
-        <div class="presets" id="w-presets"></div>
-        <h3 style="font-size:14px;font-weight:650;margin:6px 0 10px">流水明细</h3>
-        <div id="w-ledgerBox"><div class="empty">加载中…</div></div>
       </div>
     </section>
 
     <section id="view-redeem" class="view hidden">
-      <div class="panel">
-        <h2>兑换卡密 · 完成开通</h2>
-        <div id="rd-step1">
-          <p class="rd-hint">输入或粘贴你的代充卡密，验证通过后进入开通。</p>
-          <div class="field"><label>卡密 / CDK</label><input id="rd-cdk" placeholder="请输入卡密" maxlength="64" autocomplete="off"></div>
-          <button class="btn primary" id="rd-verify" onclick="verifyCdk()">验证卡密</button>
-          <div class="msg" id="rd-msg1"></div>
-        </div>
-        <div id="rd-step2" class="hidden">
-          <div class="rd-verified">
-            <span class="k">卡密</span><span class="cdk" id="rd-cdk-show"></span>
-            <span id="rd-plan" style="color:var(--brand-deep)"></span>
+      <div class="wrap" style="padding-top:26px">
+        <div class="panel" style="max-width:720px;margin:0 auto">
+          <h2>兑换卡密 · 完成开通</h2>
+          <div class="psub">输入代充卡密，按向导完成 ChatGPT 账号登录与 Session 提交，即刻开通；兑换无需登录本平台账号</div>
+          <div id="rd-step1">
+            <div class="field"><label>卡密 / CDK</label><input id="rd-cdk" placeholder="请输入卡密" maxlength="64" autocomplete="off"></div>
+            <button class="btn" id="rd-verify" onclick="verifyCdk()">验证卡密</button>
+            <div class="msg" id="rd-msg1"></div>
           </div>
-          <div class="field" style="margin-top:14px">
-            <label>会话凭证（Session JSON）</label>
-            <textarea id="rd-session" placeholder="粘贴完整 Session JSON（含 accessToken 等字段）"></textarea>
-          </div>
-          <div class="rd-actions">
-            <button class="btn primary" id="rd-start" onclick="startActivation()">开始开通</button>
-            <button class="btn" onclick="resetRedeem()">重新输入卡密</button>
-            <span class="msg" id="rd-msg2"></span>
-          </div>
-          <div id="rd-progress" class="hidden">
-            <div class="rd-track"><div class="rd-bar" id="rd-bar"></div></div>
-            <div class="rd-status" id="rd-status"></div>
-          </div>
+          <!-- v2.15.0：兑换向导（① 登录 ChatGPT → ② 获取 Session → ③ 提交 Session → ④ 完成开通） -->
+          <div id="rd-wiz" class="wiz hidden"></div>
         </div>
       </div>
     </section>
 
-  </div>
 </main>
 
-<footer class="site"><div class="wrap">
-  <div class="foot-links">
-    <button class="btn link" onclick="openHelp('ticket')">工单支持</button>
-    <button class="btn link" onclick="openHelp('kb')">使用文档</button>
-    <button class="btn link" onclick="openHelp('invite')">邀请好友</button>
+<footer class="site">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div>
+        <div class="logo"><span class="dot">K</span>KC 直供</div>
+        <div class="about">ChatGPT 代充、成品号与建站服务。明码标价，余额下单，支付成功即时交付。</div>
+      </div>
+      <div>
+        <h5>帮助与支持</h5>
+        <button onclick="openHelp('ticket')">工单支持</button>
+        <button onclick="openHelp('kb')">使用文档</button>
+        <button onclick="openHelp('invite')">邀请好友</button>
+      </div>
+      <div>
+        <h5>商品</h5>
+        <button onclick="openCategory('recharge')">代充</button>
+        <button onclick="openCategory('account')">成品号</button>
+        <button onclick="openCategory('website')">建站服务</button>
+        <button onclick="go('pack')">权益包</button>
+      </div>
+      <div>
+        <h5>关于</h5>
+        <button onclick="openHelp('about')">关于我们</button>
+        <button onclick="openHelp('terms')">服务条款</button>
+      </div>
+      <div>
+        <h5>联系方式</h5>
+        <button onclick="openSupport()">联系客服</button>
+        <button onclick="openHelp('ticket')">提交工单</button>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span id="footText">© 2026 KC 直供 · 保留所有权利</span>
+      <span>金额单位：USD（$）</span>
+    </div>
   </div>
-  <div id="footText">—</div>
-</div></footer>
+</footer>
 
 <!-- 帮助与支持（Stage 3.7 · G11：工单/知识库/邀请 保留面去向） -->
 <div class="modal" id="helpModal">
@@ -343,39 +923,127 @@ tr.orow:hover{background:var(--brand-bg)}
   </div>
 </div>
 
+<!-- 强制首改（v2.5.0 批次3）：临时密码登录后须先改密 -->
+<div class="modal" id="fpModal">
+  <div class="box">
+    <h3>请先修改初始密码</h3>
+    <div class="sub">你正在使用一次性临时密码（30 分钟有效）。修改后才能继续下单等操作。</div>
+    <div class="field"><label>原密码（临时密码）</label><input id="fp-current" type="password" autocomplete="current-password"></div>
+    <div class="field"><label>新密码（至少 8 位，含字母与数字）</label><input id="fp-new" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>确认新密码</label><input id="fp-confirm" type="password" autocomplete="new-password"></div>
+    <button class="btn primary" id="fp-submit" style="width:100%" onclick="submitForcedPwd()">确认修改</button>
+    <div class="msg" id="fp-msg"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<!-- 充值（Stage 3.10 改造：精确金额 + 小数位强提醒 + 网络标识 + 二次确认；BEpusdt 收款模拟） -->
-<div class="modal" id="rcModal">
-  <div class="box" style="max-width:440px">
-    <h3>充值 <span class="net-badge">USDT · TRC20</span></h3>
-    <div class="sub" id="rc-sub">选择充值金额，按下单后给出的<b>精确金额</b>转入 USDT（TRC20）</div>
+<!-- 充值（v2.10.0 体验重构：3 步引导 + 突出倒计时 + 网络强警示 + 扫码 + 小数位解释 + 离页引导；BEpusdt 收款模拟） -->
+<div class="modal" id="rcModal" onclick="rcBackdrop(event,'rc')">
+  <div class="box" style="max-width:480px" onclick="rcStop(event)">
+    <div class="rc-head">
+      <h3 id="rc-title">充值 <span class="net-badge">USDT · TRC20</span></h3>
+      <button class="rc-x" type="button" onclick="rcGuardClose()" aria-label="关闭">✕</button>
+    </div>
+    <div class="rc-steps" id="rc-steps">
+      <div class="rc-step on" data-step="1"><b>1</b><span>选金额</span></div>
+      <div class="rc-step" data-step="2"><b>2</b><span>扫码转账</span></div>
+      <div class="rc-step" data-step="3"><b>3</b><span>确认到账</span></div>
+    </div>
+    <p class="rc-guide-line">第一次用 USDT 充值？<button class="btn link" type="button" onclick="openGuide()">看 3 步图文教程 →</button></p>
+
     <div id="rc-pick">
       <div class="presets" id="rc-presets"></div>
       <div class="field"><label>自定义金额（$，整数）</label><input id="rc-custom" type="number" min="1" step="1" placeholder="如 200"></div>
-      <p class="rc-note">单笔限额 <b id="rc-limits">$1 ~ $10,000</b>；到账金额 = 你填写的金额。</p>
-      <button class="btn primary" id="rc-gen" style="width:100%" onclick="startRecharge()">生成收款地址</button>
+      <p class="rc-note">单笔限额 <b id="rc-limits">$1 ~ $10,000</b>；到账金额 = 你填写的金额，无手续费。</p>
+      <button class="btn primary" id="rc-gen" style="width:100%" onclick="startRecharge()">生成收款码</button>
     </div>
+
     <div id="rc-pay" class="hidden">
-      <div class="rc-net-bar"><span class="net-badge">USDT · TRC20</span><span class="rc-net-warn">仅限 TRC20 网络，选错链资金将无法找回</span></div>
-      <div class="rc-exact">
-        <div class="rc-exact-k">请转入下面这个「精确金额」（连小数点后全部位数一起输入）</div>
-        <div class="rc-exact-v"><b id="rc-exact-amount">—</b><span class="unit">USDT</span>
-          <button class="btn sm" onclick="copyRcExact()">复制精确金额</button></div>
-        <div class="rc-exact-warn">⚠ 少一位、多一分、或四舍五入成整数，系统都无法自动识别，将转人工处理</div>
+      <div class="rc-timer" id="rc-timer">
+        <span class="rc-timer-k">请在倒计时内完成转账</span>
+        <span class="rc-timer-v" id="rc-count"><span class="countdown">—</span></span>
       </div>
-      <div class="kv"><span class="k">到账金额</span><span class="v"><b id="rc-amount"></b><br><span style="color:var(--sub);font-size:12px">精确金额中的小数尾数为「认单标识」，不额外入账</span></span></div>
+      <div class="rc-chain">
+        <div class="rc-chain-row"><span class="rc-chain-k">必须选择网络</span><span class="net-badge">TRC20（波场 TRON）</span></div>
+        <div class="rc-chain-warn">⚠ 只支持 TRC20。若选成 ERC20 / BEP20 等其它网络，资金将<b>无法找回</b>。</div>
+      </div>
+      <div class="rc-qrwrap">
+        <div class="rc-qr" id="rc-qr"><div class="rc-qr-ph">二维码<br>加载中…</div></div>
+        <div class="rc-qr-tip">
+          <b>手机钱包：扫码自动带入收款地址</b>
+          <span>扫码只带入<b>地址</b>；转账金额请手动填入下方的「精确金额」。</span>
+          <span id="rc-qr-retry" class="hidden"><button class="btn sm" type="button" onclick="loadRcQr()">二维码没显示？点此重试</button></span>
+        </div>
+      </div>
+      <div class="rc-exact">
+        <div class="rc-exact-k">转账金额必须一字不差地填这个「精确金额」</div>
+        <div class="rc-exact-v"><b id="rc-exact-amount">—</b><span class="unit">USDT</span>
+          <button class="btn sm" onclick="copyRcExact()">复制</button></div>
+        <details class="rc-why">
+          <summary>为什么金额后面要带 4 位小数？</summary>
+          <p>链上同一时刻会有很多笔金额相同的转账，系统无法只凭金额判断哪一笔是你的。这 4 位小数由你的充值单号生成，是这笔充值的<b>唯一「认单编号」</b>，用来把你的转账自动匹配到订单。</p>
+          <p><b>少一位、多一分、或四舍五入成整数</b> → 系统无法自动识别，需要客服人工核对，到账会延迟。</p>
+        </details>
+      </div>
       <div class="kv"><span class="k">收款地址</span><span class="v"><span class="cdk" id="rc-addr"></span><br><button class="btn sm rc-copy" style="margin-top:6px" onclick="copyRcAddr()">复制地址</button></span></div>
-      <div class="kv"><span class="k">充值单号</span><span class="v" id="rc-no"></span></div>
-      <div class="kv"><span class="k">支付时限</span><span class="v" id="rc-count"><span class="countdown"></span></span></div>
-      <div class="rc-fee">手续费由你的钱包/交易所收取。<b>请确保对方「实际收到」的金额 = 上方精确金额</b>（若用交易所提币，点「到账数量 ⇆」把到账数量填成精确金额）。</div>
-      <label class="rc-ack"><input type="checkbox" id="rc-ack" onchange="rcSyncConfirm()"> 我已确认：网络为 TRC20，转账金额与上方精确金额完全一致</label>
-      <button class="btn primary" id="rc-confirm" style="width:100%" disabled onclick="confirmRecharge()">我已支付（模拟到账）</button>
-      <p class="rc-note">未到账请勿重复转账；凭充值单号与 TxID 联系客服核对。当前为<b>模拟收款</b>环境。</p>
+      <div class="kv"><span class="k">到账金额</span><span class="v"><b id="rc-amount"></b> <span style="color:var(--sub);font-size:12px">（小数尾数只用于认单，不额外入账）</span></span></div>
+      <div class="kv"><span class="k">充值单号</span><span class="v"><span class="cdk" id="rc-no"></span> <button class="btn sm rc-copy" onclick="copyRcNo()">复制</button></span></div>
+      <div class="rc-fee">手续费由你的钱包/交易所收取。<b>请确保对方「实际收到」的金额 = 精确金额</b>（交易所提币时点「到账数量 ⇆」把到账数量改成精确金额）。</div>
+      <div id="rc-mock">
+        <label class="rc-ack"><input type="checkbox" id="rc-ack" onchange="rcSyncConfirm()"> 我已确认：网络为 <b>TRC20</b>，且转账金额与上方精确金额完全一致</label>
+        <button class="btn primary" id="rc-confirm" style="width:100%" disabled onclick="confirmRecharge()">我已支付</button>
+        <p class="rc-note">未到账请勿重复转账；凭充值单号与 TxID 联系客服核对。当前为<b>模拟收款</b>环境。</p>
+      </div>
+      <div id="rc-gateway" class="hidden">
+        <button class="btn primary" id="rc-openpay" style="width:100%" onclick="rcOpenPay()">去收银台支付</button>
+        <p class="rc-note">本单已由收款网关生成，转账完成后<b>链上自动确认到账</b>，本页会自动刷新，<b>无需手动操作</b>。</p>
+        <p class="rc-note" id="rc-poll-msg">等待链上到账…</p>
+      </div>
       <div class="msg" id="rc-copy-msg"></div>
     </div>
+
     <div class="msg" id="rc-msg"></div>
-    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeRecharge()">关闭</button></div>
+    <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="rcGuardClose()">关闭</button></div>
+  </div>
+</div>
+
+<!-- 离页引导（v2.10.0）：充值单已生成但未完成时，关窗前引导去「待支付充值单」继续 -->
+<div class="modal" id="rcLeaveModal" onclick="rcBackdrop(event,'leave')">
+  <div class="box" style="max-width:400px" onclick="rcStop(event)">
+    <h3>这笔充值还没支付完</h3>
+    <div class="sub" id="rc-leave-sub">充值单已生成，倒计时内完成转账即可到账。</div>
+    <div class="kv"><span class="k">精确金额</span><span class="v"><b id="rc-leave-amt">—</b></span></div>
+    <div class="kv"><span class="k">剩余时间</span><span class="v" id="rc-leave-left">—</span></div>
+    <p class="rc-note">关闭不影响已生成的订单：<b>倒计时结束前</b>转账仍会正常到账。你也可以稍后从「我的钱包 → 待支付充值单」继续。</p>
+    <div class="rc-leave-btns">
+      <button class="btn primary" onclick="rcLeaveStay()">继续支付</button>
+      <button class="btn" onclick="rcLeaveGoWallet()">去「待支付充值单」</button>
+    </div>
+  </div>
+</div>
+
+<!-- USDT 新手教程（v2.10.0 样例：够演示即可，非本期重点） -->
+<div class="modal" id="guideModal" onclick="rcBackdrop(event,'guide')">
+  <div class="box" style="max-width:540px" onclick="rcStop(event)">
+    <h3>USDT 充值 3 步教程 <span class="net-badge">USDT · TRC20</span></h3>
+    <div class="sub">没用过 USDT？照着做一遍就会了。（本页为演示样例）</div>
+    <ol class="gd-list">
+      <li><b>第 1 步 · 准备好 TRC20 网络的 USDT</b>
+        <p>在交易所（币安 / OKX 等）买 USDT，或使用钱包 App 里已有的 USDT。<b>关键：确认这笔 USDT 属于 TRC20（波场 TRON）网络</b>，提币时网络选项也必须选 TRC20。</p></li>
+      <li><b>第 2 步 · 提币 / 转账到本站收款地址</b>
+        <p>粘贴本站给出的<b>收款地址</b>（手机钱包可直接扫二维码自动带入），到账数量填本站给出的<b>精确金额</b>（含 4 位小数）。</p>
+        <div class="gd-warn">两个最常见事故：① 网络选成 ERC20 / BEP20 等其它链 → 资金无法找回；② 金额四舍五入成整数 → 系统认不到单，需客服人工补录。</div></li>
+      <li><b>第 3 步 · 回到本页点「我已支付」</b>
+        <p>链上确认后回到充值页，勾选「网络与金额一致」并点「我已支付」，余额立即到账（当前为模拟收款环境）。</p></li>
+    </ol>
+    <div class="gd-faq">
+      <details><summary>为什么金额要带 4 位小数？</summary><p>它是这笔充值的唯一「认单编号」，用于把你的转账自动匹配到订单；尾数不额外入账。</p></details>
+      <details><summary>不小心转成整数了怎么办？</summary><p>凭充值单号 + 链上 TxID 联系客服，人工核对确实到账后补录到你的余额（客服人工补录）。</p></details>
+      <details><summary>可以用其它币种 / 其它网络吗？</summary><p>当前仅支持 USDT（TRC20）。选错网络资金无法找回，请务必确认。</p></details>
+      <details><summary>关闭了充值页怎么办？</summary><p>订单不会丢：从「我的钱包 → 待支付充值单」可继续支付，倒计时结束前完成转账即可到账。</p></details>
+    </div>
+    <div style="text-align:right;margin-top:16px"><button class="btn primary" onclick="closeGuide()">我知道了</button></div>
   </div>
 </div>
 
@@ -387,7 +1055,7 @@ tr.orow:hover{background:var(--brand-bg)}
     <div class="kv"><span class="k">订单号</span><span class="v"><span class="cdk" id="od-no"></span></span></div>
     <div class="kv"><span class="k">商品</span><span class="v" id="od-sku"></span></div>
     <div class="kv"><span class="k">金额</span><span class="v" id="od-amount"></span></div>
-    <div class="kv"><span class="k">卡密</span><span class="v" id="od-cdk"></span></div>
+    <div class="kv" id="od-cdkRow"><span class="k">卡密</span><span class="v" id="od-cdk"></span></div>
     <h3 style="font-size:14px;font-weight:650;margin:16px 0 4px">订单进度</h3>
     <div class="tl" id="od-tl"></div>
     <div class="as-btns">
@@ -395,6 +1063,32 @@ tr.orow:hover{background:var(--brand-bg)}
       <button class="btn primary" onclick="openAfterSales()">申请售后</button>
     </div>
     <div style="margin-top:14px;text-align:right"><button class="btn link" onclick="closeOrder()">关闭</button></div>
+  </div>
+</div>
+
+<!-- v2.17.0 卡密代充：购买卡密弹层（选数量 → 账单 → 下单 → 展示 N 张卡密凭证） -->
+<div class="modal" id="ckModal">
+  <div class="box" style="max-width:460px">
+    <h3>购买卡密 · <span id="ck-name">代充商品</span></h3>
+    <div class="sub">买到的是一张张「代充卡密」凭证；之后随时在「兑换卡密」页输入卡密 + ChatGPT Session 完成开通。</div>
+    <div id="ck-form">
+      <div class="kv"><span class="k">数量</span><span class="v"><span class="qty"><button type="button" onclick="ckStep(-1)">−</button><input id="ck-qty" value="1" readonly><button type="button" onclick="ckStep(1)">+</button></span></span></div>
+      <div id="ck-bill"></div>
+      <div class="msg" id="ck-msg"></div>
+      <button class="btn primary" id="ck-buy" style="width:100%;margin-top:12px" onclick="ckSubmit()">确认购买</button>
+      <div style="margin-top:12px;text-align:right"><button class="btn link" onclick="closeCdkBuy()">取消</button></div>
+    </div>
+    <div id="ck-done" class="hidden">
+      <div class="notice" style="margin-bottom:10px"><b id="ck-done-title">已发放卡密</b>
+        <div style="font-size:12px;margin-top:4px">请妥善保存。凭任意一张卡密到「兑换卡密」页完成开通即可。</div>
+      </div>
+      <div class="ck-cards" id="ck-cards"></div>
+      <button class="btn primary" style="width:100%;margin-top:8px" onclick="ckCopyAll()">一键复制全部卡密</button>
+      <div style="margin-top:12px;display:flex;gap:10px">
+        <button class="btn" style="flex:1" onclick="closeCdkBuy()">返回商品</button>
+        <button class="btn primary" style="flex:1" onclick="goRedeem()">去兑换</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -418,6 +1112,9 @@ tr.orow:hover{background:var(--brand-bg)}
   </div>
 </div>
 
+<!-- v2.10.0：本地二维码库（vendor 单文件，MIT，无外链依赖；仅用于把收款地址渲染成可扫二维码） -->
+<script src="/js/qrcode.js"></script>
+
 <script>
 (function () {
   // KC 原生主站前台（Stage 3.1）：platform 租户复用 kc_customers，会话令牌不落库。
@@ -427,7 +1124,7 @@ tr.orow:hover{background:var(--brand-bg)}
     { key: 'website', name: '建站服务' }
   ];
   var state = {
-    brand: { brand_name: '', primary_color: '', accent_color: '', hero_title: '', hero_subtitle: '', footer_text: '', support_contact: '' },
+    brand: { brand_name: '', primary_color: '', accent_color: '', color_scheme: '', hero_title: '', hero_subtitle: '', footer_text: '', support_contact: '' },
     token: localStorage.getItem('kc_site_customer_token') || '',
     customer: null,
     catalog: [],
@@ -444,6 +1141,24 @@ tr.orow:hover{background:var(--brand-bg)}
   }
   function money(v) { return '$' + Number(v || 0).toFixed(2); }
 
+  // v2.19.0 弹层生命周期统一（修复「弹层压住已切换的页面 / 后开的弹层被先开的盖住」两类残留）
+  // ① openModal()：登记 z-index 堆叠 —— 所有弹层基础 z-index 同为 100，同值时按 DOM 顺序绘制，
+  //    故「后开的弹层」（如 ckModal 里点「去充值」开的 rcModal、「去登录」开的 authModal）会被先开的盖住；
+  // ② go(view)：切换页面前关闭全部弹层 —— 弹层内点「去兑换」跳页后不得留下遮罩。
+  // 例外：fpModal（强制首改密码闸门）不参与自动关闭，避免跳过改密。
+  var modalZ = 100;
+  var AUTO_CLOSE_MODALS = ['helpModal', 'authModal', 'rcModal', 'rcLeaveModal', 'guideModal', 'orderModal', 'ckModal', 'asModal'];
+  function openModal(id) {
+    var m = el(id); if (!m) return;
+    modalZ = document.querySelector('.modal.show') ? modalZ + 1 : 101;
+    m.style.zIndex = String(modalZ);
+    m.classList.add('show');
+  }
+  function closeAllModals() {
+    AUTO_CLOSE_MODALS.forEach(function (id) { var m = el(id); if (m) m.classList.remove('show'); });
+    closeRecharge(); // 一并停掉充值倒计时 / 链上轮询（closeRecharge 内含 rcLeaveModal）
+  }
+
   function api(path, opts) {
     opts = opts || {};
     var headers = { 'Content-Type': 'application/json' };
@@ -456,6 +1171,9 @@ tr.orow:hover{background:var(--brand-bg)}
   }
 
   function applyBrand(b) {
+    // v2.14.0：配色方案由「租户品牌 color_scheme」下发（后台可切）；前台顾客不提供配色切换
+    var KC_SCHEMES = ['mint', 'ocean', 'violet', 'ember', 'ink'];
+    document.documentElement.dataset.scheme = (KC_SCHEMES.indexOf(b.color_scheme) >= 0) ? b.color_scheme : 'ink';
     if (b.primary_color && /^#?[0-9a-fA-F]{3,8}$/.test(b.primary_color)) {
       var c = b.primary_color.charAt(0) === '#' ? b.primary_color : '#' + b.primary_color;
       document.documentElement.style.setProperty('--brand', c);
@@ -463,7 +1181,7 @@ tr.orow:hover{background:var(--brand-bg)}
     var name = b.brand_name || 'KC 直供';
     el('brandName').textContent = name;
     document.title = name;
-    el('heroTitle').textContent = b.hero_title || name;
+    el('heroTitle').textContent = b.hero_title || '以更低成本，用上顶级 AI 能力';
     el('heroSub').textContent = b.hero_subtitle || '多上游直供，下单即得，简单可靠。';
     if (b.logo_url) el('logoDot').innerHTML = '<img src="' + esc(b.logo_url) + '" alt="">';
     el('footText').textContent = b.footer_text || (name + (b.support_contact ? ' · 客服 ' + b.support_contact : ''));
@@ -478,7 +1196,20 @@ tr.orow:hover{background:var(--brand-bg)}
     } else {
       box.innerHTML = '<button class="btn sm" onclick="openAuth(\'login\')">登录</button><button class="btn sm primary" onclick="openAuth(\'register\')">注册</button>';
     }
+    var chip = el('walletChip');
+    if (chip && !state.customer) chip.textContent = '—';
   }
+
+  // 顶栏「钱包余额」始终显示金额：登录后主动拉一次余额（不再需要先进「钱包」页才显示）
+  function syncWalletChip() {
+    var chip = el('walletChip');
+    if (!state.customer) { if (chip) chip.textContent = '—'; return; }
+    api('/api/tenant/wallet').then(function (r) {
+      if (!r.success) return;
+      var c = el('walletChip'); if (c) c.textContent = money((r.data || {}).balance);
+    });
+  }
+  window.syncWalletChip = syncWalletChip;
 
   function navActive(v) {
     document.querySelectorAll('nav.main button').forEach(function (b) {
@@ -487,6 +1218,7 @@ tr.orow:hover{background:var(--brand-bg)}
   }
 
   function go(view) {
+    closeAllModals(); // v2.19.0：切页前收掉全部弹层，避免弹层压住新页面
     ['home', 'catalog', 'detail', 'pack', 'orders', 'wallet', 'redeem'].forEach(function (v) {
       el('view-' + v).classList.toggle('hidden', v !== view);
     });
@@ -494,6 +1226,7 @@ tr.orow:hover{background:var(--brand-bg)}
     if (view === 'orders') { navActive('orders'); loadOrders(); }
     if (view === 'pack') { navActive('pack'); loadPack(); }
     if (view === 'wallet') { navActive(''); loadWallet(); }
+    if (view === 'redeem') { navActive('redeem'); }
     if (view === 'home') { navActive('home'); }
   }
 
@@ -505,6 +1238,7 @@ tr.orow:hover{background:var(--brand-bg)}
   }
   function backToCatalog() { go('catalog'); navActive(state.mode); renderCatalog(); }
 
+  function hasEntInCatalog() { return (state.catalog || []).some(function (i) { return i.entitlement_price != null || i.entitlement_supported === true; }); }
   function priceHtml(item) {
     if (!item.available || item.price == null) return '<div class="price" style="color:var(--dim);font-size:15px">暂时缺货</div>';
     if (item.entitlement_price != null) {
@@ -514,13 +1248,20 @@ tr.orow:hover{background:var(--brand-bg)}
         '<span class="off">权益价</span></div>' +
         '<div class="save">用 1 次权益 · 省 ' + money(item.entitlement_discount) + '</div>';
     }
-    return '<div class="price">' + money(item.price) + ' <small>/份</small></div>';
+    // v2.19.0：该商品不在权益范围内时给一句说明，避免「有权益包却用不了」的困惑
+    var hint = (hasEntInCatalog() && item.entitlement_supported === false)
+      ? '<div style="color:var(--dim);font-size:11.5px;margin-top:2px">该商品暂不支持权益价，按原价结算</div>' : '';
+    return '<div class="price">' + money(item.price) + ' <small>/份</small></div>' + hint;
   }
 
   function cardHtml(item) {
     var pill = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    // v2.16.1：CTA 按品类给「意图」—— 代充值就是完整下单流程（点进去即进呈递向导），故写「立即购买」；
+    //          成品号 / 建站服务需要先看详情再决定，保持「查看」。缺货商品一律「查看」。
+    var isTopup = (item.category || 'recharge') === 'recharge';
+    var cta = (item.available && isTopup) ? '立即购买' : '查看';
     return '<div class="card"><h3>' + esc(item.name) + '</h3>' + priceHtml(item) + '<div class="foot">' + pill +
-      '<button class="btn sm primary" style="margin-left:auto" onclick="openDetail(\'' + esc(item.sku) + '\')">查看</button></div></div>';
+      '<button class="btn sm primary" style="margin-left:auto" onclick="openDetail(\'' + esc(item.sku) + '\')">' + cta + '</button></div></div>';
   }
 
   function byCategory(key) { return state.catalog.filter(function (i) { return (i.category || 'recharge') === key; }); }
@@ -528,6 +1269,10 @@ tr.orow:hover{background:var(--brand-bg)}
   function renderCatalog() {
     var catName = (CATEGORIES.filter(function (c) { return c.key === state.mode; })[0] || {}).name || '全部商品';
     el('catTitle').textContent = catName;
+    // 同步商品列表页的分类 Tab 高亮（与 nav 一致，走 state.mode）
+    document.querySelectorAll('#catalogTabs button').forEach(function (b) {
+      b.classList.toggle('primary', b.getAttribute('data-cat') === state.mode);
+    });
     var items = byCategory(state.mode);
     el('catalogGrid').innerHTML = items.length ? items.map(cardHtml).join('') : '<div class="empty">该分类暂无可售商品</div>';
   }
@@ -552,10 +1297,21 @@ tr.orow:hover{background:var(--brand-bg)}
       box.innerHTML = packs.length ? packs.map(function (p) {
         return '<div class="card"><h3>' + esc(p.name) + '</h3>' +
           '<div class="price">' + money(p.price) + ' <small>/份</small></div>' +
-          '<div style="color:var(--sub);font-size:12px">含 ' + (Number(p.uses) || 0) + ' 次权益' + (Number(p.period_days) > 0 ? ' · 有效期 ' + p.period_days + ' 天' : '') + '</div>' +
+          '<div style="color:var(--sub);font-size:12px">含 ' + (Number(p.uses) || 0) + ' 次权益' + (Number(p.period_days) > 0 ? ' · 有效期 ' + p.period_days + ' 天' : '') + (Number(p.covered_products) > 0 ? ' · 可用商品 ' + Number(p.covered_products) + ' 个' : '') + '</div>' +
           '<div class="foot"><button class="btn sm primary" style="margin-left:auto" onclick="go(\'pack\')">去开通</button></div></div>';
       }).join('') : '<div class="empty">暂无可开通权益包</div>';
     });
+  }
+
+  // v2.16.1：详情页价格唯一渲染源 —— 右侧购买箱（非代充）与向导内联价签（代充）共用，避免两处口径漂移
+  function detailPriceHtml(item, perUnit) {
+    var unit = perUnit ? '<span style="font-size:12px;color:var(--dim);font-weight:400">/账号</span>' : '';
+    if (!item || !item.available || item.price == null) return '暂时缺货';
+    if (item.entitlement_price != null) {
+      return '<span class="ent">' + money(item.entitlement_price) + '</span> <span class="was">' + money(item.base_price != null ? item.base_price : item.price) + '</span>' + unit +
+        ' <span class="save">用 1 次权益 · 省 ' + money(item.entitlement_discount) + '</span>';
+    }
+    return money(item.price) + unit;
   }
 
   function openDetail(sku) {
@@ -563,23 +1319,178 @@ tr.orow:hover{background:var(--brand-bg)}
     if (!item) return;
     state.detail = item;
     el('d-name').textContent = item.name;
-    el('d-price').innerHTML = (!item.available || item.price == null) ? '—' : (item.entitlement_price != null
-      ? '<span class="ent">' + money(item.entitlement_price) + '</span> <span class="was">' + money(item.base_price != null ? item.base_price : item.price) + '</span> '
-        + '<span class="save">用 1 次权益 · 省 ' + money(item.entitlement_discount) + '</span>'
-      : money(item.price));
+    el('d-price').innerHTML = detailPriceHtml(item, false);
+    el('d-priceInline').innerHTML = detailPriceHtml(item, true);
     el('d-avail').innerHTML = item.available ? '<span class="pill ok">可购买</span>' : '<span class="pill gray">缺货</span>';
+    // v2.16.0：代充商品改用 5 步向导（登录 → 获取 Session → 提交 Session → 支付 → 自动开通）
+    var isTopup = (item.category || 'recharge') === 'recharge';
+    // v2.16.1：代充进入呈递向导后右栏价格箱已无用（CTA 在向导内），收为单列并把价格并入向导上方
+    el('d-grid').classList.toggle('single', isTopup);
+    el('d-buybox').classList.toggle('hidden', isTopup);
+    el('d-priceInline').classList.toggle('hidden', !isTopup);
+    // v2.17.0：提示行改由「选择直接代充后」在 startDirectTopup() 里给出（二选一阶段不占用纵向空间）
+    var hint = el('d-hint');
+    hint.classList.add('hidden'); hint.innerHTML = '';
+    el('d-qtyRow').style.display = isTopup ? 'none' : '';
+    el('d-buy').textContent = '立即购买';
+    el('d-buy').style.display = isTopup ? 'none' : '';
+    var modeBox = el('d-mode');
+    if (isTopup) {
+      // v2.17.0 代充双轨：进入详情先二选一（直接代充 / 购买卡密），不再默认直接进呈递向导
+      wizEl('topup').classList.add('hidden');
+      wizState.topup = wizFresh();
+      modeBox.classList.remove('hidden');
+      modeBox.innerHTML = modeChoiceHtml(item);
+    } else {
+      modeBox.classList.add('hidden'); modeBox.innerHTML = '';
+      wizEl('topup').classList.add('hidden'); wizState.topup.session = '';
+    }
     el('d-qty').value = '1';
     el('d-msg').textContent = '';
     el('d-buy').disabled = !item.available;
     go('detail');
   }
+
+  // v2.17.0：代充值商品的二选一入口卡片（两条流程各自独立，互不影响）
+  function modeChoiceHtml(item) {
+    var p = detailPriceHtml(item, true);
+    var enabled = !!item.available;
+    var directBtn = enabled
+      ? '<button class="btn primary" onclick="startDirectTopup()">直接代充</button>'
+      : '<button class="btn" disabled>暂时缺货</button>';
+    var cdkBtn = enabled
+      ? '<button class="btn" onclick="openCdkBuy()">购买卡密</button>'
+      : '<button class="btn" disabled>暂时缺货</button>';
+    return '<div class="mode-pick">' +
+      '<div class="mode-card"><h3>⚡ 直接代充</h3>' +
+      '<p>输入要充值账号的 ChatGPT Session，平台代你完成开通。<b>下单先冻结金额，开通成功才扣款、失败自动解冻退回。</b></p>' +
+      '<div class="mc-tag">单价 ' + p + '</div>' + directBtn + '</div>' +
+      '<div class="mode-card"><h3>🎟️ 购买卡密</h3>' +
+      '<p>先买卡密凭证，之后随时在「兑换卡密」页输入卡密 + Session 完成开通；<b>一次可买多张</b>，先买后兑不着急。</p>' +
+      '<div class="mc-tag">单价 ' + p + '</div>' + cdkBtn + '</div>' +
+      '</div>';
+  }
+  function startDirectTopup() {
+    var modeBox = el('d-mode');
+    if (modeBox) { modeBox.classList.add('hidden'); modeBox.innerHTML = ''; }
+    var hint = el('d-hint');
+    if (hint) {
+      hint.classList.remove('hidden');
+      hint.innerHTML = 'Session 仅用于本次开通、不落库保存；下单先冻结金额，开通成功后扣款、失败自动解冻退回。';
+    }
+    wizReset('topup');
+  }
+
   function stepQty(d) {
     var v = Math.max(1, Math.min(100, (parseInt(el('d-qty').value, 10) || 1) + d));
     el('d-qty').value = String(v);
   }
 
+  // ── v2.17.0 卡密代充：购买卡密弹层（选数量 → 账单 → 下单 → 展示 N 张卡密凭证）──
+  // 与「直接代充」流程完全分开：不收集 Session、不启动开通，只发卡密凭证供之后兑换。
+  var ckState = { sku: '', qty: 1, bill: null, buying: false, cards: [], useEnt: true };
+  function openCdkBuy() {
+    var item = state.detail || {};
+    if (!item.sku) return;
+    if (!state.customer) { openAuth('login'); return; }
+    ckState = { sku: item.sku, qty: 1, bill: null, buying: false, cards: [], useEnt: true };
+    el('ck-name').textContent = item.name || '代充商品';
+    el('ck-qty').value = '1';
+    el('ck-bill').innerHTML = '';
+    el('ck-form').classList.remove('hidden');
+    el('ck-done').classList.add('hidden');
+    el('ck-cards').innerHTML = '';
+    el('ck-msg').className = 'msg'; el('ck-msg').textContent = '';
+    el('ck-buy').disabled = true;
+    openModal('ckModal');
+    ckRefreshBill();
+  }
+  function closeCdkBuy() { el('ckModal').classList.remove('show'); }
+  function ckStep(d) {
+    var v = Math.max(1, Math.min(100, ckState.qty + d));
+    if (v === ckState.qty) return;
+    ckState.qty = v; el('ck-qty').value = String(v);
+    ckRefreshBill();
+  }
+  function ckToggleEnt(on) { ckState.useEnt = !!on; ckRefreshBill(); }
+  function ckRefreshBill() {
+    var msg = el('ck-msg'); msg.className = 'msg'; msg.textContent = '正在核对账单…';
+    el('ck-buy').disabled = true;
+    api('/api/tenant/batch/preview', { method: 'POST', body: { sku: ckState.sku, count: ckState.qty, use_entitlement: ckState.useEnt } }).then(function (r) {
+      if (!r.success) { msg.className = 'msg err'; msg.textContent = r.message || '账单核对失败'; return; }
+      var d = r.data || {}; ckState.bill = d;
+      var rows = '<div class="kv"><span class="k">商品</span><span class="v">' + esc(d.name || '代充商品') + '</span></div>' +
+        '<div class="kv"><span class="k">数量</span><span class="v">' + (d.count || 0) + ' 张</span></div>';
+      if (d.entitlement_available) {
+        var saveIf = money(d.entitlement_discount_if_used != null ? d.entitlement_discount_if_used : d.entitlement_discount);
+        rows += '<div class="kv"><span class="k">本次使用权益</span><span class="v">' +
+          '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">' +
+          '<input type="checkbox" ' + (ckState.useEnt ? 'checked' : '') + ' onchange="ckToggleEnt(this.checked)">' +
+          '<span>' + esc(ckState.useEnt ? ('使用 · 省 ' + saveIf) : ('不使用 · 保留 ' + (d.entitlement_uses || 0) + ' 次，按原价结算')) + '</span></label></span></div>';
+      }
+      if (d.entitlement_uses) {
+        rows += '<div class="kv"><span class="k">单价</span><span class="v">' + esc(d.entitlement_uses + ' 张按权益价 ' + money(d.entitlement_unit_price) + ' · 其余 ' + money(d.unit_price)) + '</span></div>' +
+          '<div class="kv"><span class="k">权益抵扣</span><span class="v"><span class="save">用 ' + d.entitlement_uses + ' 次权益 · 省 ' + money(d.entitlement_discount) + '</span></span></div>';
+      } else {
+        rows += '<div class="kv"><span class="k">单价</span><span class="v">' + money(d.unit_price) + ' × ' + (d.count || 0) + '</span></div>';
+      }
+      rows += '<div class="kv"><span class="k">应付总额</span><span class="v wiz-amt">' + money(d.total) + '</span></div>' +
+        '<div class="kv"><span class="k">当前余额</span><span class="v">' + money(d.balance) + '</span></div>';
+      if (Number(d.shortfall_cents) > 0) rows += '<div class="kv"><span class="k">还差</span><span class="v wiz-over">' + money(d.shortfall) + '</span></div>';
+      el('ck-bill').innerHTML = rows;
+      if (Number(d.shortfall_cents) > 0) {
+        msg.className = 'msg err';
+        msg.innerHTML = esc('余额不足，还差 ' + money(d.shortfall)) + ' <button class="btn link" onclick="openRecharge(' + d.shortfall_cents + ')">去充值</button>';
+        el('ck-buy').disabled = true;
+      } else {
+        msg.className = 'msg ok'; msg.textContent = '余额充足，可立即购买。';
+        el('ck-buy').disabled = false;
+      }
+    }).catch(function () { msg.className = 'msg err'; msg.textContent = '网络异常，请重试'; });
+  }
+  function ckSubmit() {
+    if (ckState.buying) return;
+    var msg = el('ck-msg');
+    if (ckState.bill && Number(ckState.bill.shortfall_cents) > 0) { msg.className = 'msg err'; msg.textContent = '余额不足，请先充值。'; return; }
+    ckState.buying = true; el('ck-buy').disabled = true;
+    msg.className = 'msg'; msg.textContent = '正在购买并发卡…';
+    var orderNo = 'ck_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+    api('/api/tenant/orders/cdk', { method: 'POST', body: { sku: ckState.sku, count: ckState.qty, client_order_no: orderNo, use_entitlement: ckState.useEnt } }).then(function (r) {
+      ckState.buying = false;
+      if (!r.success) {
+        if (r.__status === 401) { clearSession(); openAuth('login'); return; }
+        if (r.code === 'INSUFFICIENT_BALANCE') {
+          msg.className = 'msg err';
+          msg.innerHTML = esc(r.message || '余额不足') + ' <button class="btn link" onclick="openRecharge()">去充值</button>';
+          el('ck-buy').disabled = false; return;
+        }
+        msg.className = 'msg err'; msg.textContent = r.message || '购买失败'; el('ck-buy').disabled = false; return;
+      }
+      var d = r.data || {};
+      var cards = (Array.isArray(d.cdk_list) && d.cdk_list.length) ? d.cdk_list : (d.cdk ? [d.cdk] : []);
+      ckState.cards = cards;
+      el('ck-done-title').textContent = '已发放 ' + cards.length + ' 张卡密';
+      el('ck-cards').innerHTML = cards.map(function (c, i) {
+        return '<div class="ck-card"><span class="idx">#' + (i + 1) + '</span><span class="code">' + esc(c) + '</span>' +
+          '<button class="btn sm" onclick="ckCopyOne(\'' + esc(c) + '\')">复制</button></div>';
+      }).join('');
+      el('ck-form').classList.add('hidden');
+      el('ck-done').classList.remove('hidden');
+      toast('已购买 ' + cards.length + ' 张卡密');
+    }).catch(function (e) { ckState.buying = false; msg.className = 'msg err'; msg.textContent = (e && e.message) || '购买失败'; el('ck-buy').disabled = false; });
+  }
+  function ckCopyOne(code) { copyText(code, null); toast('卡密已复制'); }
+  function ckCopyAll() {
+    if (!ckState.cards.length) return;
+    copyText(ckState.cards.join('\n'), null);
+    toast('已复制 ' + ckState.cards.length + ' 张卡密');
+  }
+
   function buy() {
     if (!state.detail) return;
+    var isTopup = (state.detail.category || 'recharge') === 'recharge';
+    // v2.15.0：代充商品走 5 步向导（本按钮隐藏），此处仅作快捷入口：直接进入向导的下一步
+    if (isTopup) { wizNext('topup'); return; }
     if (!state.customer) { openAuth('login'); return; }
     var qty = parseInt(el('d-qty').value, 10) || 1;
     var sku = state.detail.sku;
@@ -601,7 +1512,9 @@ tr.orow:hover{background:var(--brand-bg)}
         throw new Error(o.message || '下单失败');
       }
       msg.className = 'msg ok';
-      msg.innerHTML = '下单成功，订单号 ' + esc(o.data.order_id) + (o.data.cdk ? '<br>交付卡密：<span class="cdk">' + esc(o.data.cdk) + '</span>' : '');
+      // 非代充类商品：交付卡密（成品号 / 建站服务码等），仅展示交付物
+      msg.innerHTML = '下单成功，订单号 ' + esc(o.data.order_id)
+        + (o.data.cdk ? '<br>交付卡密：<span class="cdk">' + esc(o.data.cdk) + '</span>' : '');
       toast('已下单');
       el('d-buy').disabled = false;
     }).catch(function (e) {
@@ -613,12 +1526,45 @@ tr.orow:hover{background:var(--brand-bg)}
   // ── 订单中心（Stage 3.6 · G6）：状态筛选 / 详情时间线 / 售后 / 客服 ──
   // 说明：KC 原生订单在下单时即从顾客钱包扣款（无「待支付」态），故筛选口径为 全部/处理中/已完成/失败；
   //       「倒计时」落在确有 30 分钟支付时限的充值单上（见 rcSetCountdown），与 30 分钟支付时限同源。
-  var orderState = { list: [], filter: 'all', current: null };
+  var orderState = { list: [], filter: 'all', type: '', q: '', current: null };
 
-  function orderBucket(st) { return st === 'delivered' ? 'done' : (st === 'failed' ? 'failed' : 'processing'); }
-  function statusPill(st) {
-    if (st === 'delivered') return '<span class="pill ok">已完成</span>';
-    if (st === 'failed') return '<span class="pill red">失败</span>';
+  // v2.16.3：订单状态 ≠ 开通状态 —— KC 的 delivered 只代表「已发内部卡密」。
+  // 代充单是否「完成/失败」要看该卡密的最近一次开通任务（activation_status，后端随订单下发）。
+  function orderBucket(o) {
+    if (o.status === 'failed') return 'failed';
+    if (o.status !== 'delivered') return 'processing';
+    // v2.17.0 代充双轨：卡密代充「下单即完成」（顾客已拿到卡密凭证，之后随时自行兑换）
+    if (String(o.fulfill_mode || '') === 'cdk') return 'done';
+    if (isTopupOrder(o)) {
+      var st = String(o.activation_status || 'none');
+      if (st === 'failed') return 'failed';
+      if (st === 'success') return 'done';
+      return 'processing'; // running / none / maintenance / manual
+    }
+    return 'done';
+  }
+  function orderPill(o) {
+    var b = orderBucket(o);
+    if (b === 'failed') {
+      // v2.17.0：直接代充失败是「已解冻」，与历史「已退款」同为失败态
+      if (o.status === 'failed') return '<span class="pill red">' + (String(o.fulfill_mode || '') === 'direct' ? '失败（已解冻）' : '失败') + '</span>';
+      return '<span class="pill red">开通失败</span>';
+    }
+    if (b === 'done') {
+      if (String(o.fulfill_mode || '') === 'cdk') return '<span class="pill ok">已完成</span>';
+      return '<span class="pill ok">已完成</span>';
+    }
+    // v2.17.0：直接代充「冻结中」
+    if (String(o.fulfill_mode || '') === 'direct' && o.status === 'created') {
+      var stD = String(o.activation_status || 'none');
+      if (stD === 'running') return '<span class="pill brand">开通中（已冻结）</span>';
+      return '<span class="pill gray">已冻结·处理中</span>';
+    }
+    if (isTopupOrder(o) && o.status === 'delivered') {
+      var st = String(o.activation_status || 'none');
+      if (st === 'running') return '<span class="pill brand">开通中</span>';
+      if (st === 'none') return '<span class="pill gray">待开通</span>';
+    }
     return '<span class="pill gray">处理中</span>';
   }
 
@@ -628,87 +1574,374 @@ tr.orow:hover{background:var(--brand-bg)}
       return;
     }
     el('ordersBox').innerHTML = '<div class="empty">加载中…</div>';
+    var rfBtn = el('orders-refresh-btn'); if (rfBtn) { rfBtn.disabled = true; rfBtn.textContent = '刷新中…'; }
     api('/api/tenant/orders').then(function (r) {
+      var b = el('orders-refresh-btn'); if (b) { b.disabled = false; b.textContent = '刷新'; }
       if (!r.success) {
         if (r.__status === 401) clearSession();
         el('ordersBox').innerHTML = '<div class="empty">' + esc(r.message || '加载失败') + '</div>';
         return;
       }
       orderState.list = r.data || [];
+      var up = el('orders-updated');
+      if (up) up.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
       renderOrders();
     });
   }
 
-  function renderOrders() {
-    var list = orderState.list;
-    var n = { all: list.length, processing: 0, done: 0, failed: 0 };
-    list.forEach(function (o) { n[orderBucket(o.status)]++; });
-    var TABS = [['all', '全部'], ['processing', '处理中'], ['done', '已完成'], ['failed', '失败']];
-    var tabs = '<div class="otabs">' + TABS.map(function (t) {
-      return '<button class="otab' + (orderState.filter === t[0] ? ' on' : '') + '" onclick="filterOrders(\'' + t[0] + '\')">' +
-        t[1] + '<span class="n">' + (n[t[0]] || 0) + '</span></button>';
-    }).join('') + '</div>';
-
-    var rows = list.filter(function (o) { return orderState.filter === 'all' || orderBucket(o.status) === orderState.filter; });
-    var body;
-    if (!list.length) {
-      tabs = '';
-      body = '<div class="empty">还没有订单</div>';
-    } else if (!rows.length) {
-      body = '<div class="empty">该状态下暂无订单</div>';
-    } else {
-      body = '<div class="tbl-wrap"><table class="kc"><thead><tr><th>订单号</th><th>商品</th><th>数量</th><th>金额</th><th>状态</th><th>时间</th></tr></thead><tbody>' +
-        rows.map(function (o) {
-          return '<tr class="orow" onclick="openOrder(\'' + esc(o.order_id) + '\')">' +
-            '<td><span class="cdk">' + esc(o.order_id) + '</span></td>' +
-            '<td>' + esc(o.sku) + '</td><td>' + o.qty + '</td><td>' + money(o.amount) + '</td>' +
-            '<td>' + statusPill(o.status) + '</td>' +
-            '<td>' + esc(o.created_at || '') + '</td></tr>';
-        }).join('') + '</tbody></table></div>';
+  // ── v2.19.0 订单页改造：统计卡即筛选 + 类型页签 + 搜索 + 宽松表格 ──
+  var OP_ICONS = {
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.4 2.4 4.6-4.8"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>',
+    copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>'
+  };
+  var BIZ_LABEL = { topup: '代充', account: '成品号', website: '建站服务', entitlement: '权益包', other: '其他' };
+  function bizLabel(t) { return BIZ_LABEL[String(t || 'other')] || '其他'; }
+  function bizTag(t) { return '<span class="otag ' + (BIZ_LABEL[t] ? t : 'other') + '">' + bizLabel(t) + '</span>'; }
+  // ISO → 本地时区「YYYY-MM-DD HH:mm」（sukai 式简洁时间）
+  function fmtOrderTime(s) {
+    var t = String(s || '');
+    if (/^\d{4}-\d{2}-\d{2}T/.test(t)) {
+      var d = new Date(t);
+      if (!isNaN(d.getTime())) {
+        var p = function (x) { return (x < 10 ? '0' : '') + x; };
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+      }
     }
-    el('ordersBox').innerHTML = tabs + body;
+    return t;
   }
 
-  function filterOrders(k) { orderState.filter = k; renderOrders(); }
+  function renderOrders() {
+    var list = orderState.list;
+    // 页头摘要徽章（sukai 式：代充 N 条 · 成品号 N 条 …）
+    var types = {};
+    list.forEach(function (o) { var k = String(o.biz_type || 'other'); types[k] = (types[k] || 0) + 1; });
+    var badge = el('op-badge');
+    if (badge) {
+      var parts = ['topup', 'account', 'website', 'entitlement'].filter(function (k) { return types[k]; })
+        .map(function (k) { return bizLabel(k) + ' ' + types[k] + ' 条'; });
+      badge.hidden = !parts.length;
+      badge.textContent = parts.join(' · ');
+    }
+    if (!list.length) {
+      el('ordersBox').innerHTML = '<div class="op-empty"><div class="e-ico">' + OP_ICONS.inbox + '</div>' +
+        '<div class="e-t">还没有订单</div><div class="e-s">下单后订单会实时出现在这里</div>' +
+        '<button class="btn primary" onclick="go(\'catalog\')">去下单</button></div>';
+      return;
+    }
+    // 统计卡 = 状态筛选器（口径与 orderBucket 一致：全部/处理中/已完成/失败）
+    var n = { all: list.length, processing: 0, done: 0, failed: 0 };
+    list.forEach(function (o) { n[orderBucket(o)]++; });
+    var STATS = [['all', '全部订单', OP_ICONS.list], ['processing', '处理中', OP_ICONS.clock], ['done', '已完成', OP_ICONS.check], ['failed', '失败', OP_ICONS.x]];
+    var stats = '<div class="op-stats">' + STATS.map(function (t) {
+      return '<button class="ostat otab' + (orderState.filter === t[0] ? ' on' : '') + '" data-k="' + t[0] + '" onclick="filterOrders(\'' + t[0] + '\')">' +
+        '<span class="k">' + t[2] + '<span>' + t[1] + '</span></span><span class="num">' + (n[t[0]] || 0) + '</span></button>';
+    }).join('') + '</div>';
+
+    // 类型页签（biz_type：代充/成品号/建站服务/权益包），只展示出现过的类型
+    var ORDER = ['topup', 'account', 'website', 'entitlement'];
+    var typeCounts = { '': list.length };
+    ORDER.forEach(function (k) { if (types[k]) typeCounts[k] = types[k]; });
+    if (types.other) typeCounts.other = types.other;
+    var secs = Object.keys(typeCounts).map(function (k) {
+      var label = k === '' ? '全部类型' : bizLabel(k);
+      return '<button class="osec' + ((orderState.type || '') === k ? ' on' : '') + '" data-k="' + k + '" onclick="osecFilter(\'' + k + '\')">' +
+        label + ' ' + typeCounts[k] + '</button>';
+    }).join('');
+    var tools = '<div class="op-tools"><div class="osecs">' + secs + '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<span class="op-count" id="op-count"></span>' +
+      '<span class="osearch">' + OP_ICONS.search +
+      '<input id="op-q" placeholder="搜索订单号 / 商品" value="' + esc(orderState.q || '') + '" oninput="orderSearch(this.value)">' +
+      '</span></div></div>';
+
+    el('ordersBox').innerHTML = stats + '<div class="op-panel">' + tools + '<div id="otableBox"></div></div>';
+    renderOrderTable();
+  }
+
+  function orderRowsFiltered() {
+    var q = String(orderState.q || '').trim().toLowerCase();
+    return orderState.list.filter(function (o) {
+      if (orderState.filter !== 'all' && orderBucket(o) !== orderState.filter) return false;
+      if (orderState.type && String(o.biz_type || 'other') !== orderState.type) return false;
+      if (q && String(o.order_id).toLowerCase().indexOf(q) < 0 && String(o.sku).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function orderTableHtml(rows) {
+    return '<div class="tbl-wrap"><table class="otable"><thead><tr>' +
+      '<th>订单号</th><th>商品</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th><th></th>' +
+      '</tr></thead><tbody>' + rows.map(function (o) {
+        var no = esc(o.order_id);
+        return '<tr class="orow" onclick="openOrder(\'' + no + '\')">' +
+          '<td><span class="cdk">' + no + '</span>' +
+          '<button class="ocopy" title="复制订单号" onclick="copyOrderNo(event,this,\'' + no + '\')">' + OP_ICONS.copy + '</button></td>' +
+          '<td><div class="osku">' + esc(o.sku) + '</div><div class="osub">数量 ×' + o.qty + '</div></td>' +
+          '<td>' + bizTag(o.biz_type) + '</td>' +
+          '<td class="oamt">' + money(o.amount) + '</td>' +
+          '<td>' + orderPill(o) + '</td>' +
+          '<td class="otime">' + esc(fmtOrderTime(o.created_at)) + '</td>' +
+          '<td><span class="olink">查看详情 ›</span></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  // 局部刷新表格（输入搜索词/切换类型时不重建工具栏，避免丢输入焦点）
+  function renderOrderTable() {
+    var box = el('otableBox');
+    if (!box) return;
+    var rows = orderRowsFiltered();
+    var cnt = el('op-count');
+    if (cnt) cnt.textContent = '当前显示 ' + rows.length + ' 笔';
+    box.innerHTML = rows.length ? orderTableHtml(rows) :
+      '<div class="op-empty" style="padding:34px 0 30px"><div class="e-t">没有匹配的订单</div>' +
+      '<div class="e-s">换个关键词，或点击上方统计卡清除筛选</div></div>';
+    // 同步类型页签选中态
+    Array.prototype.forEach.call(document.querySelectorAll('#ordersBox .osec'), function (b) {
+      var k = b.getAttribute('data-k');
+      b.classList.toggle('on', (orderState.type || '') === k);
+    });
+  }
+
+  function filterOrders(k) {
+    orderState.filter = k;
+    Array.prototype.forEach.call(document.querySelectorAll('#ordersBox .ostat'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-k') === k);
+    });
+    renderOrderTable();
+  }
+
+  function osecFilter(k) { orderState.type = (k === orderState.type) ? '' : k; renderOrderTable(); }
+  function orderSearch(v) { orderState.q = v; renderOrderTable(); }
+
+  function copyOrderNo(ev, btn, no) {
+    if (ev && ev.stopPropagation) { ev.stopPropagation(); ev.preventDefault(); }
+    copyText(no, null);
+    if (btn) { btn.classList.add('ok'); setTimeout(function () { btn.classList.remove('ok'); }, 900); }
+  }
 
   function openOrder(orderNo) {
     var o = orderState.list.filter(function (x) { return x.order_id === orderNo; })[0];
     if (!o) return;
     orderState.current = o;
-    el('od-sub').textContent = o.status === 'delivered' ? '订单已完成' : (o.status === 'failed' ? '订单未成功' : '订单处理中');
+    var topup = isTopupOrder(o);
+    el('od-sub').textContent = orderSubText(o, topup);
     el('od-no').textContent = o.order_id;
     el('od-sku').textContent = o.sku + ' × ' + o.qty;
     el('od-amount').textContent = money(o.amount);
-    el('od-cdk').innerHTML = o.cdk ? '<span class="cdk">' + esc(o.cdk) + '</span>' : '—';
+    // v2.16.3：代充订单不展示卡密（卡密仅作内部开通任务引用）；「开通」列按**开通任务真实状态**渲染 ——
+    // 已开通用「已开通」徽标收口，只有确实没启动过开通的单才给「继续开通」按钮（避免把用户误导进兑换流程）
+    var cdkRow = el('od-cdkRow');
+    var fm = String(o.fulfill_mode || '');
+    if (fm === 'cdk') {
+      // v2.17.0 卡密代充：详情展示卡密凭证列表（N 张，可复制 + 去兑换）
+      if (cdkRow) cdkRow.querySelector('.k').textContent = '卡密凭证';
+      el('od-cdk').innerHTML = cdkListHtml(o);
+    } else if (topup) {
+      if (cdkRow) cdkRow.querySelector('.k').textContent = '开通';
+      el('od-cdk').innerHTML = topupActivationHtml(o);
+    } else {
+      if (cdkRow) cdkRow.querySelector('.k').textContent = '卡密';
+      el('od-cdk').innerHTML = o.cdk ? '<span class="cdk">' + esc(o.cdk) + '</span>' : '—';
+    }
     el('od-tl').innerHTML = timelineHtml(o);
-    el('orderModal').classList.add('show');
+    openModal('orderModal');
+  }
+
+  // v2.17.0：卡密代充的卡密凭证列表（复制 + 去兑换）
+  function cdkListHtml(o) {
+    var list = (Array.isArray(o.cdk_list) && o.cdk_list.length) ? o.cdk_list : (o.cdk ? [o.cdk] : []);
+    if (!list.length) return '—';
+    return '<div class="ck-cards">' + list.map(function (c, i) {
+      return '<div class="ck-card"><span class="idx">#' + (i + 1) + '</span><span class="code">' + esc(c) + '</span>' +
+        '<button class="btn sm" onclick="ckCopyOne(\'' + esc(c) + '\')">复制</button></div>';
+    }).join('') + '</div>' +
+      '<button class="btn sm primary" style="margin-top:8px" onclick="goRedeem(\'' + esc(list[0]) + '\')">去兑换</button>';
+  }
+
+  // 由「订单状态 + 开通任务状态」合成一句人话（订单已完成 ≠ 已开通）
+  function orderSubText(o, topup) {
+    var fm = String(o.fulfill_mode || '');
+    if (o.status === 'failed') return fm === 'direct' ? '订单未成功（冻结金额已解冻）' : '订单未成功（款项已退回）';
+    if (fm === 'cdk') return '订单已完成 · 已发放卡密凭证（可随时兑换）';
+    if (fm === 'direct') {
+      if (o.status === 'created') {
+        var stD = String(o.activation_status || 'none');
+        return stD === 'running' ? '开通中 · 金额已冻结（成功后扣款）' : '处理中 · 金额已冻结（开通成功后扣款）';
+      }
+      return '订单已完成 · 账号已开通，冻结金额已扣款';
+    }
+    if (o.status !== 'delivered') return '订单处理中';
+    if (!topup) return '订单已完成';
+    var st = String(o.activation_status || 'none');
+    if (st === 'success') return '订单已完成 · 账号已开通';
+    if (st === 'running') return '订单已完成 · 正在开通中';
+    if (st === 'failed') return '订单已完成 · 开通失败（款项已退回）';
+    if (st === 'none') return '订单已完成 · 待开通（可手动继续开通）';
+    return '订单已完成';
+  }
+
+  // 代充订单「开通」列的渲染（唯一事实源：后端下发的 activation_status / fulfill_mode）
+  function topupActivationHtml(o) {
+    var fm = String(o.fulfill_mode || '');
+    if (o.status === 'failed') return '<span class="pill red">' + (fm === 'direct' ? '未成功（已解冻）' : '未成功（已退款）') + '</span>';
+    if (fm === 'direct') {
+      // v2.17.0 直接代充：冻结中 → 按开通任务状态表达（成功才扣款，失败已解冻）
+      var stD = String(o.activation_status || 'none');
+      if (stD === 'success') return '<span class="pill ok">已开通 · 已扣款</span>';
+      if (stD === 'running') return '<span class="pill brand">开通中…（金额已冻结）</span>';
+      if (stD === 'failed') return '<span class="pill red">开通失败（金额已解冻）</span>';
+      if (stD === 'maintenance') return '<span class="pill gray">系统维护中，稍后自动重试</span>';
+      if (stD === 'manual') return '<span class="pill gray">需人工处理，请联系客服</span>';
+      return o.cdk
+        ? '<button class="btn sm primary" onclick="odResume()">继续开通</button>' +
+          '<div style="font-size:11.5px;color:var(--dim);margin-top:4px">尚未启动开通；金额已冻结，开通成功后扣款、失败自动解冻</div>'
+        : '<span class="pill gray">处理中</span>';
+    }
+    if (o.status !== 'delivered') return '<span class="pill gray">处理中</span>';
+    var st = String(o.activation_status || 'none');
+    if (st === 'success') return '<span class="pill ok">已开通</span>';
+    if (st === 'running') return '<span class="pill brand">开通中…</span>';
+    if (st === 'failed') return '<span class="pill red">开通失败（费用已退回）</span>';
+    if (st === 'maintenance') return '<span class="pill gray">系统维护中，稍后自动重试</span>';
+    if (st === 'manual') return '<span class="pill gray">需人工处理，请联系客服</span>';
+    // none：确实还没跑过开通（如批量流程里「未启动」的账号）→ 保留手动入口
+    return o.cdk
+      ? '<button class="btn sm primary" onclick="odResume()">继续开通</button>' +
+        '<div style="font-size:11.5px;color:var(--dim);margin-top:4px">该系统尚未启动开通，可在此手动继续</div>'
+      : '<span class="pill gray">处理中</span>';
   }
   function closeOrder() { el('orderModal').classList.remove('show'); }
+  // 已通过校验的内存卡密（代充订单的「继续开通」用它，不在页面上展示卡密文本）
+  function odResume() {
+    var o = orderState.current;
+    if (!o || !o.cdk) return;
+    closeOrder();
+    goRedeem(o.cdk);
+  }
 
   function timelineHtml(o) {
     var delivered = o.status === 'delivered', failed = o.status === 'failed';
+    var topup = isTopupOrder(o);
+    var fm = String(o.fulfill_mode || '');
+    var st = String(o.activation_status || 'none');
     var t0 = esc(o.created_at || '—');
     var t1 = o.updated_at ? esc(o.updated_at) : '—';
-    var n3 = failed
-      ? { k: '交付失败', d: '订单未成功，可申请售后处理', st: 'fail', t: t1 }
-      : (delivered
-        ? { k: '卡密已发放', d: '卡密已交付，可前往兑卡页完成开通', st: 'done', t: t1 }
-        : { k: '处理中', d: '系统正在为你处理，请稍候', st: 'doing', t: '—' });
-    var n4 = failed
-      ? { k: '已退款', d: '款项已退回你的钱包余额', st: 'done', t: t1 }
-      : (delivered
-        ? { k: '交付完成', d: '如未开通，请到「兑卡」完成激活', st: 'done', t: t1 }
-        : { k: '待完成', d: '处理完成后卡密将自动发放', st: '', t: '—' });
+    var t2 = o.activation_at ? esc(o.activation_at) : t1;
+    var n2, n3, n4;
+    // v2.17.0 代充双轨：第二节点按履约方式表达（直接=冻结/扣款；卡密=支付；auto=支付）
+    if (fm === 'direct' && !failed) {
+      n2 = delivered
+        ? { k: '已扣款', d: '开通成功，冻结金额已转为扣款', st: 'done', t: t1 }
+        : { k: '金额已冻结', d: '下单先冻结金额，开通成功才扣款、失败自动解冻', st: 'done', t: t0 };
+    } else {
+      n2 = { k: '已支付', d: '支付方式：账户余额', st: 'done', t: t0 };
+    }
+    if (failed) {
+      if (fm === 'direct') {
+        n3 = { k: '开通失败', d: (o.activation_message || '开通未成功'), st: 'fail', t: t1 };
+        n4 = { k: '已解冻', d: '冻结金额已退回你的可用余额', st: 'done', t: t1 };
+      } else {
+        n3 = { k: '未成功', d: '款项已自动退回你的平台余额', st: 'fail', t: t1 };
+        n4 = { k: '已退款', d: '款项已退回你的平台余额', st: 'done', t: t1 };
+      }
+    } else if (fm === 'cdk' && delivered) {
+      // v2.17.0 卡密代充：下单即完成，交付物是 N 张卡密凭证；等待顾客自行兑换
+      n3 = { k: '卡密已发放', d: '已发放 ' + (Number(o.qty) || 1) + ' 张卡密凭证', st: 'done', t: t1 };
+      n4 = { k: '待兑换', d: '在「兑换卡密」页输入卡密 + Session 即可完成开通', st: '', t: '—' };
+    } else if (fm === 'direct' && !delivered) {
+      // 直接代充在途：冻结中，按开通任务状态表达
+      n3 = { k: '已提交开通', d: '正在向上游发起开通，金额保持冻结', st: 'done', t: t0 };
+      n4 = st === 'running'
+        ? { k: '开通中', d: '正在为你开通，完成后本页会同步更新', st: 'doing', t: '—' }
+        : st === 'maintenance'
+          ? { k: '需稍后重试', d: '系统维护中，稍后将自动重试', st: 'doing', t: '—' }
+          : { k: '开通中', d: '开通完成后将自动扣款', st: 'doing', t: '—' };
+    } else if (!delivered) {
+      n3 = { k: '处理中', d: '系统正在为你处理，请稍候', st: 'doing', t: '—' };
+      n4 = { k: '待完成', d: '处理完成后将自动交付', st: '', t: '—' };
+    } else if (!topup) {
+      n3 = { k: '交付完成', d: '交付物已发放', st: 'done', t: t1 };
+      n4 = { k: '完成', d: '交付物已送达', st: 'done', t: t1 };
+    } else if (st === 'success') {
+      // v2.16.3：代充单的 3/4 节点按「开通任务状态」表达（订单 delivered ≠ 已开通）
+      n3 = { k: '卡密已发放', d: '内部卡密已发放并提交开通', st: 'done', t: t1 };
+      n4 = { k: '开通完成', d: '账号权益已开通到你的 ChatGPT 账号', st: 'done', t: t2 };
+    } else if (st === 'running') {
+      n3 = { k: '卡密已发放', d: '内部卡密已发放并提交开通', st: 'done', t: t1 };
+      n4 = { k: '开通中', d: '正在为你开通，完成后本页会同步更新', st: 'doing', t: '—' };
+    } else if (st === 'failed') {
+      n3 = { k: '开通失败', d: (o.activation_message || '开通未成功') + '；款项会由系统自动退回余额', st: 'fail', t: t2 };
+      n4 = { k: '退款处理中', d: '费用将自动退回你的平台余额', st: 'doing', t: '—' };
+    } else if (st === 'maintenance' || st === 'manual') {
+      n3 = { k: '卡密已发放', d: '内部卡密已发放并提交开通', st: 'done', t: t1 };
+      n4 = { k: '需人工处理', d: '该开通已登记，请联系客服协助', st: 'doing', t: '—' };
+    } else {
+      n3 = { k: '卡密已发放', d: '内部卡密已发放', st: 'done', t: t1 };
+      n4 = { k: '待开通', d: '尚未启动开通，可在上方「继续开通」手动完成', st: '', t: '—' };
+    }
     var nodes = [
       { k: '已下单', d: '订单已创建', st: 'done', t: t0 },
-      { k: '已支付', d: '支付方式：账户余额', st: 'done', t: t0 },
-      n3, n4
+      n2, n3, n4
     ];
-    return nodes.map(function (x) {
+    var html = nodes.map(function (x) {
       return '<div class="item ' + (x.st || '') + '"><span class="dot"></span>' +
         '<div class="main"><span class="k">' + esc(x.k) + '</span><small>' + esc(x.d) + '</small></div>' +
         '<span class="time">' + x.t + '</span></div>';
     }).join('');
+    // v2.21.0：直接代充单追加「上游进度」节点 —— 点击实时查上游状态详情（排队/等卡/调度/执行中…）
+    if (topup && fm !== 'cdk') {
+      html += '<div class="item" id="od-up"><span class="dot"></span>' +
+        '<div class="main"><span class="k">上游进度</span><small>上游代充服务的实时状态 · <span class="up-link" onclick="orderUpstream(event)">点击查询</span></small></div>' +
+        '<span class="time">—</span></div>' +
+        '<div id="od-up-detail"></div>';
+    }
+    return html;
+  }
+
+  // v2.21.0：查询上游代充实时进度（GET /api/tenant/orders/:no/upstream，30s 服务端缓存）
+  function orderUpstream(ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    var o = orderState.current;
+    var box = el('od-up-detail');
+    if (!o || !box) return;
+    box.innerHTML = '<div class="up-detail"><span style="color:var(--dim)">查询中…</span></div>';
+    api('/api/tenant/orders/' + encodeURIComponent(o.order_id) + '/upstream').then(function (r) {
+      if (!r.success || !r.data || !r.data.has_upstream) {
+        box.innerHTML = '<div class="up-detail">暂无上游进度（该订单尚未发起上游代充）</div>';
+        return;
+      }
+      var d = r.data;
+      if (d.unreachable) {
+        box.innerHTML = '<div class="up-detail"><b>上游查询暂时不可用</b>' +
+          '<div class="u-row">上游单号 <span class="cdk">' + esc(d.upstream_order_id) + '</span></div>' +
+          '<div class="u-row">' + esc(d.message || '请稍后再试') + '</div></div>';
+        return;
+      }
+      var cls = d.state === 'success' ? 'ok' : (d.state === 'failed' ? 'red' : (d.state === 'review' ? 'gray' : 'brand'));
+      box.innerHTML = '<div class="up-detail">' +
+        '<div class="u-head"><span class="pill ' + cls + '">' + esc(d.label) + '</span>' +
+        '<span class="u-time">查询于 ' + esc(fmtOrderTime(d.queried_at)) + '</span></div>' +
+        '<div class="u-row">上游单号 <span class="cdk">' + esc(d.upstream_order_id) + '</span></div>' +
+        (d.topup_code ? '<div class="u-row">上游凭证码 <span class="cdk">' + esc(d.topup_code) + '</span></div>' : '') +
+        '<div class="u-row">状态原文 <span class="cdk">' + esc(d.raw_status) + '</span></div>' +
+        '<div class="u-note">上游状态独立于订单状态：仅上游终态成功才代表开通成功；进行中请耐心等待，30 秒内重复查询返回缓存。</div>' +
+        '</div>';
+    });
+  }
+  // 目录里按 sku 判断是否代充商品（订单列表不含分类，故回查目录）
+  function isTopupSku(sku) {
+    var it = state.catalog.filter(function (i) { return i.sku === sku; })[0];
+    return !!it && (it.category || 'recharge') === 'recharge';
+  }
+  // v2.16.3：订单侧判定代充 —— 优先后端 biz_type（订单落库口径，不依赖目录是否加载），回落到目录分类兜底
+  function isTopupOrder(o) {
+    if (o && String(o.biz_type || '') === 'topup') return true;
+    return isTopupSku(o && o.sku);
   }
 
   function openAfterSales() {
@@ -717,7 +1950,7 @@ tr.orow:hover{background:var(--brand-bg)}
     el('as-msg').value = '';
     el('as-feedback').textContent = ''; el('as-feedback').className = 'msg';
     el('as-submit').disabled = false;
-    el('asModal').classList.add('show');
+    openModal('asModal');
   }
   function closeAfterSales() { el('asModal').classList.remove('show'); }
 
@@ -750,7 +1983,9 @@ tr.orow:hover{background:var(--brand-bg)}
   var HELP = {
     ticket: { title: '工单支持', urlKey: 'ticket_url', tip: '如需人工处理，请在「我的订单」打开对应订单，点击「申请售后」提交工单。' },
     kb: { title: '使用文档', urlKey: 'kb_url', tip: '查看首页「常见问题」，了解下单、支付、兑卡与权益包的常见用法。' },
-    invite: { title: '邀请好友', urlKey: 'invite_url', tip: '邀请入口保留；邀请佣金在平台内结算，不对外开放提现。如需邀请链接，请联系客服。' }
+    invite: { title: '邀请好友', urlKey: 'invite_url', tip: '邀请入口保留；邀请佣金在平台内结算，不对外开放提现。如需邀请链接，请联系客服。' },
+    about: { title: '关于我们', urlKey: 'about_url', tip: 'KC 直供：ChatGPT 代充、成品号与建站服务。明码标价，余额下单，支付成功即时交付。' },
+    terms: { title: '服务条款', urlKey: 'terms_url', tip: '本平台仅提供 AI 服务代充与账号交付，不涉及订阅关系转让；下单即表示你已阅读并同意相关条款。' }
   };
   function openHelp(kind) {
     var h = HELP[kind]; if (!h) return;
@@ -761,7 +1996,7 @@ tr.orow:hover{background:var(--brand-bg)}
     var c = (state.brand && state.brand.support_contact) || '';
     el('help-title').textContent = h.title;
     el('help-body').textContent = h.tip + (c ? ('\n客服：' + c) : '');
-    el('helpModal').classList.add('show');
+    openModal('helpModal');
   }
   function closeHelp() { el('helpModal').classList.remove('show'); }
 
@@ -808,7 +2043,8 @@ tr.orow:hover{background:var(--brand-bg)}
       html += '<div class="grid">' + packState.packs.map(function (p) {
         var owned = !!ownedCodes[p.code];
         var uses = Number(p.uses) || 0, days = Number(p.period_days) || 0;
-        var meta = '含 ' + uses + ' 次权益' + (days > 0 ? ' · 有效期 ' + days + ' 天' : '');
+        var meta = '含 ' + uses + ' 次权益' + (days > 0 ? ' · 有效期 ' + days + ' 天' : '') +
+          (Number(p.covered_products) > 0 ? ' · 可用商品 ' + Number(p.covered_products) + ' 个' : '');
         return '<div class="card"><h3>' + esc(p.name) + '</h3>' +
           '<div class="price">' + money(p.price) + ' <small>/份</small></div>' +
           '<div style="color:var(--sub);font-size:12px">' + esc(meta) + '</div>' +
@@ -838,31 +2074,54 @@ tr.orow:hover{background:var(--brand-bg)}
   // ── 钱包 / 充值（Stage 3.3 · G2；BEpusdt 收款模拟）──
   var rcCurrent = null;
   var rcTick = null;
+  var rcUrgent = false;
 
-  // 充值单 30 分钟支付时限倒计时（Stage 3.6：30 分钟时限，超时禁用确认）
+  // 充值单 30 分钟支付时限倒计时（v2.10.0：突出展示 + 剩余 5 分钟内转「紧急」态 + 同步离页引导的剩余时间）
   function rcSetCountdown(expiresIn) {
     var box = el('rc-count').querySelector('.countdown');
+    var wrap = el('rc-timer');
     if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    rcUrgent = false;
     var end = Date.now() + Number(expiresIn || 0) * 1000;
     function paint() {
       var left = end - Date.now();
+      var mmss;
       if (left <= 0) {
         box.className = 'countdown dead'; box.textContent = '已超时，请重新发起';
+        if (wrap) wrap.classList.remove('urgent');
         el('rc-confirm').disabled = true;
+        el('rc-leave-left').textContent = '已超时';
         clearInterval(rcTick); rcTick = null;
         return;
       }
       var m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-      box.className = 'countdown'; box.textContent = '剩 ' + m + ':' + (s < 10 ? '0' + s : s);
+      mmss = m + ':' + (s < 10 ? '0' + s : s);
+      box.className = 'countdown'; box.textContent = mmss;
+      el('rc-leave-left').textContent = '剩 ' + mmss;
+      var urgent = left <= 5 * 60 * 1000;
+      if (wrap && urgent !== rcUrgent) { wrap.classList.toggle('urgent', urgent); }
+      if (urgent !== rcUrgent) { box.textContent = '仅剩 ' + mmss; }
+      rcUrgent = urgent;
     }
     paint();
     rcTick = setInterval(paint, 1000);
+  }
+
+  // 步骤条高亮（1 选金额 / 2 扫码转账 / 3 确认到账）
+  function rcSetStep(n) {
+    document.querySelectorAll('#rc-steps .rc-step').forEach(function (s) {
+      s.classList.toggle('on', Number(s.getAttribute('data-step')) <= Number(n));
+    });
+    el('rc-pick').classList.toggle('hidden', Number(n) !== 1);
+    el('rc-pay').classList.toggle('hidden', Number(n) !== 2);
   }
 
   function loadWallet() {
     if (!state.customer) {
       el('w-bal').textContent = '—';
       el('w-presets').innerHTML = '';
+      el('w-pendingWrap').classList.add('hidden');
+      el('w-pending').innerHTML = '';
       el('w-ledgerBox').innerHTML = '<div class="empty">请先登录后查看钱包<br><br><button class="btn primary" onclick="openAuth(\'login\')">登录 / 注册</button></div>';
       return;
     }
@@ -876,13 +2135,23 @@ tr.orow:hover{background:var(--brand-bg)}
       var d = r.data || {};
       state.walletMeta = { min: Number(d.min || 1), max: Number(d.max || 10000) };
       el('w-bal').textContent = money(d.balance);
+      var chip = el('walletChip'); if (chip) chip.textContent = money(d.balance);
+      // v2.17.0 直接代充：冻结额单列展示（仅在有冻结时出现）
+      var heldWrap = el('w-heldWrap'), heldEl = el('w-held');
+      if (heldWrap && heldEl) {
+        var hv = Number(d.held || 0);
+        heldWrap.classList.toggle('hidden', !(hv > 0));
+        heldEl.textContent = money(hv);
+      }
+      renderPendingRecharges(d.pending_recharges || []);
       el('w-presets').innerHTML = (d.presets || []).map(function (p) {
         return '<button class="preset" onclick="openRecharge(' + Math.round(Number(p) * 100) + ')">' + money(p) + '</button>';
       }).join('');
       var rows = (d.ledger || []).map(function (x) {
-        var t = ({ recharge: '充值', consume: '消费', refund: '退回' })[x.type] || x.type;
+        // v2.17.0 直接代充：hold 冻结 / capture 核销（冻结转扣款，变动 0） / release 解冻退回
+        var t = ({ recharge: '充值', consume: '消费', refund: '退回', adjust: '人工补录', hold: '冻结', capture: '扣款', release: '解冻' })[x.type] || x.type;
         var pos = Number(x.change) > 0;
-        return '<tr><td>' + esc(t) + '</td><td style="color:' + (pos ? '#166534' : 'var(--red)') + '">' + (pos ? '+' : '') + money(x.change) +
+        return '<tr><td>' + esc(t) + '</td><td style="color:' + (pos ? 'var(--ok)' : 'var(--red)') + '">' + (pos ? '+' : '') + money(x.change) +
           '</td><td>' + money(x.balance) + '</td><td><span class="cdk">' + esc(x.ref || '—') + '</span></td><td>' + esc(x.note || '') + '</td><td>' + esc(x.created_at || '') + '</td></tr>';
       }).join('');
       el('w-ledgerBox').innerHTML = rows
@@ -906,10 +2175,16 @@ tr.orow:hover{background:var(--brand-bg)}
     if (!state.customer) { openAuth('login'); return; }
     rcCurrent = null;
     if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    rcStopPoll();
+    rcUrgent = false;
+    el('rc-timer').classList.remove('urgent');
     el('rc-confirm').disabled = true;
     el('rc-ack').checked = false;
-    el('rc-pick').classList.remove('hidden');
-    el('rc-pay').classList.add('hidden');
+    el('rc-mock').classList.remove('hidden');
+    el('rc-gateway').classList.add('hidden');
+    rcSetStep(1);
+    el('rc-qr').innerHTML = '<div class="rc-qr-ph">二维码<br>加载中…</div>';
+    el('rc-qr-retry').classList.add('hidden');
     el('rc-msg').textContent = ''; el('rc-msg').className = 'msg';
     el('rc-copy-msg').textContent = ''; el('rc-copy-msg').className = 'msg';
     el('rc-custom').value = '';
@@ -918,12 +2193,50 @@ tr.orow:hover{background:var(--brand-bg)}
       : '$1.00 ~ $10,000.00';
     renderRcPresets();
     if (preCents) pickRecharge(Math.round(Number(preCents) / 100));
-    el('rcModal').classList.add('show');
+    openModal('rcModal');
   }
+
+  // 背景点击关闭 / 阻止卡片内的点击冒泡到背景
+  function rcStop(e) { if (e && e.stopPropagation) e.stopPropagation(); }
+  function rcBackdrop(e, which) {
+    if (!e || e.target !== e.currentTarget) return;
+    if (which === 'guide') { closeGuide(); return; }
+    if (which === 'leave') { rcLeaveStay(); return; }
+    rcGuardClose();
+  }
+
+  // 关窗守卫（v2.10.0）：充值单已生成且未到账 → 先引导「继续支付 / 去待支付充值单」，避免用户以为订单丢了
+  function rcGuardClose() {
+    if (rcCurrent && rcCurrent.recharge_no && rcCurrent.status === 'pending' && !rcExpired(rcCurrent)) {
+      el('rc-leave-amt').textContent = rcCurrent.exact_amount + ' USDT';
+      el('rc-leave-sub').textContent = '充值单 ' + rcCurrent.recharge_no + ' 已生成，倒计时内完成转账即可到账。';
+      openModal('rcLeaveModal');
+      return;
+    }
+    closeRecharge();
+  }
+  function rcLeaveStay() { el('rcLeaveModal').classList.remove('show'); }
+  function rcLeaveGoWallet() {
+    el('rcLeaveModal').classList.remove('show');
+    closeRecharge();
+    go('wallet');
+    toast('已生成充值单，可在「待支付充值单」继续支付');
+  }
+  function rcExpired(rc) {
+    if (!rc || !rc.expires_at) return false;
+    return new Date(rc.expires_at).getTime() <= Date.now();
+  }
+
   function closeRecharge() {
     if (rcTick) { clearInterval(rcTick); rcTick = null; }
+    rcStopPoll();
+    el('rcLeaveModal').classList.remove('show');
     el('rcModal').classList.remove('show');
   }
+
+  // USDT 新手教程（样例）
+  function openGuide() { openModal('guideModal'); }
+  function closeGuide() { el('guideModal').classList.remove('show'); }
 
   // 复制到剪贴板（navigator.clipboard 优先，失败/不可用时降级 execCommand）
   function copyText(text, msgId) {
@@ -950,31 +2263,155 @@ tr.orow:hover{background:var(--brand-bg)}
   }
   function copyRcExact() { copyText(el('rc-exact-amount').textContent, 'rc-copy-msg'); }
   function copyRcAddr() { copyText(el('rc-addr').textContent, 'rc-copy-msg'); }
+  function copyRcNo() { copyText(el('rc-no').textContent, 'rc-copy-msg'); }
   // 二次确认闸门：勾选后才允许点「我已支付」
   function rcSyncConfirm() { el('rc-confirm').disabled = !el('rc-ack').checked; }
+
+  // 把「支付信息」载荷渲染进弹层（发起 / 续付共用，避免两处漂移），并载入二维码
+  // v2.11.0：mode='gateway' 时应付金额取网关折算值、展示收银台入口并自动轮询到账；mode='mock' 维持自助确认。
+  function applyRcPayload(d) {
+    rcCurrent = d || {};
+    el('rc-exact-amount').textContent = d.exact_amount || money(d.amount);
+    el('rc-amount').textContent = money(d.amount);
+    el('rc-addr').textContent = d.pay_address || '';
+    el('rc-no').textContent = d.recharge_no || '';
+    el('rc-ack').checked = false;
+    el('rc-confirm').disabled = true;
+    el('rc-copy-msg').textContent = ''; el('rc-copy-msg').className = 'msg';
+    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '';
+    var gateway = d.mode === 'gateway';
+    el('rc-mock').classList.toggle('hidden', gateway);
+    el('rc-gateway').classList.toggle('hidden', !gateway);
+    if (gateway) {
+      el('rc-openpay').classList.toggle('hidden', !d.payment_url);
+      el('rc-poll-msg').textContent = '等待链上到账…';
+      rcStartPoll(d.recharge_no);
+    } else {
+      rcStopPoll();
+    }
+    rcSetStep(2);
+    rcSetCountdown(d.expires_in);
+    loadRcQr();
+  }
+
+  // 网关模式：打开收银台（新窗口）
+  function rcOpenPay() {
+    if (rcCurrent && rcCurrent.payment_url) window.open(rcCurrent.payment_url, '_blank', 'noopener');
+  }
+
+  // 网关模式：轮询服务端充值单状态（链上确认后自动到账）
+  var rcPollTick = null;
+  function rcStopPoll() { if (rcPollTick) { clearInterval(rcPollTick); rcPollTick = null; } }
+  function rcStartPoll(rechargeNo) {
+    rcStopPoll();
+    if (!rechargeNo) return;
+    rcPollTick = setInterval(function () {
+      api('/api/tenant/wallet/recharge/' + encodeURIComponent(rechargeNo) + '/status').then(function (r) {
+        if (!r.success || !r.data) return;
+        if (r.data.paid) {
+          rcStopPoll();
+          if (rcCurrent && rcCurrent.recharge_no === rechargeNo) {
+            el('rc-poll-msg').textContent = '已到账，当前余额 ' + money(r.data.balance);
+            el('rc-msg').className = 'msg ok';
+            el('rc-msg').textContent = '已到账，当前余额 ' + money(r.data.balance);
+            rcSetStep(3);
+            rcCurrent = null;
+            toast('充值到账 ' + money(r.data.amount));
+            loadWallet();
+            setTimeout(closeRecharge, 1500);
+          }
+        } else if (r.data.status === 'expired' || r.data.status === 'canceled') {
+          rcStopPoll();
+          el('rc-poll-msg').textContent = '该充值单已关闭，请重新发起。';
+        }
+      }).catch(function () { /* 轮询失败静默重试 */ });
+    }, 6000);
+  }
+
+  // 二维码：本地用 vendor 的 qrcode 库渲染（无外链依赖）；内容为收款地址，扫码只带入地址，金额仍需按精确金额手填
+  function loadRcQr() {
+    if (!rcCurrent || !rcCurrent.pay_address) return;
+    var box = el('rc-qr');
+    var retry = el('rc-qr-retry');
+    function fail(msg) {
+      box.innerHTML = '<div class="rc-qr-ph">' + msg + '<br>也可用「复制地址」手动粘贴</div>';
+      if (retry) retry.classList.remove('hidden');
+    }
+    if (typeof qrcode !== 'function') { fail('二维码库未加载'); return; }
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData('tron:' + rcCurrent.pay_address);
+      qr.make();
+      box.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+      var svg = box.querySelector('svg');
+      if (svg) { svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%'); }
+      if (retry) retry.classList.add('hidden');
+    } catch (e) {
+      fail('二维码生成失败');
+    }
+  }
 
   function startRecharge() {
     var amount = Number(el('rc-custom').value);
     if (!amount || amount < 1) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '请选择或输入充值金额（≥ $1）'; return; }
     if (amount % 1 !== 0) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '充值金额请填整数美元（如 200），小数尾数由系统生成'; return; }
     el('rc-gen').disabled = true;
-    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '正在生成收款地址…';
+    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '正在生成收款码…';
     api('/api/tenant/wallet/recharge', { method: 'POST', body: { amount: amount } }).then(function (r) {
       el('rc-gen').disabled = false;
       if (!r.success) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = r.message || '发起充值失败'; return; }
-      rcCurrent = r.data;
-      el('rc-exact-amount').textContent = r.data.exact_amount || money(r.data.amount);
-      el('rc-amount').textContent = money(r.data.amount);
-      el('rc-addr').textContent = r.data.pay_address;
-      el('rc-no').textContent = r.data.recharge_no;
-      el('rc-ack').checked = false;
-      el('rc-confirm').disabled = true;
-      el('rc-copy-msg').textContent = ''; el('rc-copy-msg').className = 'msg';
-      el('rc-pick').classList.add('hidden');
-      el('rc-pay').classList.remove('hidden');
-      el('rc-msg').className = 'msg'; el('rc-msg').textContent = '';
-      rcSetCountdown(r.data.expires_in);
+      applyRcPayload(r.data);
     }).catch(function () { el('rc-gen').disabled = false; el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '网络异常，请重试'; });
+  }
+
+  // 「继续支付」：从待支付充值单取回支付信息并直接进第 2 步
+  function resumeRecharge(rechargeNo) {
+    if (!state.customer) { openAuth('login'); return; }
+    if (!rechargeNo) return;
+    el('rc-pick').classList.add('hidden'); // 先占位，避免闪现步骤 1
+    openModal('rcModal');
+    el('rc-msg').className = 'msg'; el('rc-msg').textContent = '正在加载充值单…';
+    api('/api/tenant/wallet/recharge/' + encodeURIComponent(rechargeNo)).then(function (r) {
+      if (!r.success) {
+        el('rc-msg').className = 'msg err';
+        el('rc-msg').textContent = r.message || '充值单不可继续支付';
+        rcSetStep(1);
+        return;
+      }
+      applyRcPayload(r.data);
+    }).catch(function () { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '网络异常，请重试'; rcSetStep(1); });
+  }
+
+  // 钱包页「待支付充值单」区块渲染 + 逐秒刷新剩余时间
+  var wPendTick = null;
+  function renderPendingRecharges(list) {
+    var wrap = el('w-pendingWrap'), box = el('w-pending');
+    if (wPendTick) { clearInterval(wPendTick); wPendTick = null; }
+    if (!list || !list.length) { wrap.classList.add('hidden'); box.innerHTML = ''; return; }
+    wrap.classList.remove('hidden');
+    box.innerHTML = list.map(function (rc) {
+      return '<div class="w-pend">' +
+        '<div><div class="kp">精确金额（含认单小数）</div><div class="vp">' + esc(rc.exact_amount) + ' USDT</div>' +
+        '<div class="kp" style="margin-top:4px">充值单号 <span class="cdk">' + esc(rc.recharge_no) + '</span></div></div>' +
+        '<div style="text-align:right"><div class="left" data-exp="' + esc(rc.expires_at || '') + '">—</div>' +
+        '<button class="btn primary" style="margin-top:8px" onclick="resumeRecharge(\'' + esc(rc.recharge_no) + '\')">继续支付</button></div>' +
+        '</div>';
+    }).join('');
+    function paint() {
+      var nodes = box.querySelectorAll('[data-exp]');
+      if (!nodes.length) { return; }
+      var now = Date.now();
+      nodes.forEach(function (n) {
+        var exp = Date.parse(n.getAttribute('data-exp') || '');
+        if (!isFinite(exp)) { n.textContent = ''; return; }
+        var left = exp - now;
+        if (left <= 0) { n.textContent = '已超时'; n.style.color = 'var(--red)'; return; }
+        var m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        n.textContent = '剩 ' + m + ':' + (s < 10 ? '0' + s : s);
+      });
+    }
+    paint();
+    wPendTick = setInterval(paint, 1000);
   }
 
   function confirmRecharge() {
@@ -987,8 +2424,13 @@ tr.orow:hover{background:var(--brand-bg)}
       if (!r.success) { el('rc-msg').className = 'msg err'; el('rc-msg').textContent = r.message || '确认失败'; return; }
       el('rc-msg').className = 'msg ok';
       el('rc-msg').textContent = '已到账，当前余额 ' + money(r.data.balance);
+      rcSetStep(3);
+      rcCurrent = null;
       toast('充值到账 ' + money(r.data.amount));
       loadWallet();
+      // v2.17.1：若是从「购买卡密」弹层点「去充值」进来的，到账后刷新账单（余额/还差/可购买），
+      // 让用户关掉充值弹层即可直接继续购买（未刷新时会残留「余额不足」旧账单）。
+      if (el('ckModal').classList.contains('show')) ckRefreshBill();
       setTimeout(closeRecharge, 900);
     }).catch(function () { el('rc-confirm').disabled = false; el('rc-msg').className = 'msg err'; el('rc-msg').textContent = '网络异常，请重试'; });
   }
@@ -1007,7 +2449,7 @@ tr.orow:hover{background:var(--brand-bg)}
     el('au-email').value = '';
     el('au-pass').value = '';
     el('au-name').value = '';
-    el('authModal').classList.add('show');
+    openModal('authModal');
     setTimeout(function () { el('au-email').focus(); }, 50);
   }
   function closeAuth() { el('authModal').classList.remove('show'); }
@@ -1029,25 +2471,85 @@ tr.orow:hover{background:var(--brand-bg)}
       if (!r.success) { msg.className = 'msg err'; msg.textContent = r.message || '操作失败'; return; }
       state.token = r.data.token; state.customer = r.data.customer;
       localStorage.setItem('kc_site_customer_token', state.token);
-      setMe(); closeAuth(); toast(state.authMode === 'login' ? '登录成功' : '注册成功');
+      setMe(); syncWalletChip(); closeAuth();
+      if (r.data && r.data.must_change_password) { openForcedPwd(); return; }
+      toast(state.authMode === 'login' ? '登录成功' : '注册成功');
       if (state.detail) go('detail'); else openCategory(state.mode);
     }).catch(function () { msg.className = 'msg err'; msg.textContent = '网络异常，请重试'; });
   }
 
+  // v2.5.0 批次3：强制首改（临时密码登录后）
+  function openForcedPwd() {
+    el('fp-current').value = ''; el('fp-new').value = ''; el('fp-confirm').value = '';
+    var m = el('fp-msg'); m.className = 'msg'; m.textContent = '';
+    el('fpModal').classList.add('show');
+  }
+  function submitForcedPwd() {
+    var cur = el('fp-current').value, nw = el('fp-new').value, cf = el('fp-confirm').value;
+    var m = el('fp-msg'); m.className = 'msg';
+    if (!cur || !nw) { m.className = 'msg err'; m.textContent = '请填写原密码与新密码'; return; }
+    if (nw.length < 8 || !/[A-Za-z]/.test(nw) || !/[0-9]/.test(nw)) { m.className = 'msg err'; m.textContent = '新密码至少 8 位，且需同时包含字母与数字'; return; }
+    if (nw !== cf) { m.className = 'msg err'; m.textContent = '两次输入的新密码不一致'; return; }
+    m.textContent = '请稍候…';
+    api('/api/tenant/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } }).then(function (r) {
+      if (!r.success) { m.className = 'msg err'; m.textContent = r.message || '修改失败'; return; }
+      el('fpModal').classList.remove('show');
+      clearSession();
+      toast('密码已修改，请重新登录');
+      go('home');
+      openAuth('login');
+    }).catch(function () { m.className = 'msg err'; m.textContent = '网络异常，请重试'; });
+  }
+  window.openForcedPwd = openForcedPwd;
+  window.submitForcedPwd = submitForcedPwd;
+
   function logout() { clearSession(); toast('已退出'); go('home'); }
 
-  // ── 兑卡 / 开通（Stage 3.2）──
-  var rdSocket = null, rdReconnect = null, rdActiveJob = '', rdDone = false;
+  // ── v2.15.0：代充 5 步向导（① 登录 → ② 获取 Session → ③ 提交 Session → ④ 支付 → ⑤ 完成）──
+  // 代充商城详情页与「兑换卡密」页共用同一向导；兑换无需登录本平台账号（凭卡密即凭据）。
+  // 铁律：Session 只存在于浏览器内存，不写入任何存储、不落库。
+  var SESSION_GET_URL = 'https://chatgpt.com/api/auth/session';
+  var wizNames = {
+    topup: ['登录 ChatGPT', '获取 Session', '提交 Session', '支付', '完成'],
+    redeem: ['登录 ChatGPT', '获取 Session', '提交 Session', '完成']
+  };
+  function wizFresh() {
+    return {
+      step: 1, session: '', email: '', cdk: '', orderId: '', amount: null, balBefore: null, balAfter: null,
+      done: false, failed: false, busy: false, note: '', noteCls: '', pct: null, fromOrder: false,
+      // v2.16.0 批量：accts=解析出的账号清单（含 Session 片段，仅内存）· bill=账单预览 · items=逐账号进度
+      accts: [], rest: '', bill: null, items: [], batchNo: '', submitting: false, watchdog: null,
+      useEnt: true   // v2.19.0：本次是否使用权益（默认开），可在账单页切换
+    };
+  }
+  var wizState = { topup: wizFresh(), redeem: wizFresh() };
+  var rdSocket = null, rdReconnect = null, rdActiveJob = '', rdActiveMode = '', rdDone = false;
 
-  function rdMsg1(text, cls) { var m = el('rd-msg1'); m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
-  function rdMsg2(text, cls) { var m = el('rd-msg2'); m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
-  function rdShowProgress() { el('rd-progress').classList.remove('hidden'); }
-  function rdSetProgress(pct, text, isErr) {
-    var bar = el('rd-bar');
-    bar.classList.toggle('err', !!isErr);
-    var max = isErr ? 100 : 99;
-    bar.style.width = Math.max(2, Math.min(max, Number(pct) || 0)) + '%';
-    el('rd-status').textContent = text || '';
+  function rdMsg1(text, cls) { var m = el('rd-msg1'); if (m) { m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; } }
+  function wizEl(mode) { return el(mode === 'redeem' ? 'rd-wiz' : 'd-sessionWrap'); }
+  function wizMsg(mode, text, cls) {
+    var m = el('wiz-msg-' + mode);
+    if (m) { m.className = 'msg' + (cls ? ' ' + cls : ''); m.textContent = text || ''; }
+  }
+  // 需要跨「重渲染」保留的提示（账单 / 下单类）：写入 state，模板重建时即可还原
+  function wizNote(mode, text, cls) {
+    var s = wizState[mode];
+    s.note = text || '';
+    s.noteCls = cls || '';
+    wizMsg(mode, s.note, cls);
+  }
+  function wizCdkValue(mode) {
+    var s = wizState[mode] || {};
+    return String(s.cdk || (el('rd-cdk') || {}).value || '').trim();
+  }
+  function wizSetProgress(mode, pct, text, isErr) {
+    var s = wizState[mode];
+    s.note = text || '';
+    s.pct = Number(pct) || 0;
+    if (isErr) s.failed = true;
+    var bar = el('wiz-bar-' + mode), st = el('wiz-status-' + mode);
+    if (bar) { bar.classList.toggle('err', !!isErr); var max = isErr ? 100 : 99; bar.style.width = Math.max(2, Math.min(max, s.pct)) + '%'; }
+    if (st) st.textContent = text || '';
   }
 
   function rdDecode(part) {
@@ -1082,18 +2584,832 @@ tr.orow:hover{background:var(--brand-bg)}
     try { var d = JSON.parse(c); if (d && (d.accessToken || d.access_token || d.user)) return d; } catch (e) {}
     return null;
   }
+  // 校验反馈一律给「用户下一步能做什么」的指引，不暴露缺少 accessToken 等技术措辞
+  function wizTokenHint(raw) {
+    var m = String(raw || '');
+    if (/过期/.test(m)) return '这串内容已过期：请重新登录 chatgpt.com，刷新 chatgpt.com/api/auth/session 后重新复制整页内容。';
+    if (/权限/.test(m)) return '这个账号的凭证权限不足：请换一个已开通的 ChatGPT 账号登录后重试。';
+    return '这段内容无法识别为 ChatGPT 的 Session：请回到上一步，在已登录的 chatgpt.com 页面复制整页 JSON。';
+  }
+  // v2.19.x：直接代充向导 —— 从 Session 读取「当前套餐」，并与商品「目标套餐」比较
+  function rdPlanKeyOfToken(token) {
+    var v = String(token || '').trim();
+    var parts = v.split('.');
+    if (parts.length !== 3 || !parts[1]) return '';
+    try {
+      var pl = rdDecode(parts[1]);
+      var auth = pl['https://api.openai.com/auth'] || {};
+      return String(auth.chatgpt_plan_type || '').trim().toLowerCase();
+    } catch (e) { return ''; }
+  }
+  function rdPlanLabel(key) {
+    var k = String(key || '').toLowerCase();
+    var m = { free: '免费版', go: 'Go', plus: 'Plus', pro: 'Pro', team: 'Team', enterprise: 'Enterprise' };
+    return m[k] || (k ? k : '');
+  }
+  // 套餐层级：free/go=0、plus=1、pro/pro_5x/pro_20x/team=2；未知=-1
+  function wizTier(key) {
+    var k = String(key || '').toLowerCase();
+    if (!k) return -1;
+    if (k === 'free' || k === 'go') return 0;
+    if (k === 'plus') return 1;
+    if (k === 'pro' || k === 'pro_5x' || k === 'pro_20x' || k === 'pro_50x' || k === 'team' || k === 'enterprise') return 2;
+    return -1;
+  }
   function rdCheckSession(raw) {
     var c = String(raw || '').trim();
-    if (!c) return { valid: false, session: '', message: '请粘贴完整 Session JSON' };
+    if (!c) return { valid: false, session: '', message: '还没有粘贴内容：请回到上一步，打开 chatgpt.com/api/auth/session 复制整页 JSON 后再粘贴。' };
     var s = rdParseSession(c);
-    if (!s) return { valid: false, session: '', message: '请粘贴完整 Session JSON（从 chatgpt.com/api/auth/session 复制，不要只粘贴 accessToken）' };
+    if (!s) return { valid: false, session: '', message: '这段内容不是完整的 Session JSON：请打开 chatgpt.com/api/auth/session，按 Ctrl+A 全选整页后复制，再回到本页粘贴。' };
     var token = String(s.accessToken || s.access_token || '').trim();
-    if (!token) return { valid: false, session: c, message: 'Session JSON 中缺少 accessToken 字段' };
+    if (!token) return { valid: false, session: c, message: '这段 JSON 里找不到登录凭证：请确认复制的是整页内容，不要只复制其中一小段。' };
     var tr = rdValidateToken(token);
-    if (!tr.valid) return { valid: false, session: c, message: tr.message };
-    return { valid: true, session: c, email: (s.user && s.user.email) ? s.user.email : tr.email };
+    if (!tr.valid) return { valid: false, session: c, message: wizTokenHint(tr.message) };
+    return { valid: true, session: c, email: (s.user && s.user.email) ? s.user.email : tr.email, planType: rdPlanKeyOfToken(token) };
   }
 
+  // ── 向导渲染 ──
+  function wizRender(mode) {
+    var host = wizEl(mode); if (!host) return;
+    var s = wizState[mode];
+    var names = wizNames[mode];
+    var n = names.length;
+    var bar = names.map(function (t, i) {
+      var no = i + 1, cls = s.step > no ? 'done' : (s.step === no ? 'on' : '');
+      return '<span class="ws ' + cls + '"><i>' + no + '</i>' + esc(t) + '</span>';
+    }).join('');
+    host.innerHTML = '<div class="wiz-top"><div class="wiz-steps">' + bar + '</div><div class="wiz-count">步骤 ' + s.step + ' / ' + n + '</div></div>' + wizBody(mode);
+    var ta = el('wiz-sess-' + mode);
+    if (ta) ta.value = s.session || '';
+    host.classList.remove('hidden');
+    var pbar = el('wiz-bar-' + mode);
+    if (pbar) {
+      var max = s.done ? 100 : 99;
+      pbar.style.width = s.done ? '100%' : (s.pct == null ? '0' : Math.max(2, Math.min(max, s.pct)) + '%');
+      pbar.classList.toggle('err', !!s.failed && !s.done);
+    }
+    var nm = el('wiz-msg-' + mode);
+    if (nm && s.noteCls) nm.className = 'msg ' + s.noteCls;
+    // v2.16.0 批量：第 3 步账号清单 / 第 5 步逐账号进度需要按状态重绘
+    if (mode === 'topup' && s.step === 3) wizAcctsRender();
+    if (mode === 'topup' && s.step === 5) wizBatchRender();
+  }
+
+  function wizBody(mode) {
+    var s = wizState[mode];
+    if (s.step === 1) return wizStepLogin(mode);
+    if (s.step === 2) return wizStepGetSession(mode);
+    if (s.step === 3) return wizStepSubmitSession(mode);
+    if (s.step === 4) return mode === 'redeem' ? wizStepDone(mode) : wizStepPay(mode);
+    return wizStepDone(mode);
+  }
+
+  // v2.16.2：第 ① 步 = 「一句说明 + 一个主按钮 + 一行安全提示」（原伪浏览器大框已退役 ——
+  // 它占了整步 42% 的高度却只承载两行信息，是「丑」与「不均衡」的主因）
+  function wizStepLogin(mode) {
+    var s = wizState[mode];
+    var note = s.fromOrder ? '<div class="wiz-note">已关联你的代充订单，无需在本页输入卡密。</div>' : '';
+    return '<h3 class="wiz-h">登录你要充值的 ChatGPT 账号</h3>' +
+      '<div class="wiz-row"><div class="t">在浏览器<b>新标签页</b>打开 chatgpt.com 并登录要充值的账号，完成后回到本页继续。</div>' +
+      '<a class="btn primary" href="https://chatgpt.com" target="_blank" rel="noopener noreferrer">打开 ChatGPT ↗</a></div>' +
+      '<div class="wiz-note">🔒 请勿在本页面输入账号密码或验证码。</div>' + note +
+      '<div class="wiz-help"><button class="btn link" onclick="openHelp(\'kb\')">操作过程中遇到问题？▸ 查看视频教程</button></div>' +
+      '<div class="wiz-acts"><button class="btn ghost" onclick="backToCatalog()">返回代充商城</button>' +
+      '<button class="btn primary" onclick="wizNextStep(\'' + mode + '\')">我已登录，下一步</button></div>';
+  }
+
+  // v2.16.2：第 ② 步把地址从 ol 里提出来做独立「地址 + 复制」栏，指引压成 2 条 —— 纵向更省、一眼看到地址
+  function wizStepGetSession(mode) {
+    var batchNote = mode === 'redeem' ? ''
+      : '<div class="wiz-note">要给多个账号充值？每个账号各自登录一次、各取一份 Session —— 下一页可以一次粘贴多份。</div>';
+    return '<h3 class="wiz-h">获取 Session</h3>' +
+      '<p class="wiz-p">Session 是你已登录账号的凭证，只用于本次开通，不保存到任何地方。</p>' + batchNote +
+      '<div class="wiz-urlbar"><code>' + SESSION_GET_URL + '</code><button class="btn sm" onclick="wizCopyUrl()">复制地址</button></div>' +
+      '<ol class="wiz-ol">' +
+      '<li>在新标签页打开上面的地址，页面会显示一整段 JSON（以 <b>{</b> 开头）。</li>' +
+      '<li>点一下页面 → <b>Ctrl+A</b> 全选 → <b>Ctrl+C</b> 复制，然后回到本页粘贴。</li>' +
+      '</ol>' +
+      '<div class="wiz-acts"><button class="btn" onclick="wizGo(\'' + mode + '\',1)">上一步</button>' +
+      '<button class="btn primary" onclick="wizGo(\'' + mode + '\',3)">我已复制，下一步</button></div>';
+  }
+
+  // 第 3 步：代充 = 账号清单工作台（同一个框既收 1 段、也收 N 段 Session）；兑换 = 维持单份提交
+  function wizStepSubmitSession(mode) {
+    if (mode === 'redeem') {
+      return '<h3 class="wiz-h">提交 Session</h3>' +
+        '<p class="wiz-p">把刚才复制的整段 JSON 粘贴到下面，粘贴后会自动校验。</p>' +
+        '<div class="field"><textarea id="wiz-sess-' + mode + '" oninput="wizInput(\'' + mode + '\')" placeholder="粘贴整段 Session JSON（以 { 开头）"></textarea></div>' +
+        '<div class="msg" id="wiz-msg-' + mode + '">' + esc(wizState[mode].note || '') + '</div>' +
+        '<div class="wiz-acts"><button class="btn" onclick="wizGo(\'' + mode + '\',2)">上一步</button>' +
+        '<button class="btn primary" onclick="wizNext(\'' + mode + '\')">下一步：开始开通</button></div>';
+    }
+    return '<h3 class="wiz-h">提交 Session</h3>' +
+      '<p class="wiz-p">把要充值的账号的整段 Session JSON 粘贴到下面：<b>一个账号粘一段，多个账号就一次粘多段</b>（每行一段）。粘贴后自动解析成账号清单。</p>' +
+      '<div class="field"><textarea id="wiz-sess-topup" rows="7" oninput="wizInput(\'topup\')" placeholder="粘贴 1 段或多段 Session JSON（每段以 { 开头）"></textarea></div>' +
+      '<div class="msg" id="wiz-msg-topup">' + esc(wizState.topup.note || '') + '</div>' +
+      '<div id="wiz-acct"></div>' +
+      '<div class="wiz-acts"><button class="btn" onclick="wizGo(\'topup\',2)">上一步</button>' +
+      '<button class="btn primary" id="wiz-next-btn" onclick="wizNext(\'topup\')">确认并继续</button></div>';
+  }
+
+  // 第 4 步：账单确认（清单摘要 + 权益抵扣 + 余额；不足可去充值，到账后金额自动刷新、清单不丢）
+  function wizStepPay(mode) {
+    var s = wizState[mode];
+    var it = state.detail || {};
+    var sel = wizSelected('topup');
+    var b = s.bill;
+    var emails = sel.map(function (a) { return a.email || '（未识别邮箱）'; });
+    var shown = emails.length > 3 ? emails.slice(0, 3).join('、') + ' 等 ' + emails.length + ' 个账号' : emails.join('、');
+    var kv = '<div class="wiz-kv"><span class="k">充值账号</span><span class="v">' + esc(shown) + '</span></div>' +
+      '<div class="wiz-kv"><span class="k">账号数量</span><span class="v">' + sel.length + ' 个</span></div>' +
+      '<div class="wiz-kv"><span class="k">商品</span><span class="v">' + esc(it.name || '代充商品') + '</span></div>';
+    if (!b) {
+      kv += '<div class="wiz-kv"><span class="k">应付金额</span><span class="v">核对中…</span></div>';
+    } else {
+      if (!b.entitlement_uses) {
+        kv += '<div class="wiz-kv"><span class="k">单价</span><span class="v">' + money(b.unit_price) + ' × ' + b.count + '</span></div>';
+      } else if (b.entitlement_uses >= b.count) {
+        kv += '<div class="wiz-kv"><span class="k">单价</span><span class="v">' + money(b.entitlement_unit_price) + ' <span class="was">' + money(b.unit_price) + '</span></span></div>';
+      } else {
+        kv += '<div class="wiz-kv"><span class="k">单价</span><span class="v">' + esc(b.entitlement_uses + ' 个按权益价 ' + money(b.entitlement_unit_price) + ' · 其余 ' + money(b.unit_price)) + '</span></div>';
+      }
+      if (b.entitlement_uses) {
+        kv += '<div class="wiz-kv"><span class="k">权益抵扣</span><span class="v"><span class="save">用 ' + b.entitlement_uses + ' 次权益 · 省 ' + money(b.entitlement_discount) + '</span></span></div>';
+      }
+      if (b.entitlement_available) {
+        var saveIf = money(b.entitlement_discount_if_used != null ? b.entitlement_discount_if_used : b.entitlement_discount);
+        kv += '<div class="wiz-kv"><span class="k">本次使用权益</span><span class="v">' +
+          '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">' +
+          '<input type="checkbox" ' + (s.useEnt ? 'checked' : '') + ' onchange="wizToggleEnt(this.checked)">' +
+          '<span>' + esc(s.useEnt ? ('使用 · 用 ' + (b.entitlement_uses || 0) + ' 次权益 · 省 ' + saveIf) : ('不使用 · 保留 ' + (b.entitlement_uses || 0) + ' 次权益，按原价结算')) + '</span></label></span></div>';
+      }
+      kv += '<div class="wiz-kv"><span class="k">应付总额</span><span class="v wiz-amt">' + money(b.total) + '</span></div>' +
+        (Number(b.upgrade_count) > 0 ? '<div class="wiz-kv"><span class="k">其中升级费用</span><span class="v">' + b.upgrade_count + ' 个账号按升级报价结算 · 共 ' + money(b.upgrade_total) + '</span></div>' : '') +
+        '<div class="wiz-kv"><span class="k">当前余额</span><span class="v" id="wiz-bill-bal">' + money(b.balance) + '</span></div>';
+      if (b.shortfall_cents > 0) kv += '<div class="wiz-kv"><span class="k">还差</span><span class="v wiz-over" id="wiz-bill-gap">' + money(b.shortfall) + '</span></div>';
+    }
+    var short = !b || b.shortfall_cents > 0;
+    // v2.20.x · 升级为「预估价」显著提醒（用户拍板放第 4 步账单）：
+    //   升级金额按 Zovo 升级报价 + 实时汇率折算 → 下单先按该金额冻结；开通完成后按上游实际扣款金额结算，多退、少补不追。
+    var upNote = (b && Number(b.upgrade_count) > 0)
+      ? '<div class="notice" style="margin-top:12px"><div>' +
+        '<b>升级费用为预估价（先冻结，开通完成后才按实付结算）</b>' +
+        '<div style="font-size:12px;margin-top:5px">本次升级金额按 Zovo 升级报价与实时汇率折算，下单先按该金额<b>冻结</b>；开通完成后按上游<b>实际扣款金额</b>结算，<b>多退、少补不追</b>。</div>' +
+        (b.upgrade_fx_stale ? '<div style="font-size:12px;margin-top:5px">⚠️ 汇率服务当前不可达，本次预估基于最近一次汇率快照（非实时），可能与实际略有偏差。</div>' : '') +
+        '</div></div>'
+      : '';
+    var warn = (b && b.shortfall_cents > 0)
+      ? '<div class="notice red" style="margin-top:12px"><b>余额不足，还差 ' + money(b.shortfall) + '</b>' +
+        '<div style="font-size:12px;margin-top:5px">充值到账后金额会自动刷新，无需重新提交账号。</div>' +
+        '<button class="btn primary sm" style="margin-top:9px" onclick="openRecharge(' + b.shortfall_cents + ')">立即充值</button></div>'
+      : '';
+    return '<h3 class="wiz-h">确认账单</h3>' +
+      '<p class="wiz-p">本次将为 ' + sel.length + ' 个账号分别开通：每个账号独立一单、独立结算，部分失败不影响其余账号。</p>' +
+      kv + upNote + warn +
+      '<div class="msg" id="wiz-msg-topup">' + esc(s.note || '') + '</div>' +
+      '<div class="wiz-acts"><button class="btn" onclick="wizGo(\'topup\',3)">上一步</button>' +
+      '<button class="btn primary" id="wiz-pay-btn"' + (short ? ' disabled' : '') + ' onclick="wizPay()">确认支付并开通</button></div>';
+  }
+
+  function wizStepDone(mode) {
+    if (mode === 'topup') return wizStepBatchDone();
+    var s = wizState[mode];
+    var head;
+    if (s.done) {
+      head = '<div class="wiz-done-ic">✓</div><h3 class="wiz-h" style="text-align:center">已开通</h3>' +
+        '<p class="wiz-p" style="text-align:center">权益已直接开通到你的 ChatGPT 账号，无需任何额外操作。</p>';
+    } else if (s.failed) {
+      head = '<h3 class="wiz-h">开通未成功</h3><p class="wiz-p">请更换 ChatGPT 账号的 Session 后重试。</p>';
+    } else {
+      head = '<h3 class="wiz-h">开通中…</h3><p class="wiz-p">系统正在为你开通，请勿关闭本页。</p>';
+    }
+    var kv = '';
+    if (s.orderId) kv += '<div class="wiz-kv"><span class="k">订单号</span><span class="v"><span class="cdk">' + esc(s.orderId) + '</span></span></div>';
+    var acts = '<button class="btn ghost" onclick="backToCatalog()">返回代充商城</button>' +
+      '<button class="btn" onclick="wizResetRedeem()">再兑换一张</button>';
+    return head +
+      '<div class="rd-track"><div class="rd-bar" id="wiz-bar-' + mode + '"></div></div>' +
+      '<div class="rd-status" id="wiz-status-' + mode + '">' + esc(s.note || (s.done ? '开通成功' : s.failed ? '开通失败' : '正在开通…')) + '</div>' +
+      (kv ? '<div style="margin-top:12px">' + kv + '</div>' : '') +
+      '<div class="wiz-acts">' + acts + '</div>';
+  }
+
+  // ── v2.16.0 批量代充：Session 解析 / 账号清单 / 账单 / 逐账号进度 ──
+  // 把 textarea 内容切成「一段段 Session JSON」：按大括号配平切分（字符串内的括号不计），
+  // 故「一行一段」与「整段 JSON 跨多行、一次粘多份」都能识别；切不出来的尾巴用于提示无效内容。
+  function wizSplitBlobs(text) {
+    var s = String(text || ''), blobs = [], segs = [], depth = 0, start = -1, inStr = false, escq = false, i;
+    for (i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (inStr) {
+        if (escq) escq = false;
+        else if (c === '\\') escq = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') { inStr = true; continue; }
+      if (c === '{') { if (depth === 0) start = i; depth += 1; continue; }
+      if (c === '}') {
+        depth -= 1;
+        if (depth <= 0) {
+          depth = 0;
+          if (start >= 0) { blobs.push(s.slice(start, i + 1)); segs.push([start, i + 1]); start = -1; }
+        }
+      }
+    }
+    var rest = '', cur = 0;
+    for (i = 0; i < segs.length; i++) { rest += s.slice(cur, segs[i][0]); cur = segs[i][1]; }
+    rest += s.slice(cur);
+    return { blobs: blobs, rest: rest };
+  }
+
+  function wizParseAccounts(mode) {
+    var s = wizState[mode];
+    var sp = wizSplitBlobs(s.session);
+    var seen = {}, out = [];
+    var targetKey = String((state.detail && state.detail.plan_key) || '');
+    var targetLabel = String((state.detail && state.detail.plan_label) || (state.detail && state.detail.name) || '');
+    var tt = wizTier(targetKey);
+    sp.blobs.forEach(function (b) {
+      var chk = rdCheckSession(b);
+      var key = chk.valid ? String(chk.email || '').toLowerCase() : '';
+      var a = { raw: b, valid: !!chk.valid, email: chk.email || '', message: chk.valid ? '' : chk.message, on: !!chk.valid, dup: false, cur: '', curLabel: '', target: targetKey, targetLabel: targetLabel, same: false, blocked: false };
+      if (chk.valid) {
+        var cur = String(chk.planType || '').toLowerCase();
+        var ct = wizTier(cur);
+        a.cur = cur; a.curLabel = rdPlanLabel(cur);
+        a.same = (ct >= 0 && tt >= 0 && ct === tt);
+        // 当前套餐 ≥ 目标套餐（同级=已开通；更高=降级）→ 不可办理（提示等会员到期）
+        a.blocked = (ct > 0 && tt >= 0 && ct >= tt);
+        if (a.blocked) { a.on = false; a.message = a.same ? '当前已是该套餐，请等会员到期后再充值' : '暂不支持降级充值'; }
+        // 升级候选（当前有套餐且目标更高）→ 第 4 步向其取 Zovo 升级报价（差额计价）
+        a.candidate = (a.valid && !a.blocked && ct > 0 && tt > ct);
+      }
+      if (chk.valid && key && seen[key]) {
+        a.valid = false; a.on = false; a.dup = true; a.message = '与上一条是同一个账号，已自动去重';
+      } else if (chk.valid && key) { seen[key] = true; }
+      out.push(a);
+    });
+    var restLines = sp.rest.split('\n').filter(function (l) { return !!l.trim(); }).length;
+    s.rest = restLines ? sp.rest : '';
+    if (out.length > 100) {
+      out.slice(100).forEach(function (a) { a.valid = false; a.on = false; a.message = '一次最多 100 个账号，请分批提交'; });
+    }
+    s.accts = out;
+    return out;
+  }
+
+  function wizSelected(mode) {
+    return (wizState[mode].accts || []).filter(function (a) { return a.valid && a.on; });
+  }
+
+  // v2.19.x：升级账号 map（key = 所选账号序号 1..n）——供账单预览与下单同源
+  function wizUpgradesMap() {
+    var up = {};
+    wizSelected('topup').forEach(function (a, i) {
+      if (a.upgrade && Number(a.upgrade.cents) > 0) up[String(i + 1)] = a.upgrade;
+    });
+    return up;
+  }
+  // 第 3 步 → 第 4 步：向 Zovo 取「升级候选」账号的升级报价（差额），其余走新购
+  function wizUpgradeCheck() {
+    var sel = wizSelected('topup');
+    var cands = sel.filter(function (a) { return a.candidate; });
+    if (!cands.length) { wizBillRefresh(false); return; }
+    var accounts = cands.map(function (a) { return { candidate: true, session: a.raw }; });
+    api('/api/tenant/topup/plan-check', { method: 'POST', body: { sku: (state.detail || {}).sku, accounts: accounts } }).then(function (r) {
+      if (r.success && Array.isArray(r.data)) {
+        r.data.forEach(function (row, i) {
+          var a = cands[i]; if (!a) return;
+          if (row.mode === 'upgrade' && Number(row.upgrade_cents) > 0) {
+            // v2.20.0：升级零售价 = Zovo 升级差额（按实时汇率折 USD）× (1 + 升级加价率)；
+            // 携带 exponent / markup_percent 供下单落库与「按实付金额结算」复用（金额均以 USD 分计）。
+            a.upgrade = {
+              cents: Number(row.upgrade_cents),
+              currency: row.upgrade_currency || row.currency || 'USD',
+              token: row.upgrade_token || '',
+              expires_at: row.upgrade_expires_at || '',
+              amount_minor: Number(row.upgrade_amount_minor) || 0,
+              exponent: Number(row.upgrade_exponent),
+              markup_percent: Number(row.upgrade_markup_percent) || 0,
+              usd_per_currency: Number(row.upgrade_usd_per_currency) || 0,
+              fx_stale: !!row.upgrade_fx_stale,
+              current_plan: row.current_plan || ''
+            };
+          } else if (row.mode === 'invalid') {
+            a.on = false; a.valid = false; a.blocked = true; a.same = false; a.message = row.message || 'Session 无效，请重新获取';
+          }
+        });
+        wizAcctsRender();
+      }
+      wizBillRefresh(false);
+    }).catch(function () { wizBillRefresh(false); });
+  }
+
+  function wizAcctsRender() {
+    var host = el('wiz-acct'); if (!host) return;
+    var s = wizState.topup, list = s.accts || [];
+    if (!list.length) { host.innerHTML = ''; return; }
+    var sel = wizSelected('topup').length;
+    var dup = list.filter(function (a) { return a.dup; }).length;
+    var rows = list.map(function (a, i) {
+      var box = '';
+      if (a.valid && !a.blocked) box = '<input type="checkbox"' + (a.on ? ' checked' : '') + ' onclick="wizAcctToggle(' + i + ')">';
+      else if (a.valid && a.blocked) box = '<input type="checkbox" disabled>';
+      var pill = !a.valid
+        ? '<span class="pill red">' + (a.dup ? '重复' : '无效') + '</span>'
+        : (a.blocked ? '<span class="pill red">' + (a.same ? '已同套餐' : '不可升级') + '</span>' : '<span class="pill ok">可办理</span>');
+      return '<tr class="' + ((a.valid && !a.blocked) ? '' : 'bad') + '">' +
+        '<td>' + box + '</td>' +
+        '<td class="em">' + (a.email ? esc(a.email) : '—') + '</td>' +
+        '<td>' + esc(a.curLabel || '—') + '</td>' +
+        '<td>' + esc(a.targetLabel || '—') + '</td>' +
+        '<td>' + pill + '</td>' +
+        '<td>' + ((a.valid && !a.blocked) ? '' : '<span class="mini">' + esc(a.message) + '</span>') + '</td>' +
+        '<td><button class="btn link" onclick="wizAcctRemove(' + i + ')">×</button></td>' +
+        '</tr>';
+    }).join('');
+    var restLines = s.rest ? s.rest.split('\n').filter(function (l) { return !!l.trim(); }).length : 0;
+    host.innerHTML =
+      '<div class="wiz-acctbar"><b>Session 解析结果</b><span class="mini">共 ' + list.length + ' 个账号 · ' + sel + ' 个可办理' + (dup ? ' · 自动去重 ' + dup + ' 个' : '') + '</span></div>' +
+      '<div class="wiz-acctacts"><button class="btn sm" onclick="wizAcctAll(1)">全选可办理</button>' +
+      '<button class="btn sm" onclick="wizAcctAll(0)">清空选择</button>' +
+      '<button class="btn sm" onclick="wizAcctClear()">清空清单</button></div>' +
+      '<div class="wiz-acctwrap"><table class="wiz-accttbl"><thead><tr><th></th><th>账号邮箱</th><th>当前套餐</th><th>目标套餐</th><th>状态</th><th>说明</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      (restLines ? '<div class="msg err">另有 ' + restLines + ' 行内容无法识别为 Session，已忽略。' + esc(wizTokenHint('')) + '</div>' : '') +
+      '<div class="msg ' + (sel ? 'ok' : '') + '" id="wiz-acct-sum">' + (sel ? '已勾选 ' + sel + ' 个账号，将按此数量出账单。' : '请至少勾选 1 个可办理的账号。') + '</div>';
+  }
+
+  function wizAcctToggle(i) {
+    var a = (wizState.topup.accts || [])[i];
+    if (!a || !a.valid || a.blocked) return;
+    a.on = !a.on;
+    wizAcctsRender();
+  }
+  function wizAcctAll(v) {
+    (wizState.topup.accts || []).forEach(function (a) { if (a.valid && !a.blocked) a.on = !!v; });
+    wizAcctsRender();
+  }
+  function wizAcctRemove(i) {
+    var s = wizState.topup, list = s.accts || [];
+    if (i < 0 || i >= list.length) return;
+    list.splice(i, 1);
+    s.session = list.map(function (a) { return a.raw; }).join('\n');
+    var ta = el('wiz-sess-topup'); if (ta) ta.value = s.session;
+    wizMsg('topup', '');
+    wizAcctsRender();
+  }
+  function wizAcctClear() {
+    var s = wizState.topup;
+    s.accts = []; s.rest = ''; s.session = '';
+    var ta = el('wiz-sess-topup'); if (ta) ta.value = '';
+    wizMsg('topup', '');
+    wizAcctsRender();
+  }
+
+  // 账单：与后端 /api/tenant/batch/preview 同源（无副作用），保证「账单展示价 = 结算价」
+  var wizBillTimer = null;
+  function wizBillPollStop() { if (wizBillTimer) { clearInterval(wizBillTimer); wizBillTimer = null; } }
+  function wizBillPollStart() {
+    wizBillPollStop();
+    wizBillTimer = setInterval(function () {
+      var s = wizState.topup;
+      // 只在「仍在账单页且账单未拿到 / 余额不足」时轮询：拿到充足余额的账单后即停，充值到账自动刷新
+      if (s.step !== 4 || (s.bill && s.bill.shortfall_cents <= 0)) { wizBillPollStop(); return; }
+      wizBillRefresh(true);
+    }, 5000);
+  }
+  function wizBillPaint() {
+    var b = wizState.topup.bill; if (!b) return;
+    var bal = el('wiz-bill-bal'), gap = el('wiz-bill-gap'), btn = el('wiz-pay-btn');
+    if (bal) bal.textContent = money(b.balance);
+    if (gap) gap.textContent = money(b.shortfall);
+    if (btn) btn.disabled = b.shortfall_cents > 0;
+  }
+  function wizToggleEnt(on) { wizState.topup.useEnt = !!on; wizBillRefresh(false); }
+  function wizBillRefresh(silent) {
+    var s = wizState.topup;
+    var n = wizSelected('topup').length;
+    if (!n) return;
+    if (!silent) wizMsg('topup', '正在核对账单…');
+    api('/api/tenant/batch/preview', { method: 'POST', body: { sku: (state.detail || {}).sku, count: n, use_entitlement: s.useEnt, upgrades: wizUpgradesMap() } }).then(function (r) {
+      if (!r.success) {
+        if (!silent) wizNote('topup', r.message || '账单核对失败', 'err');
+        return;
+      }
+      var prev = s.bill, d = r.data;
+      s.bill = d;
+      if (d.shortfall_cents <= 0 && s.noteCls === 'err') { s.note = ''; s.noteCls = ''; }
+      var changed = !prev || Number(prev.balance) !== Number(d.balance) ||
+        Number(prev.shortfall_cents) !== Number(d.shortfall_cents) || Number(prev.total) !== Number(d.total);
+      if (!silent || changed) wizRender('topup');
+      else wizBillPaint();
+    }).catch(function () { if (!silent) wizNote('topup', '网络异常，请重试', 'err'); });
+  }
+
+  // 第 5 步：逐账号进度（同一时间只启动一个开通任务，前一个结束后自动启动下一个）
+  function wizBatchTally() {
+    var list = wizState.topup.items || [];
+    var t = { total: list.length, done: 0, failed: 0, unstarted: 0, orderfail: 0, refund: 0 };
+    list.forEach(function (x) {
+      if (x.stage === 'done') t.done += 1;
+      else if (x.stage === 'failed') { t.failed += 1; t.refund += Number(x.unit || 0); }
+      else if (x.stage === 'unstarted') t.unstarted += 1;
+      else if (x.stage === 'orderfail') t.orderfail += 1;
+    });
+    t.settled = t.done + t.failed + t.unstarted + t.orderfail;
+    return t;
+  }
+  function wizBatchSumText(t) {
+    return '共 ' + t.total + ' 个 · 已开通 ' + t.done +
+      (t.failed ? ' · 失败 ' + t.failed : '') +
+      (t.unstarted ? ' · 未启动 ' + t.unstarted : '') +
+      (t.orderfail ? ' · 下单失败 ' + t.orderfail : '');
+  }
+
+  function wizStepBatchDone() {
+    var t = wizBatchTally();
+    var head;
+    if (!t.total) {
+      head = '<h3 class="wiz-h">没有可开通的账号</h3><p class="wiz-p">请返回上一步重新勾选账号。</p>';
+    } else if (t.settled < t.total) {
+      head = '<h3 class="wiz-h">批量开通中…</h3><p class="wiz-p">系统正在逐个为你的账号开通（同一时间处理一个），请勿关闭本页。</p>';
+    } else if (t.done === t.total) {
+      head = '<div class="wiz-done-ic">✓</div><h3 class="wiz-h" style="text-align:center">全部开通完成</h3>' +
+        '<p class="wiz-p" style="text-align:center">' + t.total + ' 个账号已全部开通，无需任何额外操作。</p>';
+    } else {
+      head = '<h3 class="wiz-h">批量开通已结束</h3><p class="wiz-p">' + wizBatchSumText(t) + '。</p>';
+    }
+    return head + '<div id="wiz-batch"></div>' +
+      '<div class="wiz-acts"><button class="btn ghost" onclick="backToCatalog()">返回代充商城</button>' +
+      '<button class="btn" onclick="go(\'orders\')">查看我的订单</button></div>';
+  }
+
+  function wizBatchRender() {
+    var host = el('wiz-batch'); if (!host) return;
+    var s = wizState.topup, list = s.items || [];
+    if (!list.length) { host.innerHTML = ''; return; }
+    var rows = list.map(function (x) {
+      var pill = '<span class="pill gray">排队中</span>';
+      if (x.stage === 'done') pill = '<span class="pill ok">已开通</span>';
+      else if (x.stage === 'failed') pill = '<span class="pill red">失败</span>';
+      else if (x.stage === 'unstarted') pill = '<span class="pill red">未启动</span>';
+      else if (x.stage === 'orderfail') pill = '<span class="pill red">下单失败</span>';
+      else if (x.stage === 'running') pill = '<span class="pill brand">开通中 ' + (x.pct || 0) + '%</span>';
+      else if (x.stage === 'starting') pill = '<span class="pill gray">启动中…</span>';
+      var note = x.error ? '<div style="font-size:11.5px;color:var(--red);margin-top:3px">' + esc(x.error) + '</div>' : '';
+      return '<tr><td>' + x.idx + '</td><td class="em">' + esc(x.email || '—') + '</td><td>' + pill + note + '</td></tr>';
+    }).join('');
+    var t = wizBatchTally();
+    var pct = Math.round(t.settled / t.total * 100);
+    var note2 = '';
+    // v2.17.0：直接代充为「先冻结、成功才扣款、失败即解冻」——失败账号的冻结金额会自动解冻回可用余额
+    if (t.failed) note2 += '<div class="wiz-sum">失败账号的冻结金额 ' + money(t.refund) + ' 会自动解冻回你的可用余额（周期对账，通常几分钟内到账）。</div>';
+    if (t.unstarted) note2 += '<div class="wiz-sum">未启动的账号金额仍冻结中，可在「我的订单」里继续开通；若长时间未启动将由系统自动解冻退回。</div>';
+    if (t.orderfail) note2 += '<div class="wiz-sum">下单失败的账号未扣费，可返回上一步重新提交。</div>';
+    host.innerHTML = '<div class="wiz-prog"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="wiz-sum">' + esc(wizBatchSumText(t)) + '</div>' + note2 +
+      '<div class="wiz-acctwrap" style="margin-top:8px"><table class="wiz-accttbl"><thead><tr><th>#</th><th>账号邮箱</th><th>状态</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  // 逐个启动开通（同一 CDK 一个任务；服务端并发上限默认 1 ⇒ 前一个结束后再启动下一个）
+  function wizBatchSubmit() {
+    var s = wizState.topup;
+    if (s.submitting) return;
+    var idx = -1, i;
+    for (i = 0; i < s.items.length; i++) { if (s.items[i].stage === 'queued') { idx = i; break; } }
+    if (idx < 0) {
+      if (s.items.some(function (x) { return x.stage === 'starting'; })) return;
+      wizRender('topup');
+      // 队列已空但有账号仍在开通中：定时重发订阅以拉取最新快照，避免漏掉结束消息
+      var running = s.items.filter(function (x) { return x.stage === 'running' && x.jobKey; });
+      clearTimeout(s.watchdog);
+      if (running.length) {
+        s.watchdog = setTimeout(function () {
+          var still = wizState.topup.items.filter(function (x) { return x.stage === 'running' && x.jobKey; });
+          if (!still.length) return;
+          still.forEach(function (x) { rdSendSub(x.jobKey); });
+          wizBatchSubmit();
+        }, 60000);
+      }
+      return;
+    }
+    var it = s.items[idx];
+    it.stage = 'starting';
+    s.submitting = true;
+    wizBatchRender();
+    api('/api/run-process', { method: 'POST', body: { session: it.session, cdk: it.cdk } }).then(function (r) {
+      s.submitting = false;
+      if (r.success && r.jobKey) {
+        it.stage = 'running'; it.jobKey = r.jobKey; it.pct = 0;
+        wizBatchSubscribe(it);
+      } else if (r.__status === 429) {
+        // 服务端并发上限：稍后自动重试（此时任务尚未启动，不会重复扣费）
+        it.retry = (it.retry || 0) + 1;
+        if (it.retry > 60) { it.stage = 'unstarted'; it.error = '系统繁忙，长时间未能启动开通'; }
+        else it.stage = 'queued';
+      } else {
+        it.retry = (it.retry || 0) + 1;
+        if (it.retry > 3) { it.stage = 'unstarted'; it.error = r.message || '未能启动开通'; }
+        else it.stage = 'queued';
+      }
+      wizBatchRender();
+      setTimeout(wizBatchSubmit, it.stage === 'queued' ? 3000 : 0);
+    }).catch(function () {
+      s.submitting = false;
+      it.retry = (it.retry || 0) + 1;
+      if (it.retry > 60) { it.stage = 'unstarted'; it.error = '网络中断，长时间未能启动开通'; }
+      else it.stage = 'queued';
+      wizBatchRender();
+      setTimeout(wizBatchSubmit, 3000);
+    });
+  }
+
+  // 批量任务进度：按 jobKey 路由到对应账号行（区别于单账号流程的 rdApply）
+  function wizBatchApply(data) {
+    var s = wizState.topup;
+    var key = String(data.jobKey || '');
+    var it = null, i;
+    for (i = 0; i < s.items.length; i++) { if (String(s.items[i].jobKey || '') === key) { it = s.items[i]; break; } }
+    if (!it) return;
+    var status = String(data.status || 'running');
+    var prog = Number(data.progress);
+    if (status === 'success') {
+      it.stage = 'done'; it.pct = 100; it.error = '';
+      delete wizBatchJobs[key];
+      wizRender('topup');
+      toast((it.email || '账号') + ' 已开通');
+      setTimeout(wizBatchSubmit, 1500);
+      return;
+    }
+    if (status === 'failed' || status === 'maintenance' || status === 'manual') {
+      it.stage = 'failed';
+      it.error = String(data.message || (status === 'maintenance' ? '系统维护中' : status === 'manual' ? '需要人工处理，请联系客服' : '开通失败'));
+      delete wizBatchJobs[key];
+      wizRender('topup');
+      setTimeout(wizBatchSubmit, 1500);
+      return;
+    }
+    it.stage = 'running';
+    it.pct = isFinite(prog) ? Math.max(0, Math.min(99, prog)) : (it.pct || 0);
+    wizBatchRender();
+  }
+
+  var wizBatchJobs = {};
+  function rdSendSub(jobKey) {
+    try { if (rdSocket && rdSocket.readyState === WebSocket.OPEN) rdSocket.send(JSON.stringify({ type: 'subscribe', jobKey: jobKey })); } catch (e) {}
+  }
+  function wizBatchSubscribe(it) {
+    if (!it || !it.jobKey) return;
+    wizBatchJobs[String(it.jobKey)] = it;
+    var ws = rdEnsureSocket();
+    if (ws && ws.readyState === WebSocket.OPEN) rdSendSub(it.jobKey);
+  }
+
+  // ── 向导交互 ──
+  function wizReset(mode, cdk, fromOrder) {
+    rdClose(); rdDone = false; rdActiveJob = ''; rdActiveMode = '';
+    wizState[mode] = wizFresh();
+    wizState[mode].cdk = String(cdk || '');
+    wizState[mode].fromOrder = !!fromOrder;
+    wizRender(mode);
+  }
+  function wizGo(mode, n) {
+    var s = wizState[mode];
+    var names = wizNames[mode];
+    if (n < 1 || n > names.length) return;
+    if (n >= 4 && s.done) s.done = false;
+    s.failed = false; s.pct = null; s.note = '';
+    s.step = n;
+    wizRender(mode);
+    if (mode === 'topup' && n === 4) { wizBillRefresh(false); wizBillPollStart(); }
+    if (mode === 'topup' && n !== 4) wizBillPollStop();
+  }
+  function wizNextStep(mode) {
+    if (mode === 'redeem') { wizAdvanceRedeem(); return; }
+    wizGo(mode, 2);
+  }
+  // 第 3 步输入：代充按「账号清单」解析（1 段 / N 段同一个框）；兑换维持单份校验
+  function wizInput(mode) {
+    var s = wizState[mode];
+    s.session = String((el('wiz-sess-' + mode) || {}).value || '');
+    if (mode === 'topup') {
+      if (!s.session.trim()) { wizParseAccounts(mode); wizMsg(mode, ''); wizAcctsRender(); return; }
+      var list = wizParseAccounts(mode);
+      var sel = wizSelected(mode).length;
+      var bad = list.length - list.filter(function (a) { return a.valid; }).length;
+      if (!list.length) wizMsg(mode, wizTokenHint(''), 'err');
+      else if (sel) wizMsg(mode, '已解析 ' + list.length + ' 段 Session：' + sel + ' 个可办理' + (bad ? '，' + bad + ' 个无效' : '') + '。', 'ok');
+      else wizMsg(mode, '解析到 ' + list.length + ' 段内容，但没有可办理的账号：请检查是否为完整 Session JSON。', 'err');
+      wizAcctsRender();
+      return;
+    }
+    if (!s.session.trim()) { wizMsg(mode, ''); s.email = ''; return; }
+    var chk = rdCheckSession(s.session);
+    if (chk.valid) { s.email = chk.email || ''; wizMsg(mode, '校验通过 ✓' + (chk.email ? '（' + chk.email + '）' : ''), 'ok'); }
+    else { s.email = ''; wizMsg(mode, chk.message, 'err'); }
+  }
+  function wizNext(mode) {
+    var s = wizState[mode];
+    if (mode === 'topup') {
+      if (!s.session) s.session = String((el('wiz-sess-topup') || {}).value || '');
+      s.session = String(s.session || '');
+      var list = wizParseAccounts('topup');
+      var sel = wizSelected('topup');
+      wizAcctsRender();
+      if (!list.length) { wizMsg('topup', wizTokenHint(''), 'err'); return; }
+      if (!sel.length) {
+        wizMsg('topup', '请至少勾选 1 个可办理的账号（无效项与重复项无法办理）。', 'err');
+        return;
+      }
+      wizGo('topup', 4);
+      wizUpgradeCheck();
+      return;
+    }
+    if (!s.session) s.session = String((el('wiz-sess-' + mode) || {}).value || '');
+    var chk = rdCheckSession(s.session);
+    if (!chk.valid) { s.step = 3; wizRender(mode); wizMsg(mode, chk.message, 'err'); return; }
+    s.email = chk.email || '';
+    wizStartRedeem();
+  }
+  function wizCopyUrl() {
+    copyText(SESSION_GET_URL, null);
+    toast('地址已复制');
+  }
+
+  // 兑换：卡密校验（匿名，凭卡密）通过后进入向导第 1 步
+  function wizAdvanceRedeem() {
+    var cdk = wizCdkValue('redeem');
+    if (!cdk) {
+      rdMsg1('请先填写卡密', 'err');
+      var f = el('rd-cdk'); if (f) { try { f.focus(); } catch (e) {} }
+      return;
+    }
+    rdMsg1('验证中…');
+    api('/api/verify-cdk', { method: 'POST', body: { cdk: cdk } }).then(function (r) {
+      if (!r.success) { el('rd-step1').classList.remove('hidden'); rdMsg1(r.message || '卡密无效或已使用', 'err'); return; }
+      var d = r.data || {};
+      rdMsg1('卡密有效 · 开通套餐：' + (d.plan_label || 'ChatGPT Plus'), 'ok');
+      wizState.redeem.cdk = cdk;
+      wizGo('redeem', 2);
+    }).catch(function () { el('rd-step1').classList.remove('hidden'); rdMsg1('网络异常，请重试', 'err'); });
+  }
+
+  // 兑换：提交 Session 后 → 校验卡密 → 提交开通（匿名）
+  function wizStartRedeem() {
+    var s = wizState.redeem;
+    if (s.busy) return;
+    var cdk = wizCdkValue('redeem');
+    if (!cdk) { rdMsg1('请先填写卡密', 'err'); wizMsg('redeem', '请先在上方填写卡密', 'err'); return; }
+    s.busy = true;
+    s.cdk = cdk;
+    s.step = 4; wizRender('redeem');
+    wizSetProgress('redeem', 3, '正在校验卡密…');
+    api('/api/verify-cdk', { method: 'POST', body: { cdk: cdk } }).then(function (r) {
+      if (!r.success) { s.busy = false; wizSetProgress('redeem', 1, r.message || '卡密无效或已使用', true); return; }
+      var d = r.data || {};
+      s.busy = false;
+      if (d.status === 'processing' && d.jobKey) { wizSetProgress('redeem', 3, '正在恢复开通进度…'); rdSubscribe('redeem', d.jobKey); return; }
+      wizSetProgress('redeem', 5, '卡密有效（' + (d.plan_label || 'ChatGPT Plus') + '），正在提交开通…');
+      wizStartActivation('redeem');
+    }).catch(function () { s.busy = false; wizSetProgress('redeem', 1, '网络异常，请重试', true); });
+  }
+
+  // 代充：确认支付 → 按账单批量下单（每账号一单）→ 逐账号启动开通（内部卡密仅作任务引用，不展示）
+  function wizPay() {
+    var s = wizState.topup;
+    var it = state.detail || {};
+    if (s.busy) return;
+    if (!state.customer) { openAuth('login'); return; }
+    var sel = wizSelected('topup');
+    if (!sel.length) { wizNote('topup', '请先在上一步勾选要充值的账号。', 'err'); return; }
+    if (s.bill && s.bill.shortfall_cents > 0) {
+      wizNote('topup', '余额不足，还差 ' + money(s.bill.shortfall) + '：请先充值，到账后金额会自动刷新，无需重新提交账号。', 'err');
+      return;
+    }
+    s.busy = true;
+    var btn = el('wiz-pay-btn'); if (btn) btn.disabled = true;
+    wizNote('topup', '正在按账单下单…', '');
+    var batchNo = 'siteb_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+    s.batchNo = batchNo;
+    api('/api/tenant/orders/batch', { method: 'POST', body: { sku: it.sku, count: sel.length, client_order_no_prefix: batchNo, use_entitlement: s.useEnt, upgrades: wizUpgradesMap() } }).then(function (o) {
+      s.busy = false;
+      if (!o.success) {
+        if (o.__status === 401) { clearSession(); wizNote('topup', '登录已过期，请重新登录', 'err'); openAuth('login'); if (btn) btn.disabled = false; return; }
+        if (o.code === 'INSUFFICIENT_BALANCE') {
+          var d = o.data || {};
+          wizNote('topup', '余额不足，还差 ' + money(d.shortfall != null ? d.shortfall : 0) + '。充值到账后金额会自动刷新，无需重新提交账号。', 'err');
+          wizBillRefresh(true);
+          wizBillPollStart();
+          return;
+        }
+        wizNote('topup', o.message || '下单失败', 'err');
+        if (btn) btn.disabled = false;
+        return;
+      }
+      var res = (o.data && o.data.results) || [];
+      s.items = res.map(function (r, i) {
+        var a = sel[i] || {};
+        // v2.17.0 直接代充：下单成功即「冻结中」(status=created) 并返回内部卡密用于驱动开通
+        var ok = (r.status === 'created' || r.status === 'delivered') && !!r.cdk;
+        return {
+          idx: r.index, email: a.email || '', session: a.raw || '', unit: Number(r.unit_price) || 0,
+          order_id: r.order_id || '', cdk: r.cdk || '', pct: 0, jobKey: '', retry: 0,
+          stage: ok ? 'queued' : 'orderfail',
+          error: ok ? '' : (r.error || '未取得卡密')
+        };
+      });
+      s.amount = (o.data && o.data.total != null) ? Number(o.data.total) : null;
+      s.step = 5; s.note = ''; s.noteCls = '';
+      wizRender('topup');
+      wizBatchSubmit();
+    }).catch(function (e) {
+      s.busy = false;
+      wizNote('topup', (e && e.message) || '下单失败', 'err');
+      if (btn) btn.disabled = false;
+    });
+  }
+
+  function wizStartActivation(mode) {
+    var s = wizState[mode];
+    var cdk = wizCdkValue(mode);
+    var chk = rdCheckSession(s.session);
+    if (!cdk) { wizSetProgress(mode, 1, '缺少卡密，无法开通', true); return; }
+    if (!chk.valid) { wizSetProgress(mode, 1, chk.message || '请先提交有效的 Session', true); return; }
+    s.session = chk.session;
+    wizSetProgress(mode, 5, '正在启动开通…');
+    api('/api/run-process', { method: 'POST', body: { session: chk.session, cdk: cdk } }).then(function (r) {
+      if (r.success && r.jobKey) { wizSetProgress(mode, 8, '任务已启动，正在开通中…'); rdSubscribe(mode, r.jobKey); }
+      else { wizSetProgress(mode, 1, r.message || '启动失败，请稍后重试', true); }
+    }).catch(function () { wizSetProgress(mode, 1, '网络异常，请重试', true); });
+  }
+
+  function rdApply(mode, data) {
+    var s = wizState[mode] || wizState.topup;
+    var status = String(data.status || 'running');
+    var msg = String(data.message || '');
+    var prog = Number(data.progress);
+    if (status === 'success') {
+      rdDone = true; rdClose(); s.job = ''; s.failed = false;
+      s.done = true; s.pct = 100; s.note = msg || '开通成功';
+      wizRender(mode);
+      toast('开通成功');
+      return;
+    }
+    if (status === 'failed' || status === 'maintenance' || status === 'manual') {
+      rdDone = true; rdClose();
+      var suffix = status === 'failed' ? '（费用已退回平台余额）' : '';
+      var text = (msg || (status === 'maintenance' ? '系统维护中' : status === 'manual' ? '需要人工处理，请联系客服' : '开通失败，请更换账号重试')) + suffix;
+      s.pct = isFinite(prog) && prog > 0 ? prog : 1;
+      s.failed = true; s.note = text; s.done = false;
+      wizRender(mode);
+      return;
+    }
+    wizSetProgress(mode, isFinite(prog) ? prog : 10, msg || '正在开通中…');
+  }
+
+  // 一条 WebSocket 复用：单账号流程（rdActiveJob）与批量流程（wizBatchJobs）共用同一条连接
+  function rdEnsureSocket() {
+    if (rdSocket && (rdSocket.readyState === WebSocket.OPEN || rdSocket.readyState === WebSocket.CONNECTING)) return rdSocket;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    rdSocket = new WebSocket(proto + '//' + location.host);
+    rdSocket.onopen = function () {
+      clearTimeout(rdReconnect);
+      if (rdActiveJob && !rdDone) rdSendSub(rdActiveJob);
+      Object.keys(wizBatchJobs).forEach(rdSendSub);
+    };
+    rdSocket.onmessage = function (ev) {
+      var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+      if (!data || data.type === 'pong') return;
+      if (data.jobKey && wizBatchJobs[data.jobKey]) { wizBatchApply(data); return; }
+      if (!rdActiveJob) return;
+      if (data.jobKey && data.jobKey !== rdActiveJob) return;
+      rdApply(rdActiveMode || 'topup', data);
+    };
+    rdSocket.onclose = function () {
+      rdSocket = null;
+      var pending = Object.keys(wizBatchJobs);
+      if (pending.length) {
+        clearTimeout(rdReconnect);
+        rdReconnect = setTimeout(function () { rdEnsureSocket(); pending.forEach(rdSendSub); }, 3000);
+      } else if (rdActiveJob && rdActiveMode && !rdDone) {
+        clearTimeout(rdReconnect);
+        rdReconnect = setTimeout(function () { rdSubscribe(rdActiveMode, rdActiveJob); }, 3000);
+      }
+    };
+    return rdSocket;
+  }
+  function rdSubscribe(mode, jobKey) {
+    if (!jobKey) return;
+    (wizState[mode] || (wizState[mode] = wizFresh())).job = jobKey;
+    rdActiveJob = jobKey; rdActiveMode = mode || 'topup'; rdDone = false;
+    var ws = rdEnsureSocket();
+    if (ws && ws.readyState === WebSocket.OPEN) rdSendSub(jobKey);
+  }
+
+  function rdClose() { clearTimeout(rdReconnect); if (rdSocket) { try { rdSocket.close(); } catch (e) {} rdSocket = null; } }
+
+  // 兑换卡密（匿名）：手动输入卡密 → 验证 → 进入向导；或从代充订单带内存卡密进入（不展示卡密文本）
   function verifyCdk() {
     var cdk = (el('rd-cdk').value || '').trim();
     rdMsg1('');
@@ -1102,86 +3418,44 @@ tr.orow:hover{background:var(--brand-bg)}
     api('/api/verify-cdk', { method: 'POST', body: { cdk: cdk } }).then(function (r) {
       el('rd-verify').disabled = false;
       if (!r.success) { rdMsg1(r.message || '卡密无效或已使用', 'err'); return; }
-      rdMsg1('');
       var d = r.data || {};
-      el('rd-cdk-show').textContent = cdk;
-      el('rd-plan').textContent = '开通套餐：' + (d.plan_label || 'ChatGPT Plus');
-      el('rd-step1').classList.add('hidden');
-      el('rd-step2').classList.remove('hidden');
-      el('rd-start').disabled = false;
-      rdMsg2('');
-      if (d.status === 'processing' && d.jobKey) {
-        rdShowProgress(); rdSetProgress(3, '正在恢复开通进度…');
-        rdSubscribe(d.jobKey);
-      }
+      rdMsg1('卡密有效 · 开通套餐：' + (d.plan_label || 'ChatGPT Plus'), 'ok');
+      wizState.redeem = wizFresh();
+      wizState.redeem.cdk = cdk;
+      wizRender('redeem');
+      wizGo('redeem', 1);
+      toast('卡密验证通过，请按向导完成开通');
     }).catch(function () { el('rd-verify').disabled = false; rdMsg1('网络异常，请重试', 'err'); });
   }
+  // 兼容旧入口名：等价于「兑换向导 → 提交 Session 并开始开通」
+  function startActivation() { wizNext('redeem'); }
 
-  function startActivation() {
-    var cdk = (el('rd-cdk').value || '').trim();
-    var chk = rdCheckSession(el('rd-session').value);
-    if (!cdk) { rdMsg2('请先验证卡密', 'err'); return; }
-    if (!chk.session) { rdMsg2(chk.message || '请粘贴完整 Session JSON', 'err'); return; }
-    if (!chk.valid) { rdMsg2(chk.message, 'err'); return; }
-    el('rd-start').disabled = true;
-    rdMsg2(chk.email ? ('会话校验通过：' + chk.email) : '会话校验通过', 'ok');
-    rdShowProgress(); rdSetProgress(5, '正在启动开通…');
-    api('/api/run-process', { method: 'POST', body: { session: chk.session, cdk: cdk } }).then(function (r) {
-      if (r.success && r.jobKey) { rdSetProgress(8, '任务已启动，正在开通中…'); rdSubscribe(r.jobKey); }
-      else { el('rd-start').disabled = false; rdDone = true; rdSetProgress(1, r.message || '启动失败，请稍后重试', true); rdMsg2(r.message || '启动失败', 'err'); }
-    }).catch(function () { el('rd-start').disabled = false; rdMsg2('网络异常，请重试', 'err'); });
+  function goRedeem(cdk) {
+    var v = String(cdk || '').trim();
+    go('redeem');
+    el('rd-step1').classList.toggle('hidden', !!v);
+    rdMsg1('');
+    if (v) {
+      el('rd-cdk').value = '';
+      wizReset('redeem', v, true);
+      toast('请按向导完成 ChatGPT 登录与 Session 提交');
+    } else {
+      el('rd-cdk').value = '';
+      wizEl('redeem').classList.add('hidden');
+      rdMsg1('请输入卡密并验证后进入向导');
+    }
   }
 
-  function rdApply(data) {
-    var status = String(data.status || 'running');
-    var msg = String(data.message || '');
-    var prog = Number(data.progress);
-    if (status === 'success') {
-      rdDone = true; rdClose(); rdSetProgress(100, msg || '开通成功！');
-      rdMsg2(msg || '开通成功！', 'ok'); el('rd-start').disabled = true; toast('开通成功');
-      return;
-    }
-    if (status === 'failed' || status === 'maintenance' || status === 'manual') {
-      rdDone = true; rdClose();
-      var pct = isFinite(prog) && prog > 0 ? prog : 1;
-      rdSetProgress(pct, msg || (status === 'maintenance' ? '系统维护中' : status === 'manual' ? '需要人工处理，请联系客服' : '开通失败，请更换账号重试'), true);
-      rdMsg2(msg || '开通失败', 'err'); el('rd-start').disabled = false;
-      return;
-    }
-    rdSetProgress(isFinite(prog) ? prog : 10, msg || '正在开通中…');
-  }
-
-  function rdSubscribe(jobKey) {
-    if (!jobKey) return;
-    rdActiveJob = jobKey; rdDone = false;
-    if (rdSocket && (rdSocket.readyState === WebSocket.OPEN || rdSocket.readyState === WebSocket.CONNECTING)) {
-      try { rdSocket.send(JSON.stringify({ type: 'subscribe', jobKey: jobKey })); } catch (e) {}
-      return;
-    }
-    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    rdSocket = new WebSocket(proto + '//' + location.host);
-    rdSocket.onopen = function () { clearTimeout(rdReconnect); try { rdSocket.send(JSON.stringify({ type: 'subscribe', jobKey: jobKey })); } catch (e) {} };
-    rdSocket.onmessage = function (ev) {
-      var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
-      if (!data || data.type === 'pong') return;
-      if (data.jobKey && rdActiveJob && data.jobKey !== rdActiveJob) return;
-      rdApply(data);
-    };
-    rdSocket.onclose = function () {
-      rdSocket = null;
-      if (rdActiveJob && !rdDone) { clearTimeout(rdReconnect); rdReconnect = setTimeout(function () { rdSubscribe(rdActiveJob); }, 3000); }
-    };
-  }
-
-  function rdClose() { clearTimeout(rdReconnect); if (rdSocket) { try { rdSocket.close(); } catch (e) {} rdSocket = null; } }
-
-  function resetRedeem() {
-    rdClose(); rdDone = false; rdActiveJob = '';
-    el('rd-step2').classList.add('hidden'); el('rd-step1').classList.remove('hidden');
-    el('rd-session').value = ''; el('rd-msg1').textContent = ''; el('rd-msg2').textContent = '';
-    el('rd-progress').classList.add('hidden'); el('rd-bar').style.width = '0';
+  function wizResetRedeem() {
+    rdClose(); rdDone = false; rdActiveJob = ''; rdActiveMode = '';
+    el('rd-step1').classList.remove('hidden');
+    el('rd-cdk').value = '';
+    rdMsg1('');
+    wizState.redeem = wizFresh();
+    wizEl('redeem').classList.add('hidden');
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
   }
+  function resetRedeem() { wizResetRedeem(); }
 
   window.go = go;
   window.openCategory = openCategory;
@@ -1189,6 +3463,15 @@ tr.orow:hover{background:var(--brand-bg)}
   window.openDetail = openDetail;
   window.stepQty = stepQty;
   window.buy = buy;
+  // v2.17.0 代充双轨：二选一入口 + 卡密代充弹层（内联 onclick 入口必须显式挂 window）
+  window.startDirectTopup = startDirectTopup;
+  window.openCdkBuy = openCdkBuy;
+  window.closeCdkBuy = closeCdkBuy;
+  window.ckStep = ckStep;
+  window.ckToggleEnt = ckToggleEnt;
+  window.ckSubmit = ckSubmit;
+  window.ckCopyOne = ckCopyOne;
+  window.ckCopyAll = ckCopyAll;
   window.openAuth = openAuth;
   window.closeAuth = closeAuth;
   window.submitAuth = submitAuth;
@@ -1196,6 +3479,22 @@ tr.orow:hover{background:var(--brand-bg)}
   window.verifyCdk = verifyCdk;
   window.startActivation = startActivation;
   window.resetRedeem = resetRedeem;
+  window.goRedeem = goRedeem;
+  window.odResume = odResume;
+  // v2.15.0 向导：内联 onclick 入口
+  window.wizGo = wizGo;
+  window.wizNext = wizNext;
+  window.wizNextStep = wizNextStep;
+  window.wizInput = wizInput;
+  window.wizPay = wizPay;
+  window.wizToggleEnt = wizToggleEnt;
+  window.wizCopyUrl = wizCopyUrl;
+  window.wizResetRedeem = wizResetRedeem;
+  // v2.16.0 批量代充：账号清单工作台的内联 onclick 入口
+  window.wizAcctToggle = wizAcctToggle;
+  window.wizAcctAll = wizAcctAll;
+  window.wizAcctRemove = wizAcctRemove;
+  window.wizAcctClear = wizAcctClear;
   window.openRecharge = openRecharge;
   window.closeRecharge = closeRecharge;
   window.pickRecharge = pickRecharge;
@@ -1203,10 +3502,25 @@ tr.orow:hover{background:var(--brand-bg)}
   window.confirmRecharge = confirmRecharge;
   window.copyRcExact = copyRcExact;
   window.copyRcAddr = copyRcAddr;
+  window.copyRcNo = copyRcNo;
   window.rcSyncConfirm = rcSyncConfirm;
+  window.rcGuardClose = rcGuardClose;
+  window.rcLeaveStay = rcLeaveStay;
+  window.rcLeaveGoWallet = rcLeaveGoWallet;
+  window.rcBackdrop = rcBackdrop;
+  window.rcStop = rcStop;
+  window.resumeRecharge = resumeRecharge;
+  window.loadRcQr = loadRcQr;
+  window.rcOpenPay = rcOpenPay;
+  window.openGuide = openGuide;
+  window.closeGuide = closeGuide;
   window.buyPack = buyPack;
   window.filterOrders = filterOrders;
+  window.osecFilter = osecFilter;
+  window.orderSearch = orderSearch;
+  window.copyOrderNo = copyOrderNo;
   window.openOrder = openOrder;
+  window.orderUpstream = orderUpstream;
   window.closeOrder = closeOrder;
   window.openAfterSales = openAfterSales;
   window.closeAfterSales = closeAfterSales;
@@ -1222,9 +3536,13 @@ tr.orow:hover{background:var(--brand-bg)}
     });
     if (state.token) {
       api('/api/tenant/auth/me').then(function (r) {
-        if (r.success && r.data) { state.customer = r.data.customer; }
+        if (r.success && r.data) {
+          state.customer = r.data.customer;
+          if (r.data.must_change_password) { setMe(); syncWalletChip(); openForcedPwd(); return; }
+        }
         else { clearSession(); }
         setMe();
+        syncWalletChip(); // 登录后立即取余额，顶栏「钱包余额」恒显金额
         loadCatalog(); // 登录后重载目录，附权益价（双价卡）
       });
     } else {
@@ -1232,18 +3550,29 @@ tr.orow:hover{background:var(--brand-bg)}
       loadCatalog();
     }
     loadHomePacks();
-    // Stage 3.2：/ 或 /redeem 带 ?cdk= 时，自动进入兑卡视图并预填校验；/redeem 无参时直接打开兑卡视图
+    // v2.15.0：/ 或 /redeem 带 ?cdk= 时，自动进入兑换向导并预填校验；/redeem 无参时打开兑换入口（匿名可兑）
     try {
       var cdkParam = new URLSearchParams(location.search).get('cdk');
       if (cdkParam && cdkParam.trim()) {
-        el('rd-cdk').value = cdkParam.trim();
         go('redeem');
+        wizResetRedeem();
+        el('rd-cdk').value = cdkParam.trim();
         verifyCdk();
       } else if (/\/redeem\/?$/.test(location.pathname)) {
         go('redeem');
+        wizResetRedeem();
       }
     } catch (e) {}
   }
+
+  // v2.10.0：ESC 依次关闭「教程 → 离页引导 → 充值弹层」，与点击关闭按钮走同一守卫（不丢订单）
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' && e.key !== 'Esc') return;
+    if (el('guideModal').classList.contains('show')) { closeGuide(); return; }
+    if (el('rcLeaveModal').classList.contains('show')) { rcLeaveStay(); return; }
+    if (el('rcModal').classList.contains('show')) { rcGuardClose(); }
+  });
+
   boot();
 })();
 </script>

@@ -246,6 +246,21 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
     const badTok = await j('GET', '/api/tenant/wallet', { ct: 'bad.token' });
     ok('F17.2 伪造令牌被拒（401）', badTok.status === 401, 'status=' + badTok.status);
 
+    // ── 清理：删除本套件创建的功能测试商品（避免污染真实货架）──
+    try {
+        const mysql = require('mysql2/promise');
+        const conn = await mysql.createConnection({ host: '127.0.0.1', port: 3310, user: 'root', password: env('DB_PASSWORD', ''), database: env('DB_NAME', 'plus_papay') });
+        const [rows] = await conn.query('SELECT id, code FROM kc_plans WHERE display_name=?', [prodName]);
+        for (const p of rows) {
+            const [o] = await conn.query('SELECT COUNT(*) c FROM kc_api_orders WHERE sku_code=?', [p.code]);
+            if (Number(o[0].c) > 0) { console.log('  · 保留测试商品（已有订单）：' + p.code); continue; }
+            await conn.query('DELETE FROM kc_listing_cards WHERE plan_id=?', [p.id]);
+            await conn.query('DELETE FROM kc_plans WHERE id=?', [p.id]);
+            console.log('  · 已清理测试商品 ' + p.code + '（' + prodName + '）');
+        }
+        await conn.end();
+    } catch (e) { console.log('  · 商品清理跳过：' + (e && e.message)); }
+
     console.log('\n=== 功能回归结果：PASS=' + pass + ' FAIL=' + fail + ' ===');
     if (failures.length) { console.log('\n失败项：'); failures.forEach(f => console.log('  - ' + f)); }
     console.log('\n测试账号: ' + email + ' / ' + PW);
